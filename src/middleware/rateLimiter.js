@@ -7,40 +7,52 @@ import logger from '../utils/logger.js';
 
 /**
  * Rate Limiting Middleware
- * Compatible with redis v4+
+ * Compatible with redis v4+ and express-rate-limit v7+
  */
 
 /**
  * Redis Store for express-rate-limit
+ * FIXED: Proper return format to prevent double counting
  */
 class RedisStore {
   constructor(options) {
     this.client = options.client;
     this.prefix = options.prefix || 'rl:';
+    this.windowMs = options.windowMs || 60000;
   }
 
   async increment(key) {
     const redisKey = `${this.prefix}${key}`;
     
     try {
-      // Use multi for atomic operations
-      const multi = this.client.multi();
-      multi.incr(redisKey);
-      multi.pExpire(redisKey, 60000); // 60 seconds
+      // Get current count
+      const current = await this.client.get(redisKey);
       
-      const results = await multi.exec();
-      const totalHits = results[0]; // First result is from incr
-      
-      return {
-        totalHits,
-        resetTime: new Date(Date.now() + 60000),
-      };
+      if (current === null) {
+        // First request - set to 1 with expiry
+        await this.client.set(redisKey, 1, {
+          PX: this.windowMs, // Expire in milliseconds
+        });
+        
+        return {
+          totalHits: 1,
+          resetTime: new Date(Date.now() + this.windowMs),
+        };
+      } else {
+        // Increment existing count
+        const totalHits = await this.client.incr(redisKey);
+        
+        return {
+          totalHits,
+          resetTime: new Date(Date.now() + this.windowMs),
+        };
+      }
     } catch (error) {
       logger.error('RedisStore increment error:', error);
       // Fail open - allow request if Redis fails
       return {
         totalHits: 1,
-        resetTime: new Date(Date.now() + 60000),
+        resetTime: new Date(Date.now() + this.windowMs),
       };
     }
   }
@@ -48,7 +60,10 @@ class RedisStore {
   async decrement(key) {
     const redisKey = `${this.prefix}${key}`;
     try {
-      await this.client.decr(redisKey);
+      const current = await this.client.get(redisKey);
+      if (current && parseInt(current) > 0) {
+        await this.client.decr(redisKey);
+      }
     } catch (error) {
       logger.error('RedisStore decrement error:', error);
     }
@@ -71,21 +86,24 @@ const createRateLimiter = (options) => {
   return rateLimit({
     store: new RedisStore({
       client: redis,
-      prefix: 'rl:',
+      prefix: options.prefix || 'rl:',
+      windowMs: options.windowMs,
     }),
     windowMs: options.windowMs,
     max: options.max,
     message: options.message || 'Too many requests, please try again later',
     standardHeaders: true,
     legacyHeaders: false,
+    skipSuccessfulRequests: false, // ✅ Count all requests
+    skipFailedRequests: false,     // ✅ Count all requests
     handler: (req, res) => {
       logger.warn(`Rate limit exceeded for IP: ${req.ip}, endpoint: ${req.path}`);
       response.error(res, options.message || 'Too many requests, please try again later', 429);
     },
-    skip: (req) => {
+    skip: options.skip || ((req) => {
       // Skip rate limiting for super admins
       return req.userRole === 'SUPER_ADMIN';
-    },
+    }),
     keyGenerator: (req) => {
       // Use user ID if authenticated, otherwise IP
       return req.userId || req.ip;
@@ -96,25 +114,28 @@ const createRateLimiter = (options) => {
 /**
  * Auth endpoints rate limiter (strict)
  */
-/**
- * Auth endpoints rate limiter (strict)
- */
 export const authRateLimiter = createRateLimiter({
-  windowMs: 1 * 60 * 1000, // ✅ 1 minute (was 15 minutes)
-  max: 100, // ✅ 100 requests (was very low)
+  windowMs: 1 * 60 * 1000, // 1 minute
+  max: 100, // 100 requests per minute
   message: 'Too many login attempts, please try again after 1 minute',
+  prefix: 'rl:auth:',
 });
 
 /**
  * General API rate limiter
  */
 export const apiRateLimiter = createRateLimiter({
-  windowMs: 1 * 60 * 1000, // ✅ 1 minute
-  max: 1000, // ✅ 1000 requests
+  windowMs: 1 * 60 * 1000, // 1 minute
+  max: 1000, // 1000 requests per minute
+  prefix: 'rl:api:',
   skip: (req) => {
-    // ✅ Skip rate limiting for login endpoints in development
+    // Skip rate limiting for super admins
+    if (req.userRole === 'SUPER_ADMIN') return true;
+    
+    // Skip in development for specific endpoints
     if (process.env.NODE_ENV === 'development') {
-      if (req.path.includes('/auth/login/status/') || req.path.includes('/auth/login/initiate')) {
+      if (req.path.includes('/auth/login/status/') || 
+          req.path.includes('/auth/login/initiate')) {
         return true;
       }
     }
@@ -122,14 +143,13 @@ export const apiRateLimiter = createRateLimiter({
   },
 });
 
-
-
 /**
  * Webhook rate limiter
  */
 export const webhookRateLimiter = createRateLimiter({
   windowMs: RATE_LIMITS.WEBHOOK.windowMs,
   max: RATE_LIMITS.WEBHOOK.max,
+  prefix: 'rl:webhook:',
 });
 
 /**
@@ -139,13 +159,19 @@ export const botApiRateLimiter = createRateLimiter({
   windowMs: RATE_LIMITS.BOT_API.windowMs,
   max: RATE_LIMITS.BOT_API.max,
   message: 'Too many ad requests from this bot',
+  prefix: 'rl:bot:',
 });
 
 /**
  * Custom rate limiter for specific actions
  */
 export const customRateLimiter = (windowMs, max, message) => {
-  return createRateLimiter({ windowMs, max, message });
+  return createRateLimiter({ 
+    windowMs, 
+    max, 
+    message,
+    prefix: 'rl:custom:',
+  });
 };
 
 /**
@@ -161,10 +187,10 @@ export const slidingWindowRateLimiter = (options) => {
       const windowStart = now - windowMs;
 
       // Remove old entries
-      await redis.zremrangebyscore(key, 0, windowStart);
+      await redis.zRemRangeByScore(key, 0, windowStart);
 
       // Count requests in window
-      const count = await redis.zcard(key);
+      const count = await redis.zCard(key);
 
       if (count >= max) {
         logger.warn(`Sliding window rate limit exceeded for key: ${key}`);
@@ -172,7 +198,7 @@ export const slidingWindowRateLimiter = (options) => {
       }
 
       // Add current request
-      await redis.zadd(key, now, `${now}:${Math.random()}`);
+      await redis.zAdd(key, [{ score: now, value: `${now}:${Math.random()}` }]);
       await redis.expire(key, Math.ceil(windowMs / 1000));
 
       next();
@@ -206,7 +232,7 @@ export const actionRateLimiter = (action, max, windowSeconds) => {
         logger.warn(`Action rate limit exceeded for user ${req.userId}, action: ${action}`);
         return response.error(
           res,
-          `You can only perform this action ${max} times per ${windowSeconds / 60} minutes`,
+          `You can only perform this action ${max} times per ${Math.ceil(windowSeconds / 60)} minutes`,
           429
         );
       }
