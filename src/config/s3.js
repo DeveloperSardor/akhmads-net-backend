@@ -1,4 +1,4 @@
-import { S3Client, PutObjectCommand, GetObjectCommand, DeleteObjectCommand } from '@aws-sdk/client-s3';
+import { S3Client, PutObjectCommand, GetObjectCommand, DeleteObjectCommand, ListBucketsCommand } from '@aws-sdk/client-s3';
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
 import logger from '../utils/logger.js';
 
@@ -122,18 +122,17 @@ class StorageClient {
   }
 
   /**
-   * Health check
+   * Health check - FIXED
    */
   async healthCheck() {
     try {
-      // Try to list objects (just to verify connection)
-      await this.getInstance().send({
-        Bucket: this.bucket,
-        MaxKeys: 1,
-      });
+      const command = new ListBucketsCommand({});
+      await this.getInstance().send(command);
+      logger.info('✅ S3 health check passed');
       return true;
     } catch (error) {
-      logger.error('S3 health check failed:', error);
+      logger.warn('⚠️ S3 health check failed (non-critical):', error.message);
+      // Don't throw - S3 is optional, server can work without it
       return false;
     }
   }
