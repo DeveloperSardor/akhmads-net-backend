@@ -1,0 +1,110 @@
+import telegramAPI from '../../utils/telegram-api.js';
+import encryption from '../../utils/encryption.js';
+import tracking from '../../utils/tracking.js';
+import logger from '../../utils/logger.js';
+
+/**
+ * Ad Delivery Service
+ * Sends ads via Telegram Bot API
+ */
+class AdDeliveryService {
+  /**
+   * Prepare ad message
+   */
+  prepareMessage(ad, botId) {
+    let text = ad.text;
+    let parseMode = 'HTML';
+
+    if (ad.contentType === 'MARKDOWN') {
+      parseMode = 'Markdown';
+      text = ad.markdownContent;
+    } else if (ad.contentType === 'HTML') {
+      text = ad.htmlContent;
+    }
+
+    // Prepare buttons with tracking
+    let replyMarkup = null;
+    if (ad.buttons && ad.trackingEnabled) {
+      const buttons = JSON.parse(ad.buttons);
+      const trackedButtons = tracking.wrapButtonsWithTracking(buttons, ad.id, botId);
+
+      replyMarkup = {
+        inline_keyboard: [
+          trackedButtons.map(btn => ({
+            text: btn.text,
+            url: btn.url,
+          })),
+        ],
+      };
+    } else if (ad.buttons) {
+      const buttons = JSON.parse(ad.buttons);
+      replyMarkup = {
+        inline_keyboard: [
+          buttons.map(btn => ({
+            text: btn.text,
+            url: btn.url,
+          })),
+        ],
+      };
+    }
+
+    return { text, parseMode, replyMarkup };
+  }
+
+  /**
+   * Send ad to user
+   */
+  async sendAd(bot, ad, chatId) {
+    try {
+      const botToken = encryption.decrypt(bot.tokenEncrypted);
+      const message = this.prepareMessage(ad, bot.id);
+
+      let sentMessage;
+
+      if (ad.contentType === 'MEDIA' && ad.mediaUrl) {
+        if (ad.mediaType?.startsWith('image')) {
+          sentMessage = await telegramAPI.sendPhoto(botToken, {
+            chat_id: chatId,
+            photo: ad.mediaUrl,
+            caption: message.text,
+            parse_mode: message.parseMode,
+            reply_markup: message.replyMarkup,
+          });
+        } else if (ad.mediaType?.startsWith('video')) {
+          sentMessage = await telegramAPI.sendVideo(botToken, {
+            chat_id: chatId,
+            video: ad.mediaUrl,
+            caption: message.text,
+            parse_mode: message.parseMode,
+            reply_markup: message.replyMarkup,
+          });
+        }
+      } else if (ad.contentType === 'POLL' && ad.poll) {
+        const poll = JSON.parse(ad.poll);
+        sentMessage = await telegramAPI.sendPoll(botToken, {
+          chat_id: chatId,
+          question: poll.question,
+          options: poll.options,
+        });
+      } else {
+        sentMessage = await telegramAPI.sendMessage(
+          botToken,
+          chatId,
+          message.text,
+          {
+            parse_mode: message.parseMode,
+            reply_markup: message.replyMarkup,
+          }
+        );
+      }
+
+      return sentMessage;
+    } catch (error) {
+      logger.error('Send ad failed:', error);
+      throw error;
+    }
+  }
+}
+
+const adDeliveryService = new AdDeliveryService();
+export default adDeliveryService;

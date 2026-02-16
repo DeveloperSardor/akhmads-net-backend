@@ -1,0 +1,2421 @@
+{
+  "info": {
+    "name": "AKHMADS.NET API",
+    "description": "Complete API collection for AKHMADS.NET - Telegram Ad Distribution Platform",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json",
+    "version": "1.0.0"
+  },
+  "auth": {
+    "type": "bearer",
+    "bearer": [
+      {
+        "key": "token",
+        "value": "{{accessToken}}",
+        "type": "string"
+      }
+    ]
+  },
+  "variable": [
+    {
+      "key": "baseUrl",
+      "value": "http://localhost:3000/api/v1",
+      "type": "string"
+    },
+    {
+      "key": "accessToken",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "refreshToken",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "userId",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "adId",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "botId",
+      "value": "",
+      "type": "string"
+    }
+  ],
+  "item": [
+    {
+      "name": "🔐 Authentication",
+      "item": [
+        {
+          "name": "Initiate Login",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "if (pm.response.code === 200) {",
+                  "    const response = pm.response.json();",
+                  "    pm.collectionVariables.set('loginToken', response.data.loginToken);",
+                  "    console.log('Login Token:', response.data.loginToken);",
+                  "    console.log('Deep Link:', response.data.deepLink);",
+                  "    console.log('Codes:', response.data.codes);",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/auth/login/initiate",
+              "host": ["{{baseUrl}}"],
+              "path": ["auth", "login", "initiate"]
+            },
+            "description": "Start Telegram login flow. Returns login token and codes."
+          }
+        },
+        {
+          "name": "Check Login Status",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "if (pm.response.code === 200) {",
+                  "    const response = pm.response.json();",
+                  "    if (response.data.authorized) {",
+                  "        pm.collectionVariables.set('accessToken', response.data.tokens.accessToken);",
+                  "        pm.collectionVariables.set('refreshToken', response.data.tokens.refreshToken);",
+                  "        pm.collectionVariables.set('userId', response.data.user.id);",
+                  "        console.log('✅ Login successful!');",
+                  "        console.log('User:', response.data.user.firstName, response.data.user.role);",
+                  "    }",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/auth/login/status/:loginToken",
+              "host": ["{{baseUrl}}"],
+              "path": ["auth", "login", "status", ":loginToken"],
+              "variable": [
+                {
+                  "key": "loginToken",
+                  "value": "{{loginToken}}"
+                }
+              ]
+            },
+            "description": "Poll for login status. Use after clicking code in Telegram."
+          }
+        },
+        {
+          "name": "Get Current User",
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{accessToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/auth/me",
+              "host": ["{{baseUrl}}"],
+              "path": ["auth", "me"]
+            }
+          }
+        },
+        {
+          "name": "Refresh Token",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "if (pm.response.code === 200) {",
+                  "    const response = pm.response.json();",
+                  "    pm.collectionVariables.set('accessToken', response.data.tokens.accessToken);",
+                  "    pm.collectionVariables.set('refreshToken', response.data.tokens.refreshToken);",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"refreshToken\": \"{{refreshToken}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/auth/refresh",
+              "host": ["{{baseUrl}}"],
+              "path": ["auth", "refresh"]
+            }
+          }
+        },
+        {
+          "name": "Logout",
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{accessToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/auth/logout",
+              "host": ["{{baseUrl}}"],
+              "path": ["auth", "logout"]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "👤 User",
+      "item": [
+        {
+          "name": "Get Profile",
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{accessToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/user/profile",
+              "host": ["{{baseUrl}}"],
+              "path": ["user", "profile"]
+            }
+          }
+        },
+        {
+          "name": "Update Profile",
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{accessToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "method": "PUT",
+            "header": [],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"firstName\": \"Sardor\",\n  \"lastName\": \"Karimov\",\n  \"email\": \"sardor@example.com\",\n  \"locale\": \"uz\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/user/profile",
+              "host": ["{{baseUrl}}"],
+              "path": ["user", "profile"]
+            }
+          }
+        },
+        {
+          "name": "Get User Stats",
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{accessToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/user/stats",
+              "host": ["{{baseUrl}}"],
+              "path": ["user", "stats"]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "💰 Wallet",
+      "item": [
+        {
+          "name": "Get Wallet",
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{accessToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/wallet",
+              "host": ["{{baseUrl}}"],
+              "path": ["wallet"]
+            }
+          }
+        },
+        {
+          "name": "Get Transactions",
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{accessToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/wallet/transactions?limit=20&offset=0",
+              "host": ["{{baseUrl}}"],
+              "path": ["wallet", "transactions"],
+              "query": [
+                {
+                  "key": "limit",
+                  "value": "20"
+                },
+                {
+                  "key": "offset",
+                  "value": "0"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "Get Ledger",
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{accessToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/wallet/ledger?type=DEPOSIT&limit=50",
+              "host": ["{{baseUrl}}"],
+              "path": ["wallet", "ledger"],
+              "query": [
+                {
+                  "key": "type",
+                  "value": "DEPOSIT"
+                },
+                {
+                  "key": "limit",
+                  "value": "50"
+                }
+              ]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "💳 Payments",
+      "item": [
+        {
+          "name": "Initiate Deposit - Click",
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{accessToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "method": "POST",
+            "header": [],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"provider\": \"CLICK\",\n  \"amount\": 50\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/payments/deposit/initiate",
+              "host": ["{{baseUrl}}"],
+              "path": ["payments", "deposit", "initiate"]
+            }
+          }
+        },
+        {
+          "name": "Initiate Deposit - Crypto",
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{accessToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "method": "POST",
+            "header": [],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"provider\": \"CRYPTO\",\n  \"amount\": 100,\n  \"coin\": \"USDT\",\n  \"network\": \"TRC20\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/payments/deposit/initiate",
+              "host": ["{{baseUrl}}"],
+              "path": ["payments", "deposit", "initiate"]
+            }
+          }
+        },
+        {
+          "name": "Get Deposit History",
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{accessToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/payments/deposit/history?limit=20",
+              "host": ["{{baseUrl}}"],
+              "path": ["payments", "deposit", "history"],
+              "query": [
+                {
+                  "key": "limit",
+                  "value": "20"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "Request Withdrawal",
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{accessToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "method": "POST",
+            "header": [],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"method\": \"CARD\",\n  \"provider\": \"CLICK\",\n  \"amount\": 50\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/payments/withdraw/request",
+              "host": ["{{baseUrl}}"],
+              "path": ["payments", "withdraw", "request"]
+            }
+          }
+        },
+        {
+          "name": "Get Withdrawal History",
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{accessToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/payments/withdraw/history",
+              "host": ["{{baseUrl}}"],
+              "path": ["payments", "withdraw", "history"]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "🤖 Bots",
+      "item": [
+        {
+          "name": "Register Bot",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "if (pm.response.code === 201) {",
+                  "    const response = pm.response.json();",
+                  "    pm.collectionVariables.set('botId', response.data.bot.id);",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{accessToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "method": "POST",
+            "header": [],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"token\": \"7123456789:AAHdqTcvCH1vGWJxfSeofSAs0K5PALDsaw\",\n  \"shortDescription\": \"My awesome Telegram bot for news\",\n  \"category\": \"technology\",\n  \"language\": \"uz\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/bots",
+              "host": ["{{baseUrl}}"],
+              "path": ["bots"]
+            }
+          }
+        },
+        {
+          "name": "Get My Bots",
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{accessToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/bots",
+              "host": ["{{baseUrl}}"],
+              "path": ["bots"]
+            }
+          }
+        },
+        {
+          "name": "Get Bot Details",
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{accessToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/bots/:botId",
+              "host": ["{{baseUrl}}"],
+              "path": ["bots", ":botId"],
+              "variable": [
+                {
+                  "key": "botId",
+                  "value": "{{botId}}"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "Update Bot Settings",
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{accessToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "method": "PUT",
+            "header": [],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"shortDescription\": \"Updated description\",\n  \"postFilter\": \"not_mine\",\n  \"frequencyMinutes\": 10,\n  \"allowedCategories\": [\"technology\", \"education\"],\n  \"blockedCategories\": [\"betting\", \"gambling\"]\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/bots/:botId",
+              "host": ["{{baseUrl}}"],
+              "path": ["bots", ":botId"],
+              "variable": [
+                {
+                  "key": "botId",
+                  "value": "{{botId}}"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "Pause Bot",
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{accessToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "method": "POST",
+            "header": [],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"isPaused\": true\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/bots/:botId/pause",
+              "host": ["{{baseUrl}}"],
+              "path": ["bots", ":botId", "pause"],
+              "variable": [
+                {
+                  "key": "botId",
+                  "value": "{{botId}}"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "Regenerate API Key",
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{accessToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/bots/:botId/regenerate-api-key",
+              "host": ["{{baseUrl}}"],
+              "path": ["bots", ":botId", "regenerate-api-key"],
+              "variable": [
+                {
+                  "key": "botId",
+                  "value": "{{botId}}"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "Get Bot Stats",
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{accessToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/bots/:botId/stats?period=7d",
+              "host": ["{{baseUrl}}"],
+              "path": ["bots", ":botId", "stats"],
+              "query": [
+                {
+                  "key": "period",
+                  "value": "7d"
+                }
+              ],
+              "variable": [
+                {
+                  "key": "botId",
+                  "value": "{{botId}}"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "Get Integration Code",
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{accessToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/bots/:botId/integration?language=python",
+              "host": ["{{baseUrl}}"],
+              "path": ["bots", ":botId", "integration"],
+              "query": [
+                {
+                  "key": "language",
+                  "value": "python",
+                  "description": "python | javascript | typescript | php | csharp"
+                }
+              ],
+              "variable": [
+                {
+                  "key": "botId",
+                  "value": "{{botId}}"
+                }
+              ]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "📢 Ads",
+      "item": [
+        {
+          "name": "Get Pricing Tiers",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/ads/pricing",
+              "host": ["{{baseUrl}}"],
+              "path": ["ads", "pricing"]
+            }
+          }
+        },
+        {
+          "name": "Get Pricing Estimate",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"impressions\": 1000,\n  \"category\": \"technology\",\n  \"targeting\": {\n    \"languages\": [\"uz\"],\n    \"aiSegments\": [\"tech_enthusiasts\"]\n  },\n  \"cpmBid\": 0.5\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/ads/pricing/estimate",
+              "host": ["{{baseUrl}}"],
+              "path": ["ads", "pricing", "estimate"]
+            }
+          }
+        },
+        {
+          "name": "Get Targeting Options",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/ads/targeting/options",
+              "host": ["{{baseUrl}}"],
+              "path": ["ads", "targeting", "options"]
+            }
+          }
+        },
+        {
+          "name": "Create Ad",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "if (pm.response.code === 201) {",
+                  "    const response = pm.response.json();",
+                  "    pm.collectionVariables.set('adId', response.data.ad.id);",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{accessToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "method": "POST",
+            "header": [],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"contentType\": \"TEXT\",\n  \"title\": \"Amazing New Product!\",\n  \"text\": \"Check out our amazing new product with 50% discount! Limited time offer.\",\n  \"targetImpressions\": 1000,\n  \"buttons\": [\n    {\n      \"text\": \"Visit Website\",\n      \"url\": \"https://example.com\"\n    },\n    {\n      \"text\": \"Learn More\",\n      \"url\": \"https://example.com/learn\"\n    }\n  ],\n  \"targeting\": {\n    \"languages\": [\"uz\", \"ru\"],\n    \"categories\": [\"technology\"]\n  },\n  \"cpmBid\": 0.5\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/ads",
+              "host": ["{{baseUrl}}"],
+              "path": ["ads"]
+            }
+          }
+        },
+        {
+          "name": "Get My Ads",
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{accessToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/ads?status=RUNNING&limit=20",
+              "host": ["{{baseUrl}}"],
+              "path": ["ads"],
+              "query": [
+                {
+                  "key": "status",
+                  "value": "RUNNING",
+                  "description": "DRAFT | SUBMITTED | APPROVED | RUNNING | PAUSED | COMPLETED | REJECTED"
+                },
+                {
+                  "key": "limit",
+                  "value": "20"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "Get Ad Details",
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{accessToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/ads/:adId",
+              "host": ["{{baseUrl}}"],
+              "path": ["ads", ":adId"],
+              "variable": [
+                {
+                  "key": "adId",
+                  "value": "{{adId}}"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "Update Ad",
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{accessToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "method": "PUT",
+            "header": [],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"title\": \"Updated Title\",\n  \"text\": \"Updated text content\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/ads/:adId",
+              "host": ["{{baseUrl}}"],
+              "path": ["ads", ":adId"],
+              "variable": [
+                {
+                  "key": "adId",
+                  "value": "{{adId}}"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "Submit Ad for Moderation",
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{accessToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/ads/:adId/submit",
+              "host": ["{{baseUrl}}"],
+              "path": ["ads", ":adId", "submit"],
+              "variable": [
+                {
+                  "key": "adId",
+                  "value": "{{adId}}"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "Pause Ad",
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{accessToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/ads/:adId/pause",
+              "host": ["{{baseUrl}}"],
+              "path": ["ads", ":adId", "pause"],
+              "variable": [
+                {
+                  "key": "adId",
+                  "value": "{{adId}}"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "Resume Ad",
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{accessToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/ads/:adId/resume",
+              "host": ["{{baseUrl}}"],
+              "path": ["ads", ":adId", "resume"],
+              "variable": [
+                {
+                  "key": "adId",
+                  "value": "{{adId}}"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "Duplicate Ad",
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{accessToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/ads/:adId/duplicate",
+              "host": ["{{baseUrl}}"],
+              "path": ["ads", ":adId", "duplicate"],
+              "variable": [
+                {
+                  "key": "adId",
+                  "value": "{{adId}}"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "Delete Ad",
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{accessToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "method": "DELETE",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/ads/:adId",
+              "host": ["{{baseUrl}}"],
+              "path": ["ads", ":adId"],
+              "variable": [
+                {
+                  "key": "adId",
+                  "value": "{{adId}}"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "Get Ad Performance",
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{accessToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/ads/:adId/performance",
+              "host": ["{{baseUrl}}"],
+              "path": ["ads", ":adId", "performance"],
+              "variable": [
+                {
+                  "key": "adId",
+                  "value": "{{adId}}"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "Export Impressions (Excel)",
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{accessToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/ads/:adId/export",
+              "host": ["{{baseUrl}}"],
+              "path": ["ads", ":adId", "export"],
+              "variable": [
+                {
+                  "key": "adId",
+                  "value": "{{adId}}"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "Get Ad Clicks",
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{accessToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/ads/:adId/clicks",
+              "host": ["{{baseUrl}}"],
+              "path": ["ads", ":adId", "clicks"],
+              "variable": [
+                {
+                  "key": "adId",
+                  "value": "{{adId}}"
+                }
+              ]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "📊 Analytics",
+      "item": [
+        {
+          "name": "Advertiser Dashboard",
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{accessToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/analytics/advertiser/overview",
+              "host": ["{{baseUrl}}"],
+              "path": ["analytics", "advertiser", "overview"]
+            }
+          }
+        },
+        {
+          "name": "Bot Owner Dashboard",
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{accessToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/analytics/owner/overview",
+              "host": ["{{baseUrl}}"],
+              "path": ["analytics", "owner", "overview"]
+            }
+          }
+        },
+        {
+          "name": "Bot Stats Detailed",
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{accessToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/analytics/owner/bot/:botId?period=30d",
+              "host": ["{{baseUrl}}"],
+              "path": ["analytics", "owner", "bot", ":botId"],
+              "query": [
+                {
+                  "key": "period",
+                  "value": "30d"
+                }
+              ],
+              "variable": [
+                {
+                  "key": "botId",
+                  "value": "{{botId}}"
+                }
+              ]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "👑 Admin",
+      "item": [
+        {
+          "name": "🔍 Moderation",
+          "item": [
+            {
+              "name": "Get Moderation Queue",
+              "request": {
+                "auth": {
+                  "type": "bearer",
+                  "bearer": [
+                    {
+                      "key": "token",
+                      "value": "{{accessToken}}",
+                      "type": "string"
+                    }
+                  ]
+                },
+                "method": "GET",
+                "header": [],
+                "url": {
+                  "raw": "{{baseUrl}}/admin/moderation/queue",
+                  "host": ["{{baseUrl}}"],
+                  "path": ["admin", "moderation", "queue"]
+                }
+              }
+            },
+            {
+              "name": "Get Pending Ads",
+              "request": {
+                "auth": {
+                  "type": "bearer",
+                  "bearer": [
+                    {
+                      "key": "token",
+                      "value": "{{accessToken}}",
+                      "type": "string"
+                    }
+                  ]
+                },
+                "method": "GET",
+                "header": [],
+                "url": {
+                  "raw": "{{baseUrl}}/admin/moderation/ads?limit=20",
+                  "host": ["{{baseUrl}}"],
+                  "path": ["admin", "moderation", "ads"],
+                  "query": [
+                    {
+                      "key": "limit",
+                      "value": "20"
+                    }
+                  ]
+                }
+              }
+            },
+            {
+              "name": "Approve Ad",
+              "request": {
+                "auth": {
+                  "type": "bearer",
+                  "bearer": [
+                    {
+                      "key": "token",
+                      "value": "{{accessToken}}",
+                      "type": "string"
+                    }
+                  ]
+                },
+                "method": "POST",
+                "header": [],
+                "url": {
+                  "raw": "{{baseUrl}}/admin/moderation/ads/:adId/approve",
+                  "host": ["{{baseUrl}}"],
+                  "path": ["admin", "moderation", "ads", ":adId", "approve"],
+                  "variable": [
+                    {
+                      "key": "adId",
+                      "value": "{{adId}}"
+                    }
+                  ]
+                }
+              }
+            },
+            {
+              "name": "Reject Ad",
+              "request": {
+                "auth": {
+                  "type": "bearer",
+                  "bearer": [
+                    {
+                      "key": "token",
+                      "value": "{{accessToken}}",
+                      "type": "string"
+                    }
+                  ]
+                },
+                "method": "POST",
+                "header": [],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"reason\": \"Content violates our advertising guidelines\"\n}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                },
+                "url": {
+                  "raw": "{{baseUrl}}/admin/moderation/ads/:adId/reject",
+                  "host": ["{{baseUrl}}"],
+                  "path": ["admin", "moderation", "ads", ":adId", "reject"],
+                  "variable": [
+                    {
+                      "key": "adId",
+                      "value": "{{adId}}"
+                    }
+                  ]
+                }
+              }
+            },
+            {
+              "name": "Get Pending Bots",
+              "request": {
+                "auth": {
+                  "type": "bearer",
+                  "bearer": [
+                    {
+                      "key": "token",
+                      "value": "{{accessToken}}",
+                      "type": "string"
+                    }
+                  ]
+                },
+                "method": "GET",
+                "header": [],
+                "url": {
+                  "raw": "{{baseUrl}}/admin/moderation/bots",
+                  "host": ["{{baseUrl}}"],
+                  "path": ["admin", "moderation", "bots"]
+                }
+              }
+            },
+            {
+              "name": "Approve Bot",
+              "request": {
+                "auth": {
+                  "type": "bearer",
+                  "bearer": [
+                    {
+                      "key": "token",
+                      "value": "{{accessToken}}",
+                      "type": "string"
+                    }
+                  ]
+                },
+                "method": "POST",
+                "header": [],
+                "url": {
+                  "raw": "{{baseUrl}}/admin/moderation/bots/:botId/approve",
+                  "host": ["{{baseUrl}}"],
+                  "path": ["admin", "moderation", "bots", ":botId", "approve"],
+                  "variable": [
+                    {
+                      "key": "botId",
+                      "value": "{{botId}}"
+                    }
+                  ]
+                }
+              }
+            },
+            {
+              "name": "Reject Bot",
+              "request": {
+                "auth": {
+                  "type": "bearer",
+                  "bearer": [
+                    {
+                      "key": "token",
+                      "value": "{{accessToken}}",
+                      "type": "string"
+                    }
+                  ]
+                },
+                "method": "POST",
+                "header": [],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"reason\": \"Bot token is invalid or bot is not accessible\"\n}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                },
+                "url": {
+                  "raw": "{{baseUrl}}/admin/moderation/bots/:botId/reject",
+                  "host": ["{{baseUrl}}"],
+                  "path": ["admin", "moderation", "bots", ":botId", "reject"],
+                  "variable": [
+                    {
+                      "key": "botId",
+                      "value": "{{botId}}"
+                    }
+                  ]
+                }
+              }
+            }
+          ]
+        },
+        {
+          "name": "💸 Withdrawals",
+          "item": [
+            {
+              "name": "Get Pending Withdrawals",
+              "request": {
+                "auth": {
+                  "type": "bearer",
+                  "bearer": [
+                    {
+                      "key": "token",
+                      "value": "{{accessToken}}",
+                      "type": "string"
+                    }
+                  ]
+                },
+                "method": "GET",
+                "header": [],
+                "url": {
+                  "raw": "{{baseUrl}}/admin/withdrawals/pending",
+                  "host": ["{{baseUrl}}"],
+                  "path": ["admin", "withdrawals", "pending"]
+                }
+              }
+            },
+            {
+              "name": "Approve Withdrawal",
+              "request": {
+                "auth": {
+                  "type": "bearer",
+                  "bearer": [
+                    {
+                      "key": "token",
+                      "value": "{{accessToken}}",
+                      "type": "string"
+                    }
+                  ]
+                },
+                "method": "POST",
+                "header": [],
+                "url": {
+                  "raw": "{{baseUrl}}/admin/withdrawals/:withdrawalId/approve",
+                  "host": ["{{baseUrl}}"],
+                  "path": ["admin", "withdrawals", ":withdrawalId", "approve"],
+                  "variable": [
+                    {
+                      "key": "withdrawalId",
+                      "value": ""
+                    }
+                  ]
+                }
+              }
+            },
+            {
+              "name": "Reject Withdrawal",
+              "request": {
+                "auth": {
+                  "type": "bearer",
+                  "bearer": [
+                    {
+                      "key": "token",
+                      "value": "{{accessToken}}",
+                      "type": "string"
+                    }
+                  ]
+                },
+                "method": "POST",
+                "header": [],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"reason\": \"Invalid payment details\"\n}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                },
+                "url": {
+                  "raw": "{{baseUrl}}/admin/withdrawals/:withdrawalId/reject",
+                  "host": ["{{baseUrl}}"],
+                  "path": ["admin", "withdrawals", ":withdrawalId", "reject"],
+                  "variable": [
+                    {
+                      "key": "withdrawalId",
+                      "value": ""
+                    }
+                  ]
+                }
+              }
+            }
+          ]
+        },
+        {
+          "name": "👥 Users",
+          "item": [
+            {
+              "name": "Get All Users",
+              "request": {
+                "auth": {
+                  "type": "bearer",
+                  "bearer": [
+                    {
+                      "key": "token",
+                      "value": "{{accessToken}}",
+                      "type": "string"
+                    }
+                  ]
+                },
+                "method": "GET",
+                "header": [],
+                "url": {
+                  "raw": "{{baseUrl}}/admin/users?role=ADVERTISER&limit=50",
+                  "host": ["{{baseUrl}}"],
+                  "path": ["admin", "users"],
+                  "query": [
+                    {
+                      "key": "role",
+                      "value": "ADVERTISER"
+                    },
+                    {
+                      "key": "limit",
+                      "value": "50"
+                    }
+                  ]
+                }
+              }
+            },
+            {
+              "name": "Get User Details",
+              "request": {
+                "auth": {
+                  "type": "bearer",
+                  "bearer": [
+                    {
+                      "key": "token",
+                      "value": "{{accessToken}}",
+                      "type": "string"
+                    }
+                  ]
+                },
+                "method": "GET",
+                "header": [],
+                "url": {
+                  "raw": "{{baseUrl}}/admin/users/:userId",
+                  "host": ["{{baseUrl}}"],
+                  "path": ["admin", "users", ":userId"],
+                  "variable": [
+                    {
+                      "key": "userId",
+                      "value": "{{userId}}"
+                    }
+                  ]
+                }
+              }
+            },
+            {
+              "name": "Ban User",
+              "request": {
+                "auth": {
+                  "type": "bearer",
+                  "bearer": [
+                    {
+                      "key": "token",
+                      "value": "{{accessToken}}",
+                      "type": "string"
+                    }
+                  ]
+                },
+                "method": "POST",
+                "header": [],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"reason\": \"Violation of terms of service\"\n}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                },
+                "url": {
+                  "raw": "{{baseUrl}}/admin/users/:userId/ban",
+                  "host": ["{{baseUrl}}"],
+                  "path": ["admin", "users", ":userId", "ban"],
+                  "variable": [
+                    {
+                      "key": "userId",
+                      "value": ""
+                    }
+                  ]
+                }
+              }
+            },
+            {
+              "name": "Unban User",
+              "request": {
+                "auth": {
+                  "type": "bearer",
+                  "bearer": [
+                    {
+                      "key": "token",
+                      "value": "{{accessToken}}",
+                      "type": "string"
+                    }
+                  ]
+                },
+                "method": "POST",
+                "header": [],
+                "url": {
+                  "raw": "{{baseUrl}}/admin/users/:userId/unban",
+                  "host": ["{{baseUrl}}"],
+                  "path": ["admin", "users", ":userId", "unban"],
+                  "variable": [
+                    {
+                      "key": "userId",
+                      "value": ""
+                    }
+                  ]
+                }
+              }
+            }
+          ]
+        },
+        {
+          "name": "⚙️ Settings",
+          "item": [
+            {
+              "name": "Get All Settings",
+              "request": {
+                "auth": {
+                  "type": "bearer",
+                  "bearer": [
+                    {
+                      "key": "token",
+                      "value": "{{accessToken}}",
+                      "type": "string"
+                    }
+                  ]
+                },
+                "method": "GET",
+                "header": [],
+                "url": {
+                  "raw": "{{baseUrl}}/admin/settings",
+                  "host": ["{{baseUrl}}"],
+                  "path": ["admin", "settings"]
+                }
+              }
+            },
+            {
+              "name": "Update Setting",
+              "request": {
+                "auth": {
+                  "type": "bearer",
+                  "bearer": [
+                    {
+                      "key": "token",
+                      "value": "{{accessToken}}",
+                      "type": "string"
+                    }
+                  ]
+                },
+                "method": "PUT",
+                "header": [],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"value\": \"15\"\n}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                },
+                "url": {
+                  "raw": "{{baseUrl}}/admin/settings/:key",
+                  "host": ["{{baseUrl}}"],
+                  "path": ["admin", "settings", ":key"],
+                  "variable": [
+                    {
+                      "key": "key",
+                      "value": "platform_fee_percentage"
+                    }
+                  ]
+                }
+              }
+            },
+            {
+              "name": "Get Pricing Tiers",
+              "request": {
+                "auth": {
+                  "type": "bearer",
+                  "bearer": [
+                    {
+                      "key": "token",
+                      "value": "{{accessToken}}",
+                      "type": "string"
+                    }
+                  ]
+                },
+                "method": "GET",
+                "header": [],
+                "url": {
+                  "raw": "{{baseUrl}}/admin/pricing/tiers",
+                  "host": ["{{baseUrl}}"],
+                  "path": ["admin", "pricing", "tiers"]
+                }
+              }
+            },
+            {
+              "name": "Create Pricing Tier",
+              "request": {
+                "auth": {
+                  "type": "bearer",
+                  "bearer": [
+                    {
+                      "key": "token",
+                      "value": "{{accessToken}}",
+                      "type": "string"
+                    }
+                  ]
+                },
+                "method": "POST",
+                "header": [],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"name\": \"5K Views\",\n  \"impressions\": 5000,\n  \"priceUsd\": 8.0,\n  \"sortOrder\": 5\n}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                },
+                "url": {
+                  "raw": "{{baseUrl}}/admin/pricing/tiers",
+                  "host": ["{{baseUrl}}"],
+                  "path": ["admin", "pricing", "tiers"]
+                }
+              }
+            }
+          ]
+        },
+        {
+          "name": "📊 Analytics",
+          "item": [
+            {
+              "name": "Platform Overview",
+              "request": {
+                "auth": {
+                  "type": "bearer",
+                  "bearer": [
+                    {
+                      "key": "token",
+                      "value": "{{accessToken}}",
+                      "type": "string"
+                    }
+                  ]
+                },
+                "method": "GET",
+                "header": [],
+                "url": {
+                  "raw": "{{baseUrl}}/admin/analytics/overview",
+                  "host": ["{{baseUrl}}"],
+                  "path": ["admin", "analytics", "overview"]
+                }
+              }
+            },
+            {
+              "name": "Platform Stats",
+              "request": {
+                "auth": {
+                  "type": "bearer",
+                  "bearer": [
+                    {
+                      "key": "token",
+                      "value": "{{accessToken}}",
+                      "type": "string"
+                    }
+                  ]
+                },
+                "method": "GET",
+                "header": [],
+                "url": {
+                  "raw": "{{baseUrl}}/admin/analytics/stats",
+                  "host": ["{{baseUrl}}"],
+                  "path": ["admin", "analytics", "stats"]
+                }
+              }
+            },
+            {
+              "name": "Growth Chart",
+              "request": {
+                "auth": {
+                  "type": "bearer",
+                  "bearer": [
+                    {
+                      "key": "token",
+                      "value": "{{accessToken}}",
+                      "type": "string"
+                    }
+                  ]
+                },
+                "method": "GET",
+                "header": [],
+                "url": {
+                  "raw": "{{baseUrl}}/admin/analytics/growth?days=30",
+                  "host": ["{{baseUrl}}"],
+                  "path": ["admin", "analytics", "growth"],
+                  "query": [
+                    {
+                      "key": "days",
+                      "value": "30"
+                    }
+                  ]
+                }
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "🔗 Bot API (Public)",
+      "item": [
+        {
+          "name": "SendPost - Get Ad",
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "YOUR_BOT_API_KEY",
+                  "type": "string"
+                }
+              ]
+            },
+            "method": "POST",
+            "header": [],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"SendToChatId\": 123456789\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/ad/SendPost",
+              "host": ["{{baseUrl}}"],
+              "path": ["ad", "SendPost"]
+            },
+            "description": "Public endpoint for bots to request ads. Requires bot API key in Authorization header."
+          }
+        }
+      ]
+    },
+    {
+      "name": "📤 File Upload",
+      "item": [
+        {
+          "name": "Upload Image",
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{accessToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "method": "POST",
+            "header": [],
+            "body": {
+              "mode": "formdata",
+              "formdata": [
+                {
+                  "key": "file",
+                  "type": "file",
+                  "src": []
+                }
+              ]
+            },
+            "url": {
+              "raw": "{{baseUrl}}/upload/image",
+              "host": ["{{baseUrl}}"],
+              "path": ["upload", "image"]
+            }
+          }
+        },
+        {
+          "name": "Upload Video",
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{accessToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "method": "POST",
+            "header": [],
+            "body": {
+              "mode": "formdata",
+              "formdata": [
+                {
+                  "key": "file",
+                  "type": "file",
+                  "src": []
+                }
+              ]
+            },
+            "url": {
+              "raw": "{{baseUrl}}/upload/video",
+              "host": ["{{baseUrl}}"],
+              "path": ["upload", "video"]
+            }
+          }
+        }
+      ]
+    },
+    {
+  "name": "📢 Ads - Additional",
+  "item": [
+    {
+      "name": "Generate Ad Preview",
+      "request": {
+        "method": "POST",
+        "header": [],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"contentType\": \"TEXT\",\n  \"text\": \"Check out our product! Visit {username}\",\n  \"buttons\": [\n    {\"text\": \"Visit\", \"url\": \"https://example.com\"}\n  ],\n  \"poll\": null\n}",
+          "options": {
+            "raw": {
+              "language": "json"
+            }
+          }
+        },
+        "url": {
+          "raw": "{{baseUrl}}/ads/preview",
+          "host": ["{{baseUrl}}"],
+          "path": ["ads", "preview"]
+        }
+      }
+    }
+  ]
+},
+{
+  "name": "🤖 Bots - Additional",
+  "item": [
+    {
+      "name": "Update Bot Token",
+      "request": {
+        "auth": {
+          "type": "bearer",
+          "bearer": [
+            {
+              "key": "token",
+              "value": "{{accessToken}}",
+              "type": "string"
+            }
+          ]
+        },
+        "method": "PUT",
+        "header": [],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"newToken\": \"7123456789:NEW_TOKEN_HERE\"\n}",
+          "options": {
+            "raw": {
+              "language": "json"
+            }
+          }
+        },
+        "url": {
+          "raw": "{{baseUrl}}/bots/:botId/token",
+          "host": ["{{baseUrl}}"],
+          "path": ["bots", ":botId", "token"],
+          "variable": [
+            {
+              "key": "botId",
+              "value": "{{botId}}"
+            }
+          ]
+        }
+      }
+    }
+  ]
+},
+{
+  "name": "👑 Admin - Additional",
+  "item": [
+    {
+      "name": "Update User Role",
+      "request": {
+        "auth": {
+          "type": "bearer",
+          "bearer": [
+            {
+              "key": "token",
+              "value": "{{accessToken}}",
+              "type": "string"
+            }
+          ]
+        },
+        "method": "PUT",
+        "header": [],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"role\": \"MODERATOR\"\n}",
+          "options": {
+            "raw": {
+              "language": "json"
+            }
+          }
+        },
+        "url": {
+          "raw": "{{baseUrl}}/admin/users/:userId/role",
+          "host": ["{{baseUrl}}"],
+          "path": ["admin", "users", ":userId", "role"],
+          "variable": [
+            {
+              "key": "userId",
+              "value": ""
+            }
+          ]
+        }
+      }
+    },
+    {
+      "name": "Update Pricing Tier",
+      "request": {
+        "auth": {
+          "type": "bearer",
+          "bearer": [
+            {
+              "key": "token",
+              "value": "{{accessToken}}",
+              "type": "string"
+            }
+          ]
+        },
+        "method": "PUT",
+        "header": [],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"name\": \"5K Views Updated\",\n  \"priceUsd\": 9.5,\n  \"isActive\": true\n}",
+          "options": {
+            "raw": {
+              "language": "json"
+            }
+          }
+        },
+        "url": {
+          "raw": "{{baseUrl}}/admin/pricing/tiers/:tierId",
+          "host": ["{{baseUrl}}"],
+          "path": ["admin", "pricing", "tiers", ":tierId"],
+          "variable": [
+            {
+              "key": "tierId",
+              "value": ""
+            }
+          ]
+        }
+      }
+    },
+    {
+      "name": "Delete Pricing Tier",
+      "request": {
+        "auth": {
+          "type": "bearer",
+          "bearer": [
+            {
+              "key": "token",
+              "value": "{{accessToken}}",
+              "type": "string"
+            }
+          ]
+        },
+        "method": "DELETE",
+        "header": [],
+        "url": {
+          "raw": "{{baseUrl}}/admin/pricing/tiers/:tierId",
+          "host": ["{{baseUrl}}"],
+          "path": ["admin", "pricing", "tiers", ":tierId"],
+          "variable": [
+            {
+              "key": "tierId",
+              "value": ""
+            }
+          ]
+        }
+      }
+    },
+    {
+      "name": "Bulk Update Settings",
+      "request": {
+        "auth": {
+          "type": "bearer",
+          "bearer": [
+            {
+              "key": "token",
+              "value": "{{accessToken}}",
+              "type": "string"
+            }
+          ]
+        },
+        "method": "PUT",
+        "header": [],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"settings\": {\n    \"platform_fee_percentage\": \"12\",\n    \"min_deposit_usd\": \"10\",\n    \"withdrawal_fee_percentage\": \"3\"\n  }\n}",
+          "options": {
+            "raw": {
+              "language": "json"
+            }
+          }
+        },
+        "url": {
+          "raw": "{{baseUrl}}/admin/settings/bulk",
+          "host": ["{{baseUrl}}"],
+          "path": ["admin", "settings", "bulk"]
+        }
+      }
+    },
+    {
+      "name": "Request Ad Edit",
+      "request": {
+        "auth": {
+          "type": "bearer",
+          "bearer": [
+            {
+              "key": "token",
+              "value": "{{accessToken}}",
+              "type": "string"
+            }
+          ]
+        },
+        "method": "POST",
+        "header": [],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"feedback\": \"Please update the title to be more specific and add more details to the description.\"\n}",
+          "options": {
+            "raw": {
+              "language": "json"
+            }
+          }
+        },
+        "url": {
+          "raw": "{{baseUrl}}/admin/moderation/ads/:adId/request-edit",
+          "host": ["{{baseUrl}}"],
+          "path": ["admin", "moderation", "ads", ":adId", "request-edit"],
+          "variable": [
+            {
+              "key": "adId",
+              "value": "{{adId}}"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "name": "Create FAQ",
+      "request": {
+        "auth": {
+          "type": "bearer",
+          "bearer": [
+            {
+              "key": "token",
+              "value": "{{accessToken}}",
+              "type": "string"
+            }
+          ]
+        },
+        "method": "POST",
+        "header": [],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"category\": \"general\",\n  \"question\": {\n    \"uz\": \"AKHMADS.NET nima?\",\n    \"ru\": \"Что такое AKHMADS.NET?\",\n    \"en\": \"What is AKHMADS.NET?\"\n  },\n  \"answer\": {\n    \"uz\": \"AKHMADS.NET - Telegram bot orqali reklama tarqatish platformasi\",\n    \"ru\": \"AKHMADS.NET - платформа для распространения рекламы через Telegram ботов\",\n    \"en\": \"AKHMADS.NET - Telegram ad distribution platform\"\n  },\n  \"sortOrder\": 1\n}",
+          "options": {
+            "raw": {
+              "language": "json"
+            }
+          }
+        },
+        "url": {
+          "raw": "{{baseUrl}}/faq",
+          "host": ["{{baseUrl}}"],
+          "path": ["faq"]
+        }
+      }
+    },
+    {
+      "name": "Get Contact Messages",
+      "request": {
+        "auth": {
+          "type": "bearer",
+          "bearer": [
+            {
+              "key": "token",
+              "value": "{{accessToken}}",
+              "type": "string"
+            }
+          ]
+        },
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "{{baseUrl}}/contact/messages?status=new&limit=50",
+          "host": ["{{baseUrl}}"],
+          "path": ["contact", "messages"],
+          "query": [
+            {
+              "key": "status",
+              "value": "new"
+            },
+            {
+              "key": "limit",
+              "value": "50"
+            }
+          ]
+        }
+      }
+    }
+  ]
+},
+{
+  "name": "💰 Wallet - Additional",
+  "item": [
+    {
+      "name": "Balance Integrity Check",
+      "request": {
+        "auth": {
+          "type": "bearer",
+          "bearer": [
+            {
+              "key": "token",
+              "value": "{{accessToken}}",
+              "type": "string"
+            }
+          ]
+        },
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "{{baseUrl}}/wallet/balance-check",
+          "host": ["{{baseUrl}}"],
+          "path": ["wallet", "balance-check"]
+        }
+      }
+    }
+  ]
+},
+    {
+      "name": "❓ FAQ & Contact",
+      "item": [
+        {
+          "name": "Get FAQs",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/faq?category=general",
+              "host": ["{{baseUrl}}"],
+              "path": ["faq"],
+              "query": [
+                {
+                  "key": "category",
+                  "value": "general"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "Submit Contact Message",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Sardor Karimov\",\n  \"email\": \"sardor@example.com\",\n  \"subject\": \"Question about pricing\",\n  \"message\": \"I have a question about bulk pricing discounts...\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/contact",
+              "host": ["{{baseUrl}}"],
+              "path": ["contact"]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "🏥 Health Check",
+      "item": [
+        {
+          "name": "Health Check",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "http://localhost:3000/health",
+              "protocol": "http",
+              "host": ["localhost"],
+              "port": "3000",
+              "path": ["health"]
+            }
+          }
+        }
+      ]
+    }
+  ]
+}
