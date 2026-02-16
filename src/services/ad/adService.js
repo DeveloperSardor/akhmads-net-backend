@@ -1,4 +1,4 @@
-// src/servicees/ad/adService.js
+// src/services/ad/adService.js
 import prisma from '../../config/database.js';
 import walletService from '../wallet/walletService.js';
 import pricingCalculator from '../../utils/pricing.js';
@@ -7,11 +7,9 @@ import { NotFoundError, InsufficientFundsError, ValidationError } from '../../ut
 import encryption from '../../utils/encryption.js';
 import telegramAPI from '../../utils/telegram-api.js';
 
-
-
 /**
  * Ad Service
- * Handles ad creation, management, and lifecycle
+ * Handles ad creation, management, and lifecycle with moderation workflow
  */
 class AdService {
   /**
@@ -74,7 +72,7 @@ class AdService {
   }
 
   /**
-   * Create new ad
+   * Create new ad (DRAFT status - no charge yet)
    */
   async createAd(advertiserId, data) {
     try {
@@ -87,7 +85,7 @@ class AdService {
         promoCode: data.promoCode,
       });
 
-      // Create ad
+      // Create ad in DRAFT status
       const ad = await prisma.ad.create({
         data: {
           advertiserId,
@@ -110,7 +108,7 @@ class AdService {
           platformFee: pricing.platformFee,
           botOwnerRevenue: pricing.botOwnerRevenue,
           remainingBudget: pricing.totalCost,
-          status: 'DRAFT',
+          status: 'DRAFT', // ✅ Start as DRAFT
           targeting: data.targeting ? JSON.stringify(data.targeting) : null,
           excludedUserIds: data.excludedUserIds ? JSON.stringify(data.excludedUserIds) : null,
           specificBotIds: data.specificBotIds ? JSON.stringify(data.specificBotIds) : null,
@@ -119,7 +117,7 @@ class AdService {
         },
       });
 
-      logger.info(`Ad created: ${ad.id}`);
+      logger.info(`✅ Ad created (DRAFT): ${ad.id}`);
       return ad;
     } catch (error) {
       logger.error('Create ad failed:', error);
@@ -128,7 +126,8 @@ class AdService {
   }
 
   /**
-   * Submit ad for moderation
+   * ✅ NEW - Submit ad for moderation
+   * Reserves funds from wallet and changes status to PENDING_REVIEW
    */
   async submitAd(adId, advertiserId) {
     try {
@@ -141,22 +140,30 @@ class AdService {
       }
 
       if (ad.status !== 'DRAFT') {
-        throw new ValidationError('Ad is not in draft status');
+        throw new ValidationError('Only draft ads can be submitted');
       }
 
       // Check wallet balance
       const wallet = await walletService.getWallet(advertiserId);
-      if (wallet.available < ad.totalCost) {
-        throw new InsufficientFundsError('Insufficient balance to submit ad');
+      const available = parseFloat(wallet.available);
+      const cost = parseFloat(ad.totalCost);
+
+      if (available < cost) {
+        throw new InsufficientFundsError(
+          `Insufficient balance. Available: $${available.toFixed(2)}, Required: $${cost.toFixed(2)}`
+        );
       }
 
       // Reserve funds
-      await walletService.reserve(advertiserId, ad.totalCost, ad.id);
+      await walletService.reserveForAd(advertiserId, adId, cost);
 
-      // Update ad status
+      // Update ad status to PENDING_REVIEW
       const updated = await prisma.ad.update({
         where: { id: adId },
-        data: { status: 'SUBMITTED' },
+        data: { 
+          status: 'PENDING_REVIEW',
+          // scheduledAt can be set here if needed
+        },
       });
 
       // Increment promo code usage
@@ -167,10 +174,107 @@ class AdService {
         });
       }
 
-      logger.info(`Ad submitted: ${adId}`);
+      logger.info(`📤 Ad submitted for review: ${adId}, cost=$${cost}`);
       return updated;
     } catch (error) {
       logger.error('Submit ad failed:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * ✅ NEW - Approve ad (moderator action)
+   * Confirms reserved funds and activates ad
+   */
+  async approveAd(adId, moderatorId, scheduledStart = null) {
+    try {
+      const ad = await prisma.ad.findUnique({
+        where: { id: adId },
+        include: { advertiser: true },
+      });
+
+      if (!ad) {
+        throw new NotFoundError('Ad not found');
+      }
+
+      if (ad.status !== 'PENDING_REVIEW') {
+        throw new ValidationError('Only pending ads can be approved');
+      }
+
+      const cost = parseFloat(ad.totalCost);
+
+      // Confirm reserved funds (reserved → totalSpent)
+      await walletService.confirmAdReserve(ad.advertiserId, adId, cost);
+
+      // Update ad status
+      const newStatus = scheduledStart ? 'SCHEDULED' : 'RUNNING';
+      
+      const updated = await prisma.ad.update({
+        where: { id: adId },
+        data: {
+          status: newStatus,
+          moderatedBy: moderatorId,
+          moderatedAt: new Date(),
+          startedAt: newStatus === 'RUNNING' ? new Date() : null,
+          scheduledAt: scheduledStart || null,
+        },
+      });
+
+      logger.info(`✅ Ad approved: ${adId}, status=${newStatus}`);
+
+      // TODO: Send notification to advertiser
+      // await notificationService.send(ad.advertiserId, 'AD_APPROVED', { adId, title: ad.title });
+
+      return updated;
+    } catch (error) {
+      logger.error('Approve ad failed:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * ✅ NEW - Reject ad (moderator action)
+   * Refunds reserved funds and marks ad as rejected
+   */
+  async rejectAd(adId, moderatorId, reason) {
+    try {
+      const ad = await prisma.ad.findUnique({
+        where: { id: adId },
+        include: { advertiser: true },
+      });
+
+      if (!ad) {
+        throw new NotFoundError('Ad not found');
+      }
+
+      if (ad.status !== 'PENDING_REVIEW') {
+        throw new ValidationError('Only pending ads can be rejected');
+      }
+
+      const cost = parseFloat(ad.totalCost);
+
+      // Refund reserved funds (reserved → available)
+      await walletService.refundAdReserve(ad.advertiserId, adId, cost);
+
+      // Update ad status
+      const updated = await prisma.ad.update({
+        where: { id: adId },
+        data: {
+          status: 'REJECTED',
+          moderatedBy: moderatorId,
+          moderatedAt: new Date(),
+          rejectionReason: reason,
+        },
+      });
+
+      logger.info(`❌ Ad rejected: ${adId}, reason: ${reason}`);
+
+      // TODO: Send notification to advertiser
+      // await notificationService.send(ad.advertiserId, 'AD_REJECTED', { adId, title: ad.title, reason });
+
+      return updated;
+    } catch (error) {
+      logger.error('Reject ad failed:', error);
       throw error;
     }
   }
@@ -180,9 +284,13 @@ class AdService {
    */
   async getUserAds(advertiserId, filters = {}) {
     try {
-      const { status, limit = 20, offset = 0 } = filters;
+      const { status, limit = 20, offset = 0, includeArchived = false } = filters;
 
-      const where = { advertiserId };
+      const where = { 
+        advertiserId,
+        isArchived: includeArchived ? undefined : false,
+      };
+      
       if (status) where.status = status;
 
       const ads = await prisma.ad.findMany({
@@ -217,6 +325,13 @@ class AdService {
               email: true,
             },
           },
+          moderator: {
+            select: {
+              id: true,
+              firstName: true,
+              lastName: true,
+            },
+          },
         },
       });
 
@@ -232,7 +347,7 @@ class AdService {
   }
 
   /**
-   * Update ad (only in DRAFT status)
+   * Update ad (only in DRAFT or REJECTED status)
    */
   async updateAd(adId, advertiserId, data) {
     try {
@@ -244,8 +359,8 @@ class AdService {
         throw new NotFoundError('Ad not found');
       }
 
-      if (ad.status !== 'DRAFT') {
-        throw new ValidationError('Only draft ads can be edited');
+      if (!['DRAFT', 'REJECTED'].includes(ad.status)) {
+        throw new ValidationError('Only draft or rejected ads can be edited');
       }
 
       // Recalculate pricing if impressions/targeting changed
@@ -281,10 +396,12 @@ class AdService {
           targeting: data.targeting ? JSON.stringify(data.targeting) : undefined,
           excludedUserIds: data.excludedUserIds ? JSON.stringify(data.excludedUserIds) : undefined,
           specificBotIds: data.specificBotIds ? JSON.stringify(data.specificBotIds) : undefined,
+          status: ad.status === 'REJECTED' ? 'DRAFT' : undefined, // Reset to DRAFT if was rejected
+          rejectionReason: ad.status === 'REJECTED' ? null : undefined, // Clear rejection reason
         },
       });
 
-      logger.info(`Ad updated: ${adId}`);
+      logger.info(`📝 Ad updated: ${adId}`);
       return updated;
     } catch (error) {
       logger.error('Update ad failed:', error);
@@ -314,7 +431,7 @@ class AdService {
         data: { status: 'PAUSED' },
       });
 
-      logger.info(`Ad paused: ${adId}`);
+      logger.info(`⏸️ Ad paused: ${adId}`);
       return updated;
     } catch (error) {
       logger.error('Pause ad failed:', error);
@@ -344,10 +461,49 @@ class AdService {
         data: { status: 'RUNNING' },
       });
 
-      logger.info(`Ad resumed: ${adId}`);
+      logger.info(`▶️ Ad resumed: ${adId}`);
       return updated;
     } catch (error) {
       logger.error('Resume ad failed:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * ✅ UPDATED - Delete ad with proper refund handling
+   */
+  async deleteAd(adId, advertiserId) {
+    try {
+      const ad = await prisma.ad.findFirst({
+        where: { id: adId, advertiserId },
+      });
+
+      if (!ad) {
+        throw new NotFoundError('Ad not found');
+      }
+
+      // Can delete: DRAFT, REJECTED, COMPLETED, PAUSED
+      const deletableStatuses = ['DRAFT', 'REJECTED', 'COMPLETED', 'PAUSED'];
+      
+      if (!deletableStatuses.includes(ad.status)) {
+        throw new ValidationError(`Cannot delete ad with status: ${ad.status}`);
+      }
+
+      // Refund if in PENDING_REVIEW (funds still reserved)
+      if (ad.status === 'PENDING_REVIEW') {
+        const cost = parseFloat(ad.totalCost);
+        await walletService.refundAdReserve(advertiserId, adId, cost);
+        logger.info(`💰 Refunded $${cost} for deleted ad ${adId}`);
+      }
+
+      await prisma.ad.delete({
+        where: { id: adId },
+      });
+
+      logger.info(`🗑️ Ad deleted: ${adId}`);
+      return true;
+    } catch (error) {
+      logger.error('Delete ad failed:', error);
       throw error;
     }
   }
@@ -394,7 +550,7 @@ class AdService {
         },
       });
 
-      logger.info(`Ad duplicated: ${adId} -> ${duplicate.id}`);
+      logger.info(`📋 Ad duplicated: ${adId} → ${duplicate.id}`);
       return duplicate;
     } catch (error) {
       logger.error('Duplicate ad failed:', error);
@@ -403,42 +559,9 @@ class AdService {
   }
 
   /**
-   * Save/unsave ad
+   * Archive ad
    */
-  async toggleSaveAd(adId, userId) {
-    try {
-      const existing = await prisma.savedAd.findUnique({
-        where: {
-          userId_adId: {
-            userId,
-            adId,
-          },
-        },
-      });
-
-      if (existing) {
-        await prisma.savedAd.delete({
-          where: { id: existing.id },
-        });
-        logger.info(`Ad unsaved: ${adId}`);
-        return { saved: false };
-      } else {
-        await prisma.savedAd.create({
-          data: { userId, adId },
-        });
-        logger.info(`Ad saved: ${adId}`);
-        return { saved: true };
-      }
-    } catch (error) {
-      logger.error('Toggle save ad failed:', error);
-      throw error;
-    }
-  }
-
-  /**
-   * Delete ad
-   */
-  async deleteAd(adId, advertiserId) {
+  async archiveAd(adId, advertiserId) {
     try {
       const ad = await prisma.ad.findFirst({
         where: { id: adId, advertiserId },
@@ -448,24 +571,45 @@ class AdService {
         throw new NotFoundError('Ad not found');
       }
 
-      // Can only delete DRAFT, REJECTED, or COMPLETED ads
-      if (!['DRAFT', 'REJECTED', 'COMPLETED'].includes(ad.status)) {
-        throw new ValidationError('Cannot delete active ad');
+      if (!['COMPLETED', 'REJECTED', 'PAUSED'].includes(ad.status)) {
+        throw new ValidationError('Can only archive completed, rejected, or paused ads');
       }
 
-      // If funds were reserved, release them
-      if (['SUBMITTED', 'APPROVED'].includes(ad.status) && ad.remainingBudget > 0) {
-        await walletService.releaseReserved(advertiserId, ad.remainingBudget);
-      }
-
-      await prisma.ad.delete({
+      const updated = await prisma.ad.update({
         where: { id: adId },
+        data: { isArchived: true },
       });
 
-      logger.info(`Ad deleted: ${adId}`);
-      return true;
+      logger.info(`📦 Ad archived: ${adId}`);
+      return updated;
     } catch (error) {
-      logger.error('Delete ad failed:', error);
+      logger.error('Archive ad failed:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * Unarchive ad
+   */
+  async unarchiveAd(adId, advertiserId) {
+    try {
+      const ad = await prisma.ad.findFirst({
+        where: { id: adId, advertiserId },
+      });
+
+      if (!ad) {
+        throw new NotFoundError('Ad not found');
+      }
+
+      const updated = await prisma.ad.update({
+        where: { id: adId },
+        data: { isArchived: false },
+      });
+
+      logger.info(`📂 Ad unarchived: ${adId}`);
+      return updated;
+    } catch (error) {
+      logger.error('Unarchive ad failed:', error);
       throw error;
     }
   }
@@ -526,13 +670,10 @@ class AdService {
     }
   }
 
-
-
-
   /**
- * Archive ad
- */
-  async archiveAd(adId, advertiserId) {
+   * Send test ad via platform bot
+   */
+  async sendTestAd(adId, advertiserId, telegramUserId) {
     try {
       const ad = await prisma.ad.findFirst({
         where: { id: adId, advertiserId },
@@ -542,211 +683,120 @@ class AdService {
         throw new NotFoundError('Ad not found');
       }
 
-      if (!['COMPLETED', 'REJECTED', 'PAUSED'].includes(ad.status)) {
-        throw new ValidationError('Can only archive completed, rejected, or paused ads');
-      }
-
-      const updated = await prisma.ad.update({
-        where: { id: adId },
-        data: { isArchived: true },
+      // Get user's Telegram ID
+      const user = await prisma.user.findUnique({
+        where: { id: advertiserId },
+        select: { telegramId: true, username: true, firstName: true }
       });
 
-      logger.info(`Ad archived: ${adId}`);
-      return updated;
+      const targetUserId = user?.telegramId || telegramUserId;
+
+      if (!targetUserId) {
+        throw new ValidationError('Telegram ID not found');
+      }
+
+      // Use platform bot token
+      const botToken = process.env.TELEGRAM_BOT_TOKEN;
+
+      if (!botToken) {
+        throw new Error('TELEGRAM_BOT_TOKEN not configured');
+      }
+
+      logger.info(`Sending test ad to user ${targetUserId}`);
+
+      // Prepare message
+      const message = await this.prepareTestMessage(ad);
+
+      // Send message
+      try {
+        if (ad.contentType === 'MEDIA' && ad.mediaUrl) {
+          await telegramAPI.sendPhoto(botToken, {
+            chat_id: targetUserId,
+            photo: ad.mediaUrl,
+            caption: `🧪 TEST AD\n\n${message.text}`,
+            parse_mode: message.parseMode,
+            reply_markup: message.replyMarkup,
+          });
+        } else {
+          await telegramAPI.sendMessage(botToken, {
+            chat_id: targetUserId,
+            text: `🧪 TEST AD\n\n${message.text}`,
+            parse_mode: message.parseMode,
+            reply_markup: message.replyMarkup,
+          });
+        }
+
+        logger.info(`✅ Test ad sent successfully`);
+        
+        return {
+          success: true,
+          message: 'Test ad sent to your Telegram!',
+        };
+      } catch (error) {
+        logger.error('Telegram API error:', error);
+        
+        const errorMsg = error.message || '';
+        
+        if (errorMsg === 'USER_BLOCKED_BOT') {
+          throw new ValidationError('You blocked the bot. Please unblock and try again.');
+        }
+        
+        if (errorMsg === 'CHAT_NOT_FOUND') {
+          throw new ValidationError('Invalid Telegram ID');
+        }
+        
+        throw new ValidationError(`Failed to send: ${errorMsg}`);
+      }
     } catch (error) {
-      logger.error('Archive ad failed:', error);
+      logger.error('Send test ad failed:', error);
       throw error;
     }
   }
 
   /**
-   * Unarchive ad
+   * Prepare test message
    */
-  async unarchiveAd(adId, advertiserId) {
+  async prepareTestMessage(ad) {
     try {
-      const ad = await prisma.ad.findFirst({
-        where: { id: adId, advertiserId },
-      });
+      let text = ad.text || '';
+      let parseMode = 'HTML';
 
-      if (!ad) {
-        throw new NotFoundError('Ad not found');
+      if (ad.contentType === 'MARKDOWN') {
+        parseMode = 'Markdown';
+        text = ad.markdownContent || text;
+      } else if (ad.contentType === 'HTML') {
+        text = ad.htmlContent || text;
       }
 
-      const updated = await prisma.ad.update({
-        where: { id: adId },
-        data: { isArchived: false },
-      });
-
-      logger.info(`Ad unarchived: ${adId}`);
-      return updated;
-    } catch (error) {
-      logger.error('Unarchive ad failed:', error);
-      throw error;
-    }
-  }
-
-  /**
-   * Get saved ads
-   */
-  async getSavedAds(userId) {
-    try {
-      const saved = await prisma.savedAd.findMany({
-        where: { userId },
-        include: {
-          ad: {
-            include: {
-              advertiser: {
-                select: {
-                  id: true,
-                  firstName: true,
-                  lastName: true,
-                },
-              },
-            },
-          },
-        },
-        orderBy: { createdAt: 'desc' },
-      });
-
-      return saved.map(s => s.ad);
-    } catch (error) {
-      logger.error('Get saved ads failed:', error);
-      throw error;
-    }
-  }
-
-
-
-
-/**
-
-/**
- * Send test ad via platform bot (@akhmadsnetbot)
- */
-async sendTestAd(adId, advertiserId, telegramUserId) {
-  try {
-    const ad = await prisma.ad.findFirst({
-      where: { id: adId, advertiserId },
-    });
-
-    if (!ad) {
-      throw new NotFoundError('Ad not found');
-    }
-
-    // ✅ GET USER'S TELEGRAM ID
-    const user = await prisma.user.findUnique({
-      where: { id: advertiserId },
-      select: { telegramId: true, username: true, firstName: true }
-    });
-
-    const targetUserId = user?.telegramId || telegramUserId;
-
-    if (!targetUserId) {
-      throw new ValidationError('Telegram ID not found');
-    }
-
-    // ✅ USE PLATFORM BOT TOKEN FROM ENV
-    const botToken = process.env.TELEGRAM_BOT_TOKEN;
-
-    if (!botToken) {
-      throw new Error('TELEGRAM_BOT_TOKEN not configured in .env');
-    }
-
-    logger.info(`Sending test ad to user ${targetUserId} via platform bot`);
-
-    // ✅ PREPARE MESSAGE
-    const message = await this.prepareTestMessage(ad);
-
-    // ✅ SEND MESSAGE
-    try {
-      if (ad.contentType === 'MEDIA' && ad.mediaUrl) {
-        await telegramAPI.sendPhoto(botToken, {
-          chat_id: targetUserId,
-          photo: ad.mediaUrl,
-          caption: `🧪 TEST AD\n\n${message.text}`,
-          parse_mode: message.parseMode,
-          reply_markup: message.replyMarkup,
-        });
-      } else {
-        await telegramAPI.sendMessage(botToken, {
-          chat_id: targetUserId,
-          text: `🧪 TEST AD\n\n${message.text}`,
-          parse_mode: message.parseMode,
-          reply_markup: message.replyMarkup,
-        });
+      // Prepare buttons
+      let replyMarkup = null;
+      if (ad.buttons) {
+        const buttons = typeof ad.buttons === 'string' 
+          ? JSON.parse(ad.buttons) 
+          : ad.buttons;
+        
+        if (buttons && buttons.length > 0) {
+          replyMarkup = {
+            inline_keyboard: [
+              buttons.map(btn => ({
+                text: btn.text,
+                url: btn.url,
+              })),
+            ],
+          };
+        }
       }
 
-      logger.info(`✅ Test ad sent successfully`);
-      
       return {
-        success: true,
-        message: 'Test ad sent to your Telegram!',
+        text,
+        parseMode,
+        replyMarkup,
       };
     } catch (error) {
-      logger.error('Telegram API error:', error);
-      
-      const errorMsg = error.message || '';
-      
-      if (errorMsg === 'USER_BLOCKED_BOT') {
-        throw new ValidationError('You blocked the bot. Please unblock and try again.');
-      }
-      
-      if (errorMsg === 'CHAT_NOT_FOUND') {
-        throw new ValidationError('Invalid Telegram ID');
-      }
-      
-      throw new ValidationError(`Failed to send: ${errorMsg}`);
+      logger.error('Prepare test message failed:', error);
+      throw new ValidationError('Failed to prepare test message');
     }
-  } catch (error) {
-    logger.error('Send test ad failed:', error);
-    throw error;
   }
-}
-
-/**
- * Prepare test message
- */
-async prepareTestMessage(ad) {
-  try {
-    let text = ad.text || '';
-    let parseMode = 'HTML';
-
-    if (ad.contentType === 'MARKDOWN') {
-      parseMode = 'Markdown';
-      text = ad.markdownContent || text;
-    } else if (ad.contentType === 'HTML') {
-      text = ad.htmlContent || text;
-    }
-
-    // Prepare buttons
-    let replyMarkup = null;
-    if (ad.buttons) {
-      const buttons = typeof ad.buttons === 'string' 
-        ? JSON.parse(ad.buttons) 
-        : ad.buttons;
-      
-      if (buttons && buttons.length > 0) {
-        replyMarkup = {
-          inline_keyboard: [
-            buttons.map(btn => ({
-              text: btn.text,
-              url: btn.url,
-            })),
-          ],
-        };
-      }
-    }
-
-    return {
-      text,
-      parseMode,
-      replyMarkup,
-    };
-  } catch (error) {
-    logger.error('Prepare test message failed:', error);
-    throw new ValidationError('Failed to prepare test message');
-  }
-}
 }
 
 const adService = new AdService();
