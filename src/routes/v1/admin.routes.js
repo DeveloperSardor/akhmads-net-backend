@@ -1,4 +1,5 @@
 import { Router } from 'express';
+import adService from '../../services/ad/adService.js';  // ✅ NEW - Use main adService
 import adModerationService from '../../services/ad/adModerationService.js';
 import moderationService from '../../services/admin/moderationService.js';
 import userManagementService from '../../services/admin/userManagementService.js';
@@ -18,7 +19,189 @@ const router = Router();
 // All routes require authentication
 router.use(authenticate);
 
-// ==================== MODERATION ====================
+// ==================== MODERATION - ADS ====================
+
+/**
+ * GET /api/v1/admin/moderation/ads/pending
+ * Pending review ads (PENDING_REVIEW status)
+ */
+router.get(
+  '/moderation/ads/pending',
+  requireModerator,
+  validate([
+    query('limit').optional().isInt({ min: 1, max: 100 }),
+    query('offset').optional().isInt({ min: 0 }),
+  ]),
+  async (req, res, next) => {
+    try {
+      const { limit = 20, offset = 0 } = req.query;
+      
+      // Get ads with PENDING_REVIEW status
+      const ads = await prisma.ad.findMany({
+        where: { status: 'PENDING_REVIEW' },
+        include: {
+          advertiser: {
+            select: {
+              id: true,
+              firstName: true,
+              lastName: true,
+              username: true,
+              email: true,
+              telegramId: true,
+            },
+          },
+        },
+        orderBy: { createdAt: 'asc' }, // Oldest first
+        take: parseInt(limit),
+        skip: parseInt(offset),
+      });
+
+      const total = await prisma.ad.count({
+        where: { status: 'PENDING_REVIEW' },
+      });
+
+      response.paginated(res, ads, {
+        page: Math.floor(offset / limit) + 1,
+        limit: parseInt(limit),
+        total,
+      });
+    } catch (error) {
+      next(error);
+    }
+  }
+);
+
+/**
+ * GET /api/v1/admin/moderation/ads/:id
+ * Get ad details for review
+ */
+router.get(
+  '/moderation/ads/:id',
+  requireModerator,
+  validate([param('id').isString()]),
+  async (req, res, next) => {
+    try {
+      const ad = await adService.getAdById(req.params.id);
+      response.success(res, { ad });
+    } catch (error) {
+      next(error);
+    }
+  }
+);
+
+/**
+ * POST /api/v1/admin/moderation/ads/:id/approve
+ * Approve ad - confirms wallet reserve and activates ad
+ */
+router.post(
+  '/moderation/ads/:id/approve',
+  requireModerator,
+  validate([
+    param('id').isString(),
+    body('scheduledStart').optional().isISO8601(),
+  ]),
+  async (req, res, next) => {
+    try {
+      const scheduledStart = req.body.scheduledStart 
+        ? new Date(req.body.scheduledStart) 
+        : null;
+
+      const ad = await adService.approveAd(
+        req.params.id, 
+        req.userId,
+        scheduledStart
+      );
+
+      response.success(res, { ad }, 'Ad approved successfully');
+    } catch (error) {
+      next(error);
+    }
+  }
+);
+
+/**
+ * POST /api/v1/admin/moderation/ads/:id/reject
+ * Reject ad - refunds wallet reserve
+ */
+router.post(
+  '/moderation/ads/:id/reject',
+  requireModerator,
+  validate([
+    param('id').isString(),
+    body('reason').isString().notEmpty().withMessage('Rejection reason is required'),
+  ]),
+  async (req, res, next) => {
+    try {
+      const ad = await adService.rejectAd(
+        req.params.id,
+        req.userId,
+        req.body.reason
+      );
+
+      response.success(res, { ad }, 'Ad rejected successfully');
+    } catch (error) {
+      next(error);
+    }
+  }
+);
+
+/**
+ * GET /api/v1/admin/moderation/ads/all
+ * All ads with filters (for history/search)
+ */
+router.get(
+  '/moderation/ads/all',
+  requireModerator,
+  validate([
+    query('status').optional().isString(),
+    query('limit').optional().isInt({ min: 1, max: 100 }),
+    query('offset').optional().isInt({ min: 0 }),
+  ]),
+  async (req, res, next) => {
+    try {
+      const { status, limit = 20, offset = 0 } = req.query;
+
+      const where = {};
+      if (status) where.status = status;
+
+      const ads = await prisma.ad.findMany({
+        where,
+        include: {
+          advertiser: {
+            select: {
+              id: true,
+              firstName: true,
+              lastName: true,
+              username: true,
+            },
+          },
+          moderator: {
+            select: {
+              id: true,
+              firstName: true,
+              lastName: true,
+            },
+          },
+        },
+        orderBy: { createdAt: 'desc' },
+        take: parseInt(limit),
+        skip: parseInt(offset),
+      });
+
+      const total = await prisma.ad.count({ where });
+
+      response.paginated(res, ads, {
+        page: Math.floor(offset / limit) + 1,
+        limit: parseInt(limit),
+        total,
+      });
+    } catch (error) {
+      next(error);
+    }
+  }
+);
+
+// ==================== LEGACY MODERATION ROUTES (Keep for compatibility) ====================
 
 router.get('/moderation/queue', requireModerator, async (req, res, next) => {
   try {
@@ -52,37 +235,6 @@ router.get(
 );
 
 router.post(
-  '/moderation/ads/:id/approve',
-  requireModerator,
-  validate([param('id').isString()]),
-  async (req, res, next) => {
-    try {
-      const ad = await adModerationService.approveAd(req.params.id, req.userId);
-      response.success(res, { ad }, 'Ad approved');
-    } catch (error) {
-      next(error);
-    }
-  }
-);
-
-router.post(
-  '/moderation/ads/:id/reject',
-  requireModerator,
-  validate([
-    param('id').isString(),
-    body('reason').isString().notEmpty(),
-  ]),
-  async (req, res, next) => {
-    try {
-      const ad = await adModerationService.rejectAd(req.params.id, req.userId, req.body.reason);
-      response.success(res, { ad }, 'Ad rejected');
-    } catch (error) {
-      next(error);
-    }
-  }
-);
-
-router.post(
   '/moderation/ads/:id/request-edit',
   requireModerator,
   validate([
@@ -98,6 +250,8 @@ router.post(
     }
   }
 );
+
+// ==================== MODERATION - BOTS ====================
 
 router.get(
   '/moderation/bots',
@@ -153,18 +307,10 @@ router.post(
 );
 
 // ==================== WITHDRAWALS ====================
-// YANGI LOGIKA:
-// - Faqat BEP-20 USDT
-// - $3 fixed fee
-// - Qo'lda (manual) admin tasdiqlaydi
-// - Pending list da amountToSend ko'rsatiladi (admin shu miqdorni jo'natadi)
-// - Approve → user ga Telegram xabar
-// - Reject  → pul qaytariladi + user ga Telegram xabar
 
 /**
  * GET /api/v1/admin/withdrawals/pending
  * Kutayotgan withdraw so'rovlari
- * Admin ko'radi: kim, qancha, qaysi manzilga jo'natish kerak
  */
 router.get(
   '/withdrawals/pending',
@@ -182,7 +328,6 @@ router.get(
         parseInt(offset)
       );
 
-      // Admin uchun qulay format — amountToSend aniq ko'rsatiladi
       const enriched = result.withdrawals.map(w => ({
         id: w.id,
         status: w.status,
@@ -198,10 +343,10 @@ router.get(
         payment: {
           network: 'BEP-20 (BSC)',
           coin: 'USDT',
-          address: w.address,                           // ← shu manzilga jo'natiladi
-          amountRequested: parseFloat(w.amount),        // user so'ragan
-          fee: parseFloat(w.fee),                       // $3 komisyon
-          amountToSend: parseFloat(w.netAmount),        // ← ADMIN SHU MIQDORNI JO'NATADI
+          address: w.address,
+          amountRequested: parseFloat(w.amount),
+          fee: parseFloat(w.fee),
+          amountToSend: parseFloat(w.netAmount),
         },
       }));
 
@@ -218,7 +363,7 @@ router.get(
 
 /**
  * GET /api/v1/admin/withdrawals/all
- * Barcha withdraw tarixi (status bo'yicha filter)
+ * Barcha withdraw tarixi
  */
 router.get(
   '/withdrawals/all',
@@ -268,13 +413,6 @@ router.get(
 
 /**
  * POST /api/v1/admin/withdrawals/:id/approve
- * Withdraw tasdiqlash
- *
- * MUHIM: Bu tugmani bosishdan OLDIN USDT ni qo'lda jo'natgan bo'ling!
- * Bosganingizdan so'ng:
- *   → pul tizimdan chiqadi (reserved → confirmed)
- *   → tranzaksiya yoziladi
- *   → user ga Telegram xabar ketadi
  */
 router.post(
   '/withdrawals/:id/approve',
@@ -283,7 +421,7 @@ router.post(
   async (req, res, next) => {
     try {
       const withdrawal = await withdrawService.approveWithdrawal(req.params.id, req.userId);
-      response.success(res, { withdrawal }, 'Withdraw tasdiqlandi. Foydalanuvchiga xabar yuborildi.');
+      response.success(res, { withdrawal }, 'Withdraw approved');
     } catch (error) {
       next(error);
     }
@@ -292,18 +430,13 @@ router.post(
 
 /**
  * POST /api/v1/admin/withdrawals/:id/reject
- * Withdraw rad etish
- *
- * Rad etilganda:
- *   → pul qaytariladi (reserved → available)
- *   → user ga Telegram xabar ketadi (sabab bilan)
  */
 router.post(
   '/withdrawals/:id/reject',
   requireAdmin,
   validate([
     param('id').isString(),
-    body('reason').isString().notEmpty().withMessage('Rad etish sababi kiritilishi shart'),
+    body('reason').isString().notEmpty(),
   ]),
   async (req, res, next) => {
     try {
@@ -312,7 +445,7 @@ router.post(
         req.userId,
         req.body.reason
       );
-      response.success(res, { withdrawal }, 'Withdraw rad etildi. Mablag\' qaytarildi.');
+      response.success(res, { withdrawal }, 'Withdraw rejected');
     } catch (error) {
       next(error);
     }
