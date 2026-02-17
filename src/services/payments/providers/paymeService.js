@@ -1,50 +1,71 @@
-import crypto from 'crypto';
-import logger from '../../../utils/logger.js';
-import { PaymentError } from '../../../utils/errors.js';
+import logger from '../../utils/logger.js';
+import { PaymentError } from '../../utils/errors.js';
 
 /**
  * Payme Payment Provider
- * Uzbekistan's popular payment gateway
  * Docs: https://developer.help.paycom.uz
+ * 
+ * FLOW:
+ * 1. Frontend: POST /deposit/initiate → get paymentUrl
+ * 2. User: Opens paymentUrl → pays on Payme
+ * 3. Payme: CheckPerformTransaction → CreateTransaction → PerformTransaction
+ * 4. Wallet: credited automatically on PerformTransaction
  */
 class PaymeService {
   constructor() {
     this.merchantId = process.env.PAYME_MERCHANT_ID;
     this.secretKey = process.env.PAYME_SECRET_KEY;
-    this.baseUrl = 'https://checkout.paycom.uz';
+    this.testSecretKey = process.env.PAYME_TEST_SECRET_KEY;
+    this.isTest = process.env.PAYME_TEST_MODE === 'true';
+    this.baseUrl = this.isTest 
+      ? 'https://test.paycom.uz' 
+      : 'https://checkout.paycom.uz';
+    
+    // 1 USD = UZS (update this or get from API)
+    this.usdToUzs = parseFloat(process.env.USD_TO_UZS_RATE || '12700');
   }
 
   /**
-   * Generate payment URL
+   * Convert USD to tiyin (1 UZS = 100 tiyin)
    */
-  async createPayment(data) {
+  usdToTiyin(usd) {
+    return Math.round(usd * this.usdToUzs * 100);
+  }
+
+  /**
+   * Convert tiyin to USD
+   */
+  tiyinToUsd(tiyin) {
+    return tiyin / 100 / this.usdToUzs;
+  }
+
+  /**
+   * Generate Payme checkout URL
+   * User opens this URL to pay
+   */
+  createPaymentUrl(transactionId, amountUsd) {
     try {
-      const { userId, amount, transactionId } = data;
+      const amountTiyin = this.usdToTiyin(amountUsd);
 
-      // Amount in tiyin (1 UZS = 100 tiyin)
-      const amountTiyin = Math.round(amount * 100);
-
-      // Encode merchant data
-      const params = btoa(
+      // Encode merchant data as Base64
+      const params = Buffer.from(
         `m=${this.merchantId};ac.order_id=${transactionId};a=${amountTiyin}`
-      );
+      ).toString('base64');
 
       const paymentUrl = `${this.baseUrl}/${params}`;
 
-      logger.info(`Payme payment created: ${transactionId}`);
+      logger.info(`Payme URL created: ${transactionId}, amount=${amountUsd}USD (${amountTiyin} tiyin)`);
 
-      return {
-        paymentUrl,
-        transactionId,
-      };
+      return paymentUrl;
     } catch (error) {
-      logger.error('Payme create payment failed:', error);
-      throw new PaymentError('Failed to create Payme payment');
+      logger.error('Payme create URL failed:', error);
+      throw new PaymentError('Failed to create Payme payment URL');
     }
   }
 
   /**
-   * Verify authorization header
+   * Verify Payme Basic Auth header
+   * Format: "Basic base64(Paycom:SECRET_KEY)"
    */
   verifyAuth(authHeader) {
     try {
@@ -56,7 +77,10 @@ class PaymeService {
       const credentials = Buffer.from(base64Credentials, 'base64').toString('utf-8');
       const [username, password] = credentials.split(':');
 
-      return username === 'Paycom' && password === this.secretKey;
+      // Check test or production key
+      const validKey = this.isTest ? this.testSecretKey : this.secretKey;
+      
+      return username === 'Paycom' && password === validKey;
     } catch (error) {
       logger.error('Payme auth verification failed:', error);
       return false;
@@ -64,82 +88,99 @@ class PaymeService {
   }
 
   /**
-   * Process JSON-RPC request
+   * Process Payme JSON-RPC request
+   * Main entry point for all Payme callbacks
    */
   async processRequest(authHeader, body) {
     try {
-      // Verify auth
+      // Verify authorization
       if (!this.verifyAuth(authHeader)) {
-        return this.errorResponse(body.id, -32504, 'Unauthorized');
+        logger.warn('Payme unauthorized request');
+        return this.errorResponse(body?.id, -32504, 'Unauthorized');
       }
 
-      const { method, params } = body;
+      const { method, params, id } = body;
 
-      // Route to appropriate handler
+      logger.info(`Payme method: ${method}`);
+
       switch (method) {
         case 'CheckPerformTransaction':
-          return await this.checkPerformTransaction(body.id, params);
+          return await this.checkPerformTransaction(id, params);
         case 'CreateTransaction':
-          return await this.createTransaction(body.id, params);
+          return await this.createTransaction(id, params);
         case 'PerformTransaction':
-          return await this.performTransaction(body.id, params);
+          return await this.performTransaction(id, params);
         case 'CancelTransaction':
-          return await this.cancelTransaction(body.id, params);
+          return await this.cancelTransaction(id, params);
         case 'CheckTransaction':
-          return await this.checkTransaction(body.id, params);
+          return await this.checkTransaction(id, params);
+        case 'GetStatement':
+          return await this.getStatement(id, params);
         default:
-          return this.errorResponse(body.id, -32601, 'Method not found');
+          return this.errorResponse(id, -32601, 'Method not found');
       }
     } catch (error) {
       logger.error('Payme process request failed:', error);
-      return this.errorResponse(body.id, -32400, 'Internal error');
+      return this.errorResponse(body?.id, -32400, 'Internal error');
     }
   }
 
   /**
-   * Check perform transaction
+   * CheckPerformTransaction
+   * Payme asks: "Can I create this transaction?"
+   * We check: order exists, amount matches
    */
   async checkPerformTransaction(id, params) {
     try {
       const { amount, account } = params;
       const transactionId = account.order_id;
 
-      const prisma = (await import('../../../config/database.js')).default;
+      const prisma = (await import('../../config/database.js')).default;
       const transaction = await prisma.transaction.findUnique({
         where: { id: transactionId },
       });
 
       if (!transaction) {
+        logger.warn(`Payme: Order not found: ${transactionId}`);
         return this.errorResponse(id, -31050, 'Order not found');
       }
 
-      const amountUsd = amount / 100; // Convert from tiyin
-      if (parseFloat(transaction.amount) !== amountUsd) {
+      if (transaction.status === 'SUCCESS') {
+        return this.errorResponse(id, -31050, 'Order already paid');
+      }
+
+      // Verify amount (convert tiyin → USD and compare)
+      const amountUsd = this.tiyinToUsd(amount);
+      const expectedUsd = parseFloat(transaction.amount);
+      const diff = Math.abs(amountUsd - expectedUsd);
+
+      // Allow 1 cent tolerance for rounding
+      if (diff > 0.01) {
+        logger.warn(`Payme: Amount mismatch. Expected: ${expectedUsd}, Got: ${amountUsd}`);
         return this.errorResponse(id, -31001, 'Incorrect amount');
       }
 
       return {
         jsonrpc: '2.0',
         id,
-        result: {
-          allow: true,
-        },
+        result: { allow: true },
       };
     } catch (error) {
-      logger.error('Payme check perform failed:', error);
+      logger.error('Payme checkPerformTransaction failed:', error);
       return this.errorResponse(id, -31008, 'Error checking transaction');
     }
   }
 
   /**
-   * Create transaction
+   * CreateTransaction
+   * Payme says: "I'm creating a transaction, save it"
    */
   async createTransaction(id, params) {
     try {
       const { amount, account, time } = params;
       const transactionId = account.order_id;
 
-      const prisma = (await import('../../../config/database.js')).default;
+      const prisma = (await import('../../config/database.js')).default;
       const transaction = await prisma.transaction.findUnique({
         where: { id: transactionId },
       });
@@ -148,14 +189,37 @@ class PaymeService {
         return this.errorResponse(id, -31050, 'Order not found');
       }
 
-      // Update transaction
+      // If already has providerTxId (duplicate request)
+      if (transaction.providerTxId) {
+        if (transaction.providerTxId !== params.id) {
+          return this.errorResponse(id, -31050, 'Order already has transaction');
+        }
+        // Same transaction - idempotent response
+        return {
+          jsonrpc: '2.0',
+          id,
+          result: {
+            create_time: transaction.createdAt.getTime(),
+            transaction: params.id,
+            state: 1,
+          },
+        };
+      }
+
+      // Save Payme transaction ID
       await prisma.transaction.update({
         where: { id: transactionId },
         data: {
           providerTxId: params.id,
           status: 'PENDING',
+          metadata: {
+            payme_time: time,
+            payme_amount: amount,
+          },
         },
       });
+
+      logger.info(`Payme transaction created: ${params.id} for order: ${transactionId}`);
 
       return {
         jsonrpc: '2.0',
@@ -167,18 +231,19 @@ class PaymeService {
         },
       };
     } catch (error) {
-      logger.error('Payme create transaction failed:', error);
+      logger.error('Payme createTransaction failed:', error);
       return this.errorResponse(id, -31008, 'Error creating transaction');
     }
   }
 
   /**
-   * Perform transaction
+   * PerformTransaction
+   * Payme says: "Payment confirmed! Credit the user."
    */
   async performTransaction(id, params) {
     try {
-      const prisma = (await import('../../../config/database.js')).default;
-      
+      const prisma = (await import('../../config/database.js')).default;
+
       const transaction = await prisma.transaction.findFirst({
         where: { providerTxId: params.id },
       });
@@ -187,14 +252,35 @@ class PaymeService {
         return this.errorResponse(id, -31003, 'Transaction not found');
       }
 
-      // Update status
+      // Idempotent - already performed
+      if (transaction.status === 'SUCCESS') {
+        return {
+          jsonrpc: '2.0',
+          id,
+          result: {
+            transaction: params.id,
+            perform_time: transaction.updatedAt.getTime(),
+            state: 2,
+          },
+        };
+      }
+
+      const performTime = Date.now();
+
+      // Update transaction status
       await prisma.transaction.update({
         where: { id: transaction.id },
-        data: { status: 'SUCCESS' },
+        data: { 
+          status: 'SUCCESS',
+          metadata: {
+            ...(transaction.metadata || {}),
+            perform_time: performTime,
+          },
+        },
       });
 
-      // Credit wallet
-      const walletService = (await import('../walletService.js')).default;
+      // ✅ CREDIT WALLET - Add funds to user's available balance
+      const walletService = (await import('../wallet/walletService.js')).default;
       await walletService.credit(
         transaction.userId,
         parseFloat(transaction.amount),
@@ -202,30 +288,31 @@ class PaymeService {
         transaction.id
       );
 
-      logger.info(`Payme payment completed: ${transaction.id}`);
+      logger.info(`✅ Payme payment completed: ${params.id}, amount=$${transaction.amount}, user=${transaction.userId}`);
 
       return {
         jsonrpc: '2.0',
         id,
         result: {
           transaction: params.id,
-          perform_time: Date.now(),
+          perform_time: performTime,
           state: 2,
         },
       };
     } catch (error) {
-      logger.error('Payme perform transaction failed:', error);
+      logger.error('Payme performTransaction failed:', error);
       return this.errorResponse(id, -31008, 'Error performing transaction');
     }
   }
 
   /**
-   * Cancel transaction
+   * CancelTransaction
+   * Payme says: "Payment cancelled/failed"
    */
   async cancelTransaction(id, params) {
     try {
-      const prisma = (await import('../../../config/database.js')).default;
-      
+      const prisma = (await import('../../config/database.js')).default;
+
       const transaction = await prisma.transaction.findFirst({
         where: { providerTxId: params.id },
       });
@@ -234,33 +321,50 @@ class PaymeService {
         return this.errorResponse(id, -31003, 'Transaction not found');
       }
 
+      // Cannot cancel already performed transaction
+      if (transaction.status === 'SUCCESS') {
+        return this.errorResponse(id, -31007, 'Cannot cancel completed transaction');
+      }
+
+      const cancelTime = Date.now();
+
       await prisma.transaction.update({
         where: { id: transaction.id },
-        data: { status: 'FAILED' },
+        data: { 
+          status: 'FAILED',
+          metadata: {
+            ...(transaction.metadata || {}),
+            cancel_time: cancelTime,
+            cancel_reason: params.reason,
+          },
+        },
       });
+
+      logger.info(`Payme transaction cancelled: ${params.id}, reason: ${params.reason}`);
 
       return {
         jsonrpc: '2.0',
         id,
         result: {
           transaction: params.id,
-          cancel_time: Date.now(),
+          cancel_time: cancelTime,
           state: -1,
         },
       };
     } catch (error) {
-      logger.error('Payme cancel transaction failed:', error);
+      logger.error('Payme cancelTransaction failed:', error);
       return this.errorResponse(id, -31008, 'Error canceling transaction');
     }
   }
 
   /**
-   * Check transaction
+   * CheckTransaction
+   * Payme asks: "What's the status of this transaction?"
    */
   async checkTransaction(id, params) {
     try {
-      const prisma = (await import('../../../config/database.js')).default;
-      
+      const prisma = (await import('../../config/database.js')).default;
+
       const transaction = await prisma.transaction.findFirst({
         where: { providerTxId: params.id },
       });
@@ -269,21 +373,94 @@ class PaymeService {
         return this.errorResponse(id, -31003, 'Transaction not found');
       }
 
-      const state = transaction.status === 'SUCCESS' ? 2 : transaction.status === 'FAILED' ? -1 : 1;
+      // State: 1=pending, 2=success, -1=cancelled
+      let state = 1;
+      let performTime = 0;
+      let cancelTime = 0;
+
+      if (transaction.status === 'SUCCESS') {
+        state = 2;
+        performTime = transaction.updatedAt.getTime();
+      } else if (transaction.status === 'FAILED') {
+        state = -1;
+        cancelTime = transaction.updatedAt.getTime();
+      }
 
       return {
         jsonrpc: '2.0',
         id,
         result: {
           create_time: transaction.createdAt.getTime(),
-          perform_time: transaction.updatedAt.getTime(),
+          perform_time: performTime,
+          cancel_time: cancelTime,
           transaction: params.id,
           state,
+          reason: state === -1 ? 1 : null,
         },
       };
     } catch (error) {
-      logger.error('Payme check transaction failed:', error);
+      logger.error('Payme checkTransaction failed:', error);
       return this.errorResponse(id, -31008, 'Error checking transaction');
+    }
+  }
+
+  /**
+   * GetStatement
+   * Payme asks: "Give me all transactions in this time range"
+   */
+  async getStatement(id, params) {
+    try {
+      const { from, to } = params;
+
+      const prisma = (await import('../../config/database.js')).default;
+
+      const transactions = await prisma.transaction.findMany({
+        where: {
+          provider: 'PAYME',
+          providerTxId: { not: null },
+          createdAt: {
+            gte: new Date(from),
+            lte: new Date(to),
+          },
+        },
+        orderBy: { createdAt: 'asc' },
+      });
+
+      const statement = transactions.map(tx => {
+        let state = 1;
+        let performTime = 0;
+        let cancelTime = 0;
+
+        if (tx.status === 'SUCCESS') {
+          state = 2;
+          performTime = tx.updatedAt.getTime();
+        } else if (tx.status === 'FAILED') {
+          state = -1;
+          cancelTime = tx.updatedAt.getTime();
+        }
+
+        return {
+          id: tx.providerTxId,
+          time: tx.createdAt.getTime(),
+          amount: this.usdToTiyin(parseFloat(tx.amount)),
+          account: { order_id: tx.id },
+          create_time: tx.createdAt.getTime(),
+          perform_time: performTime,
+          cancel_time: cancelTime,
+          transaction: tx.providerTxId,
+          state,
+          reason: state === -1 ? 1 : null,
+        };
+      });
+
+      return {
+        jsonrpc: '2.0',
+        id,
+        result: { transactions: statement },
+      };
+    } catch (error) {
+      logger.error('Payme getStatement failed:', error);
+      return this.errorResponse(id, -31008, 'Error getting statement');
     }
   }
 
@@ -293,10 +470,10 @@ class PaymeService {
   errorResponse(id, code, message) {
     return {
       jsonrpc: '2.0',
-      id,
+      id: id || null,
       error: {
         code,
-        message,
+        message: { uz: message, ru: message, en: message },
         data: null,
       },
     };
@@ -304,4 +481,4 @@ class PaymeService {
 }
 
 const paymeService = new PaymeService();
-export default paymeService; 
+export default paymeService;

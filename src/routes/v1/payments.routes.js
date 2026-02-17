@@ -2,25 +2,72 @@ import { Router } from 'express';
 import depositService from '../../services/payments/depositService.js';
 import withdrawService from '../../services/payments/withdrawService.js';
 import transactionService from '../../services/payments/transactionService.js';
+import paymeService from '../../services/payments/paymeService.js';
 import { authenticate } from '../../middleware/auth.js';
 import { validate } from '../../middleware/validate.js';
 import { body, query } from 'express-validator';
 import response from '../../utils/response.js';
+import logger from '../../utils/logger.js';
 
 const router = Router();
 
-// Barcha routelar auth talab qiladi
-router.use(authenticate);
-
 // BEP-20 manzil validatsiya regex
 const BEP20_REGEX = /^0x[a-fA-F0-9]{40}$/;
+
+// ==================== PAYME CALLBACK (NO AUTH - Payme calls this) ====================
+
+/**
+ * POST /api/v1/payments/payme/callback
+ * Payme JSON-RPC webhook
+ * Auth: Basic (Paycom:SECRET_KEY)
+ * 
+ * Methods:
+ * - CheckPerformTransaction
+ * - CreateTransaction
+ * - PerformTransaction
+ * - CancelTransaction
+ * - CheckTransaction
+ * - GetStatement
+ */
+router.post('/payme/callback', async (req, res) => {
+  try {
+    const authHeader = req.headers['authorization'];
+    const body = req.body;
+
+    logger.info(`Payme request: ${body?.method}`, { 
+      method: body?.method,
+      id: body?.id 
+    });
+
+    const result = await paymeService.processRequest(authHeader, body);
+    
+    return res.json(result);
+  } catch (error) {
+    logger.error('Payme callback error:', error);
+    return res.json({
+      jsonrpc: '2.0',
+      id: req.body?.id || null,
+      error: {
+        code: -32400,
+        message: 'Internal error',
+        data: null,
+      },
+    });
+  }
+});
+
+// ==================== AUTH REQUIRED ROUTES ====================
+
+router.use(authenticate);
 
 // ==================== DEPOSIT ====================
 
 /**
  * POST /api/v1/payments/deposit/initiate
- * Deposit boshlash
- * Click, Payme, Crypto (TRC-20 USDT) qabul qilinadi
+ * Deposit boshlash - Payme checkout URL olish
+ * 
+ * Body: { provider: 'PAYME', amount: 50 }
+ * Response: { transaction, paymentUrl }
  */
 router.post(
   '/deposit/initiate',
@@ -83,8 +130,6 @@ router.get(
 
 /**
  * GET /api/v1/payments/withdraw/info
- * Withdraw shartlari (fee, min, tarmoq)
- * Frontend bu ma'lumotni formada ko'rsatadi
  */
 router.get('/withdraw/info', async (req, res, next) => {
   try {
@@ -97,21 +142,6 @@ router.get('/withdraw/info', async (req, res, next) => {
 
 /**
  * POST /api/v1/payments/withdraw/request
- * Withdraw so'rovi
- *
- * FAQAT BEP-20 USDT qabul qilinadi!
- * Body: { amount: number, bep20Address: string }
- *
- * Misol:
- * {
- *   "amount": 50,
- *   "bep20Address": "0xAbCd1234..."
- * }
- *
- * Natija:
- *   - Fee: $3 yechiladi
- *   - User oladi: amount - $3
- *   - Admin tasdiqlaydi
  */
 router.post(
   '/withdraw/request',
@@ -143,7 +173,6 @@ router.post(
 
 /**
  * GET /api/v1/payments/withdraw/history
- * Withdraw tarixi
  */
 router.get(
   '/withdraw/history',
@@ -176,7 +205,6 @@ router.get(
 
 /**
  * GET /api/v1/payments/transactions
- * Barcha tranzaksiyalar
  */
 router.get(
   '/transactions',
