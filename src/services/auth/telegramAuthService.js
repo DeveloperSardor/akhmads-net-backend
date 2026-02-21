@@ -9,7 +9,7 @@ import { AuthenticationError, NotFoundError } from '../../utils/errors.js';
 /**
  * Telegram Authentication Service
  * ✅ Generates 1 correct code + 3 fake codes (total 4 codes)
- * ✅ NOW: Saves firstName, lastName, username from Telegram
+ * ✅ Saves firstName, lastName, username, avatarUrl from Telegram
  */
 class TelegramAuthService {
   /**
@@ -66,7 +66,7 @@ class TelegramAuthService {
 
   /**
    * Verify login code
-   * ✅ NOW accepts telegramUser data
+   * ✅ NOW accepts telegramUser data including avatar
    */
   async verifyLogin(loginToken, telegramId, code, telegramUser = {}) {
     try {
@@ -110,16 +110,17 @@ class TelegramAuthService {
       });
 
       if (!user) {
-        // ✅ CREATE USER WITH TELEGRAM DATA
+        // ✅ CREATE USER WITH TELEGRAM DATA + AVATAR
         user = await prisma.user.create({
           data: {
             telegramId,
             firstName: telegramUser.first_name || null,
             lastName: telegramUser.last_name || null,
             username: telegramUser.username || null,
+            avatarUrl: telegramUser.photo_url || null,  // ✅ AVATAR
             locale: telegramUser.language_code || 'en',
             role: 'ADVERTISER',
-            roles : ['ADVERITSER', 'BOT_OWNER'],
+            roles: ['ADVERTISER', 'BOT_OWNER'],  // ✅ Fixed typo: ADVERTISER
             isActive: true,
           },
         });
@@ -134,7 +135,8 @@ class TelegramAuthService {
         const needsUpdate = 
           telegramUser.first_name !== user.firstName ||
           telegramUser.last_name !== user.lastName ||
-          telegramUser.username !== user.username;
+          telegramUser.username !== user.username ||
+          telegramUser.photo_url !== user.avatarUrl;  // ✅ Check avatar changes
 
         if (needsUpdate) {
           user = await prisma.user.update({
@@ -143,6 +145,7 @@ class TelegramAuthService {
               firstName: telegramUser.first_name || user.firstName,
               lastName: telegramUser.last_name || user.lastName,
               username: telegramUser.username || user.username,
+              avatarUrl: telegramUser.photo_url || user.avatarUrl,  // ✅ UPDATE AVATAR
             },
           });
           logger.info(`User data updated: ${user.id}`);
@@ -190,7 +193,8 @@ class TelegramAuthService {
           firstName: user.firstName,
           lastName: user.lastName,
           role: user.role,
-          avatarUrl: user.avatarUrl,
+          roles: user.roles,  // ✅ Include roles array
+          avatarUrl: user.avatarUrl,  // ✅ Include avatar
           locale: user.locale,
         },
         tokens,
@@ -253,7 +257,8 @@ class TelegramAuthService {
           firstName: user.firstName,
           lastName: user.lastName,
           role: user.role,
-          avatarUrl: user.avatarUrl,
+          roles: user.roles,  // ✅ Include roles array
+          avatarUrl: user.avatarUrl,  // ✅ Include avatar
           locale: user.locale,
         },
         tokens,

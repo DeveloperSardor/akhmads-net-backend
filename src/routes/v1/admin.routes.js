@@ -1,3 +1,4 @@
+// src/routes/v1/admin.routes.js
 import { Router } from 'express';
 import adService from '../../services/ad/adService.js';  // ✅ NEW - Use main adService
 import adModerationService from '../../services/ad/adModerationService.js';
@@ -549,8 +550,14 @@ router.post(
   }
 );
 
+// PRICING MANAGEMENT SECTION - Add to existing admin.routes.js
+
 // ==================== PRICING MANAGEMENT ====================
 
+/**
+ * GET /api/v1/admin/pricing/tiers
+ * Get all pricing tiers with CPM calculation
+ */
 router.get('/pricing/tiers', requireAdmin, async (req, res, next) => {
   try {
     const tiers = await pricingService.getAllTiers();
@@ -560,14 +567,34 @@ router.get('/pricing/tiers', requireAdmin, async (req, res, next) => {
   }
 });
 
+/**
+ * GET /api/v1/admin/pricing/tiers/active
+ * Get active pricing tiers (public endpoint - no auth needed)
+ */
+router.get('/pricing/tiers/active', async (req, res, next) => {
+  try {
+    const tiers = await pricingService.getActiveTiers();
+    response.success(res, { tiers });
+  } catch (error) {
+    next(error);
+  }
+});
+
+/**
+ * POST /api/v1/admin/pricing/tiers
+ * Create new pricing tier
+ * 
+ * Body: { name, impressions, priceUsd, isActive?, sortOrder? }
+ */
 router.post(
   '/pricing/tiers',
   requireAdmin,
   validate([
-    body('name').isString().notEmpty(),
-    body('impressions').isInt({ min: 1 }),
-    body('priceUsd').isFloat({ min: 0 }),
-    body('sortOrder').optional().isInt(),
+    body('name').isString().notEmpty().withMessage('Tier name is required'),
+    body('impressions').isInt({ min: 100 }).withMessage('Minimum 100 impressions'),
+    body('priceUsd').isFloat({ min: 0.01 }).withMessage('Price must be greater than 0'),
+    body('isActive').optional().isBoolean(),
+    body('sortOrder').optional().isInt({ min: 0 }),
   ]),
   async (req, res, next) => {
     try {
@@ -579,15 +606,19 @@ router.post(
   }
 );
 
+/**
+ * PUT /api/v1/admin/pricing/tiers/:id
+ * Update pricing tier
+ */
 router.put(
   '/pricing/tiers/:id',
   requireAdmin,
   validate([
     param('id').isString(),
     body('name').optional().isString(),
-    body('priceUsd').optional().isFloat({ min: 0 }),
+    body('priceUsd').optional().isFloat({ min: 0.01 }),
     body('isActive').optional().isBoolean(),
-    body('sortOrder').optional().isInt(),
+    body('sortOrder').optional().isInt({ min: 0 }),
   ]),
   async (req, res, next) => {
     try {
@@ -599,6 +630,10 @@ router.put(
   }
 );
 
+/**
+ * DELETE /api/v1/admin/pricing/tiers/:id
+ * Delete pricing tier (only if not in use)
+ */
 router.delete(
   '/pricing/tiers/:id',
   requireAdmin,
@@ -606,88 +641,144 @@ router.delete(
   async (req, res, next) => {
     try {
       await pricingService.deleteTier(req.params.id);
-      response.noContent(res);
+      response.success(res, null, 'Pricing tier deleted');
     } catch (error) {
       next(error);
     }
   }
 );
 
-// ==================== PLATFORM SETTINGS ====================
-
-router.get('/settings', requireAdmin, async (req, res, next) => {
-  try {
-    const settings = await settingsService.getAllSettings();
-    response.success(res, { settings });
-  } catch (error) {
-    next(error);
-  }
-});
-
-router.put(
-  '/settings/:key',
-  requireAdmin,
+/**
+ * POST /api/v1/admin/pricing/tiers/bulk
+ * Bulk create pricing tiers
+ * 
+ * Body: { tiers: [{ name, impressions, priceUsd }] }
+ */
+router.post(
+  '/pricing/tiers/bulk',
+  requireSuperAdmin,
   validate([
-    param('key').isString(),
-    body('value').notEmpty(),
+    body('tiers').isArray({ min: 1 }),
+    body('tiers.*.name').isString().notEmpty(),
+    body('tiers.*.impressions').isInt({ min: 100 }),
+    body('tiers.*.priceUsd').isFloat({ min: 0.01 }),
   ]),
   async (req, res, next) => {
     try {
-      const setting = await settingsService.updateSetting(req.params.key, req.body.value, req.userId);
-      response.success(res, { setting }, 'Setting updated');
+      const tiers = await pricingService.bulkCreateTiers(req.body.tiers);
+      response.created(res, { tiers, count: tiers.length }, 'Pricing tiers created');
     } catch (error) {
       next(error);
     }
   }
 );
 
-router.put(
-  '/settings/bulk',
-  requireAdmin,
-  validate([body('settings').isObject()]),
-  async (req, res, next) => {
-    try {
-      await settingsService.bulkUpdateSettings(req.body.settings, req.userId);
-      response.success(res, null, 'Settings updated');
-    } catch (error) {
-      next(error);
-    }
-  }
-);
-
-// ==================== ANALYTICS ====================
-
-router.get('/analytics/overview', requireAdmin, async (req, res, next) => {
+/**
+ * GET /api/v1/admin/pricing/platform-fee
+ * Get current platform fee percentage
+ */
+router.get('/pricing/platform-fee', requireAdmin, async (req, res, next) => {
   try {
-    const overview = await adminAnalytics.getPlatformOverview();
-    response.success(res, { overview });
+    const percentage = await pricingService.getPlatformFee();
+    response.success(res, { 
+      platformFeePercentage: percentage,
+      description: 'Platform fee charged on all ad revenue'
+    });
   } catch (error) {
     next(error);
   }
 });
 
-router.get('/analytics/stats', requireAdmin, async (req, res, next) => {
+/**
+ * PUT /api/v1/admin/pricing/platform-fee
+ * Update platform fee percentage
+ * 
+ * Body: { percentage: 15 }
+ */
+router.put(
+  '/pricing/platform-fee',
+  requireSuperAdmin,
+  validate([
+    body('percentage')
+      .isFloat({ min: 0, max: 50 })
+      .withMessage('Platform fee must be between 0% and 50%'),
+  ]),
+  async (req, res, next) => {
+    try {
+      const setting = await pricingService.updatePlatformFee(
+        parseFloat(req.body.percentage),
+        req.userId
+      );
+      response.success(res, { 
+        platformFeePercentage: parseFloat(setting.value),
+        message: `Platform fee updated to ${setting.value}%`
+      });
+    } catch (error) {
+      next(error);
+    }
+  }
+);
+
+/**
+ * POST /api/v1/admin/pricing/calculate
+ * Calculate price preview (for testing)
+ * 
+ * Body: { impressions, category?, targeting?, cpmBid? }
+ */
+router.post(
+  '/pricing/calculate',
+  requireAdmin,
+  validate([
+    body('impressions').isInt({ min: 100 }),
+    body('category').optional().isString(),
+    body('targeting').optional().isObject(),
+    body('cpmBid').optional().isFloat({ min: 0 }),
+  ]),
+  async (req, res, next) => {
+    try {
+      const preview = await pricingService.calculatePricePreview(req.body);
+      response.success(res, preview);
+    } catch (error) {
+      next(error);
+    }
+  }
+);
+
+/**
+ * GET /api/v1/admin/pricing/stats
+ * Get pricing statistics (revenue, avg cost, etc)
+ */
+router.get('/pricing/stats', requireAdmin, async (req, res, next) => {
   try {
-    const stats = await userManagementService.getPlatformStats();
+    const stats = await pricingService.getPricingStats();
     response.success(res, { stats });
   } catch (error) {
     next(error);
   }
 });
 
-router.get(
-  '/analytics/growth',
-  requireAdmin,
-  validate([query('days').optional().isInt({ min: 7, max: 365 })]),
+// ==================== PUBLIC PRICING ENDPOINTS (NO AUTH) ====================
+
+/**
+ * POST /api/v1/pricing/preview
+ * Calculate ad price preview (public - for ad creation form)
+ * 
+ * Body: { impressions, category?, targeting?, cpmBid? }
+ */
+router.post(
+  '/pricing/preview',
+  validate([
+    body('impressions').isInt({ min: 100 }),
+    body('category').optional().isString(),
+    body('targeting').optional().isObject(),
+    body('cpmBid').optional().isFloat({ min: 0 }),
+  ]),
   async (req, res, next) => {
     try {
-      const { days = 30 } = req.query;
-      const data = await adminAnalytics.getGrowthData(parseInt(days));
-      response.success(res, { data });
+      const preview = await pricingService.calculatePricePreview(req.body);
+      response.success(res, preview);
     } catch (error) {
       next(error);
     }
   }
 );
-
-export default router;

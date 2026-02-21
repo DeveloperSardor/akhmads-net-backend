@@ -1,5 +1,5 @@
-import logger from '../../utils/logger.js';
-import { PaymentError } from '../../utils/errors.js';
+import logger from '../../../utils/logger.js';
+import { PaymentError } from '../../../utils/errors.js';
 
 /**
  * Payme Payment Provider

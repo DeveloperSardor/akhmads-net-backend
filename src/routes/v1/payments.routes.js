@@ -2,7 +2,7 @@ import { Router } from 'express';
 import depositService from '../../services/payments/depositService.js';
 import withdrawService from '../../services/payments/withdrawService.js';
 import transactionService from '../../services/payments/transactionService.js';
-import paymeService from '../../services/payments/paymeService.js';
+import paymeService from '../../services/payments/providers/paymeService.js';
 import { authenticate } from '../../middleware/auth.js';
 import { validate } from '../../middleware/validate.js';
 import { body, query } from 'express-validator';
@@ -17,7 +17,7 @@ const BEP20_REGEX = /^0x[a-fA-F0-9]{40}$/;
 // ==================== PAYME CALLBACK (NO AUTH - Payme calls this) ====================
 
 /**
- * POST /api/v1/payments/payme/callback
+ * POST /api/v1/payments/payme/callback 
  * Payme JSON-RPC webhook
  * Auth: Basic (Paycom:SECRET_KEY)
  * 

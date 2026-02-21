@@ -1,3 +1,4 @@
+// src/utils/pricing.js
 import { AD_CATEGORIES, AI_SEGMENTS } from '../config/constants.js';
 import logger from './logger.js';
 

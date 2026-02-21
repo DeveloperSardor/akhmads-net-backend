@@ -25,6 +25,8 @@ enum TransactionType {
   EARNINGS
   REFUND
   ADJUSTMENT
+  AD_RESERVE
+  AD_REFUND
 }
 
 enum TransactionStatus {
@@ -77,6 +79,7 @@ enum AdStatus {
   PAUSED
   COMPLETED
   ARCHIVED
+  PENDING_REVIEW
 }
 
 enum BotStatus {
@@ -95,6 +98,8 @@ enum LedgerType {
   FEE
   ADJUSTMENT
   REFUND
+  AD_RESERVE
+  AD_REFUND
 }
 
 // ==================== CORE MODELS ====================

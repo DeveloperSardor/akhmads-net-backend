@@ -58,7 +58,7 @@ export const errorHandler = (err, req, res, next) => {
   // CORS errors
   if (err.message === 'Not allowed by CORS') {
     return response.forbidden(res, 'CORS policy violation');
-  }
+  } 
 
   // Default to 500 server error
   if (process.env.NODE_ENV === 'production') {
@@ -134,4 +134,4 @@ export const asyncHandler = (fn) => {
   return (req, res, next) => {
     Promise.resolve(fn(req, res, next)).catch(next);
   };
-};
+}; 
