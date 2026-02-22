@@ -12,6 +12,8 @@ import trackRoutes from './track.routes.js';
 import uploadRoutes from './upload.routes.js';
 import faqRoutes from './faq.routes.js';
 import contactRoutes from './contact.routes.js';
+import aiRoutes from './ai.routes.js'
+import telegramRoutes from './telegram.routes.js'
 
 const router = Router();
 
@@ -29,5 +31,8 @@ router.use('/track', trackRoutes);
 router.use('/upload', uploadRoutes);
 router.use('/faq', faqRoutes);
 router.use('/contact', contactRoutes);
+router.use('/ai', aiRoutes); 
+router.use('/telegram', telegramRoutes); 
+
 
 export default router;

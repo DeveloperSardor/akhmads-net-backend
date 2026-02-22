@@ -17,9 +17,28 @@ import { body, param, query } from 'express-validator';
 import { botApiRateLimiter } from '../../middleware/rateLimiter.js';
 import response from '../../utils/response.js';
 import prisma from '../../config/database.js'; 
+import multer from 'multer';
+import adMediaService from '../../services/ad/adMediaService.js';
 
 
 const router = Router();
+
+// ✅ ADD MULTER CONFIG (before routes)
+const upload = multer({
+  storage: multer.memoryStorage(),
+  limits: {
+    fileSize: 5 * 1024 * 1024, // 5MB
+  },
+});
+
+
+
+
+
+
+
+
+
 
 /**
  * POST /api/v1/ad/SendPost
@@ -625,6 +644,51 @@ router.post(
 )
 
 
+/**
+ * POST /api/v1/ads/upload-media
+ * Upload ad media (image/video)
+ */
+router.post(
+  '/upload-media',
+  requireAdvertiser,
+  upload.single('media'),
+  async (req, res, next) => {
+    try {
+      if (!req.file) {
+        return response.error(res, 'No file uploaded', 400);
+      }
+
+      const result = await adMediaService.uploadAdMedia(req.file, req.userId);
+
+      response.success(res, result, 'Media uploaded successfully');
+    } catch (error) {
+      next(error);
+    }
+  }
+);
+
+/**
+ * POST /api/v1/ads/upload-base64
+ * Upload base64 image
+ */
+router.post(
+  '/upload-base64',
+  requireAdvertiser,
+  validate([
+    body('base64Data').isString(),
+  ]),
+  async (req, res, next) => {
+    try {
+      const { base64Data } = req.body;
+
+      const result = await adMediaService.uploadBase64Image(base64Data, req.userId);
+
+      response.success(res, result, 'Image uploaded successfully');
+    } catch (error) {
+      next(error);
+    }
+  }
+);
 
 
 

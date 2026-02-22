@@ -91,7 +91,7 @@ class CryptoPayService {
       logger.error('CryptoPay create invoice failed:', error);
       throw error;
     }
-  }
+  } 
 
   /**
    * Verify webhook signature

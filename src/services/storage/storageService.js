@@ -1,72 +1,90 @@
-import storageClient from '../../config/s3.js';
-import sharp from 'sharp';
+// src/services/storage/storageService.js - MinIO Integration
+import { S3Client, PutObjectCommand, DeleteObjectCommand } from '@aws-sdk/client-s3';
+import crypto from 'crypto';
 import logger from '../../utils/logger.js';
 
 /**
- * Storage Service
- * Handles file uploads and management
+ * Storage Service - MinIO/S3 Compatible
+ * Professional image storage with CDN support
  */
 class StorageService {
+  constructor() {
+    this.client = new S3Client({
+      endpoint: process.env.MINIO_ENDPOINT || 'http://localhost:9000',
+      region: process.env.MINIO_REGION || 'us-east-1',
+      credentials: {
+        accessKeyId: process.env.MINIO_ACCESS_KEY || '',
+        secretAccessKey: process.env.MINIO_SECRET_KEY || '',
+      },
+      forcePathStyle: true, // Required for MinIO
+    });
+
+    this.bucket = process.env.MINIO_BUCKET || 'akhmads-ads';
+    this.cdnUrl = process.env.CDN_URL || process.env.MINIO_PUBLIC_URL || 'http://localhost:9000';
+  }
+
   /**
-   * Upload image with optimization
+   * Upload file to MinIO/S3
    */
-  async uploadImage(fileBuffer, fileName, options = {}) {
+  async uploadFile({ buffer, filename, mimetype, bucket = null }) {
     try {
-      const { maxWidth = 1200, quality = 80 } = options;
+      const bucketName = bucket || this.bucket;
 
-      // Optimize image
-      const optimizedBuffer = await sharp(fileBuffer)
-        .resize(maxWidth, null, { withoutEnlargement: true })
-        .jpeg({ quality })
-        .toBuffer();
-
-      // Upload to S3
-      const url = await storageClient.uploadFile({
-        fileBuffer: optimizedBuffer,
-        fileName,
-        contentType: 'image/jpeg',
-        folder: 'ads/images',
+      const command = new PutObjectCommand({
+        Bucket: bucketName,
+        Key: filename,
+        Body: buffer,
+        ContentType: mimetype,
+        ACL: 'public-read', // Public access
       });
 
-      logger.info(`Image uploaded: ${fileName}`);
-      return url;
+      await this.client.send(command);
+
+      // Generate public URL
+      const url = `${this.cdnUrl}/${bucketName}/${filename}`;
+
+      logger.info(`✅ File uploaded to MinIO: ${filename}`);
+
+      return {
+        url,
+        filename,
+        bucket: bucketName,
+      };
     } catch (error) {
-      logger.error('Upload image failed:', error);
-      throw error;
+      logger.error('MinIO upload failed:', error);
+      throw new Error(`Storage upload failed: ${error.message}`);
     }
   }
 
   /**
-   * Upload video
+   * Delete file from MinIO/S3
    */
-  async uploadVideo(fileBuffer, fileName) {
+  async deleteFile(filename, bucket = null) {
     try {
-      const url = await storageClient.uploadFile({
-        fileBuffer,
-        fileName,
-        contentType: 'video/mp4',
-        folder: 'ads/videos',
+      const bucketName = bucket || this.bucket;
+
+      const command = new DeleteObjectCommand({
+        Bucket: bucketName,
+        Key: filename,
       });
 
-      logger.info(`Video uploaded: ${fileName}`);
-      return url;
+      await this.client.send(command);
+
+      logger.info(`🗑️ File deleted from MinIO: ${filename}`);
     } catch (error) {
-      logger.error('Upload video failed:', error);
-      throw error;
+      logger.error('MinIO delete failed:', error);
+      // Don't throw - deletion errors shouldn't break flow
     }
   }
 
   /**
-   * Delete file
+   * Generate unique filename
    */
-  async deleteFile(url) {
-    try {
-      const key = storageClient.extractKeyFromUrl(url);
-      await storageClient.deleteFile(key);
-      logger.info(`File deleted: ${key}`);
-    } catch (error) {
-      logger.error('Delete file failed:', error);
-    }
+  generateFilename(originalName, userId) {
+    const ext = originalName.split('.').pop().toLowerCase();
+    const timestamp = Date.now();
+    const random = crypto.randomBytes(8).toString('hex');
+    return `${userId}/${timestamp}_${random}.${ext}`;
   }
 }
 

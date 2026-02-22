@@ -1,3 +1,4 @@
+//src/app.js
 import express from 'express';
 import 'dotenv/config';
 
@@ -44,6 +45,11 @@ app.use(addSecurityHeaders);
 // ==================== BODY PARSING ====================
 app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true, limit: '10mb' }));
+
+
+// ==================== STATIC FILES ====================
+import path from 'path';
+app.use('/uploads', express.static(path.join(process.cwd(), 'public', 'uploads')));
 
 // ==================== SECURITY PROTECTION ====================
 app.use(sanitize);
