@@ -1,3 +1,4 @@
+// src/routes/v1/payments.routes.js
 import { Router } from 'express';
 import depositService from '../../services/payments/depositService.js';
 import withdrawService from '../../services/payments/withdrawService.js';
@@ -5,7 +6,7 @@ import transactionService from '../../services/payments/transactionService.js';
 import paymeService from '../../services/payments/providers/paymeService.js';
 import { authenticate } from '../../middleware/auth.js';
 import { validate } from '../../middleware/validate.js';
-import { body, query } from 'express-validator';
+import { body, query, param } from 'express-validator';
 import response from '../../utils/response.js';
 import logger from '../../utils/logger.js';
 
@@ -14,20 +15,11 @@ const router = Router();
 // BEP-20 manzil validatsiya regex
 const BEP20_REGEX = /^0x[a-fA-F0-9]{40}$/;
 
-// ==================== PAYME CALLBACK (NO AUTH - Payme calls this) ====================
+// ==================== WEBHOOKS (NO AUTH) ====================
 
 /**
- * POST /api/v1/payments/payme/callback 
+ * POST /api/v1/payments/payme/callback
  * Payme JSON-RPC webhook
- * Auth: Basic (Paycom:SECRET_KEY)
- * 
- * Methods:
- * - CheckPerformTransaction
- * - CreateTransaction
- * - PerformTransaction
- * - CancelTransaction
- * - CheckTransaction
- * - GetStatement
  */
 router.post('/payme/callback', async (req, res) => {
   try {
@@ -56,6 +48,33 @@ router.post('/payme/callback', async (req, res) => {
   }
 });
 
+/**
+ * POST /api/v1/payments/cryptopay/webhook
+ * CryptoPay webhook (invoice_paid events)
+ * 
+ * Webhook URL: https://api.akhmads.net/api/v1/payments/cryptopay/webhook
+ */
+router.post('/cryptopay/webhook', async (req, res) => {
+  try {
+    const signature = req.headers['crypto-pay-api-signature'];
+    const body = req.body;
+
+    logger.info('CryptoPay webhook received', {
+      update_type: body?.update_type,
+      update_id: body?.update_id,
+    });
+
+    await depositService.processCryptoPayWebhook(signature, body);
+    
+    // Always return 200 OK for webhooks
+    return res.status(200).json({ ok: true });
+  } catch (error) {
+    logger.error('CryptoPay webhook error:', error);
+    // Still return 200 to prevent retries
+    return res.status(200).json({ ok: true });
+  }
+});
+
 // ==================== AUTH REQUIRED ROUTES ====================
 
 router.use(authenticate);
@@ -64,31 +83,28 @@ router.use(authenticate);
 
 /**
  * POST /api/v1/payments/deposit/initiate
- * Deposit boshlash - Payme checkout URL olish
+ * Deposit boshlash
  * 
- * Body: { provider: 'PAYME', amount: 50 }
- * Response: { transaction, paymentUrl }
+ * Body: 
+ *   - provider: 'PAYME' | 'CRYPTO'
+ *   - amount: number (USD)
+ * 
+ * Response: { transaction, payment: { paymentUrl, ... } }
  */
 router.post(
   '/deposit/initiate',
   validate([
     body('provider')
-      .isIn(['CLICK', 'PAYME', 'CRYPTO'])
-      .withMessage('Provider: CLICK, PAYME yoki CRYPTO bo\'lishi kerak'),
+      .isIn(['PAYME', 'CRYPTO'])
+      .withMessage('Provider: PAYME yoki CRYPTO bo\'lishi kerak'),
     body('amount')
       .isFloat({ min: 1 })
       .withMessage('Miqdor 1 dan katta bo\'lishi kerak'),
-    body('coin')
-      .optional()
-      .isString(),
-    body('network')
-      .optional()
-      .isString(),
   ]),
   async (req, res, next) => {
     try {
-      const transaction = await depositService.initiateDeposit(req.userId, req.body);
-      response.created(res, { transaction }, 'Deposit boshlandi');
+      const result = await depositService.initiateDeposit(req.userId, req.body);
+      response.created(res, result, 'Deposit boshlandi');
     } catch (error) {
       next(error);
     }
@@ -120,6 +136,26 @@ router.get(
         limit: parseInt(limit),
         total: result.total,
       });
+    } catch (error) {
+      next(error);
+    }
+  }
+);
+
+/**
+ * GET /api/v1/payments/deposit/:transactionId/status
+ * Check deposit status
+ */
+router.get(
+  '/deposit/:transactionId/status',
+  validate([param('transactionId').isString()]),
+  async (req, res, next) => {
+    try {
+      const transaction = await depositService.checkDepositStatus(
+        req.params.transactionId,
+        req.userId
+      );
+      response.success(res, { transaction });
     } catch (error) {
       next(error);
     }
