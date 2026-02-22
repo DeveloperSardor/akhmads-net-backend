@@ -7,7 +7,7 @@ import logger from '../../utils/logger.js';
 
 /**
  * Login Bot Handler - GramAds Style
- * ✅ FIXED: Now passes Telegram user data to verifyLogin
+ * ✅ FIXED: Now fetches and passes avatar URL
  */
 class LoginBotHandler {
   constructor() {
@@ -15,6 +15,8 @@ class LoginBotHandler {
   }
 
   setup(bot) {
+    this.bot = bot; // ✅ Store bot instance for API calls
+    
     // /start command
     bot.command('start', async (ctx) => {
       try {
@@ -43,11 +45,35 @@ class LoginBotHandler {
   }
 
   /**
+   * Get user's profile photo URL
+   */
+  async getUserPhotoUrl(userId) {
+    try {
+      const photos = await this.bot.api.getUserProfilePhotos(userId, { limit: 1 });
+      
+      if (!photos.photos || photos.photos.length === 0 || photos.photos[0].length === 0) {
+        return null;
+      }
+
+      // Get largest photo
+      const photo = photos.photos[0][photos.photos[0].length - 1];
+      const file = await this.bot.api.getFile(photo.file_id);
+      
+      // Construct URL
+      const photoUrl = `https://api.telegram.org/file/bot${this.bot.token}/${file.file_path}`;
+      
+      return photoUrl;
+    } catch (error) {
+      logger.error('Get user photo failed:', error);
+      return null;
+    }
+  }
+
+  /**
    * Get frontend URL based on environment
    */
   getFrontendUrl() {
-    return process.env.FRONTEND_URL || 'https://akhmads.net'
-    //  'http://localhost:5173';
+    return process.env.FRONTEND_URL || 'https://akhmads.net';
   }
 
   /**
@@ -132,7 +158,7 @@ Telegram Ad Network
         return;
       }
 
-      // ✅ Get codes from Redis
+      // Get codes from Redis
       const codesJson = await redis.get(`login_codes:${token}`);
       
       if (!codesJson) {
@@ -182,7 +208,7 @@ async handleCallbackQuery(ctx) {
     const data = ctx.callbackQuery.data;
     const telegramId = ctx.from.id.toString();
 
-    console.log('🔍 Callback data:', data); // ✅ Debug log
+    console.log('🔍 Callback data:', data);
 
     if (data === 'authorize_web') {
       await ctx.answerCallbackQuery();
@@ -211,24 +237,12 @@ async handleCallbackQuery(ctx) {
     }
 
     if (data.startsWith('code_')) {
-      // ✅ Format: code_TOKEN_CODE
-      // Example: code_IpjM_Q-4kWSO6jEotrr_EyEjAJTz1TPd_1013
-      
       const parts = data.split('_');
+      const selectedCode = parts[parts.length - 1];
+      const tokenParts = parts.slice(1, parts.length - 1);
+      const token = tokenParts.join('_');
       
-      // parts[0] = 'code'
-      // parts[1] = 'IpjM'
-      // parts[2] = 'Q-4kWSO6jEotrr'
-      // parts[3] = 'EyEjAJTz1TPd'
-      // parts[4] = '1013' (CODE)
-      
-      // ✅ Token qismini extract qilish
-      // Token formatida '-' va '_' bor, shuning uchun oxirgi elementdan oldingi hammasini birlashtirish kerak
-      const selectedCode = parts[parts.length - 1]; // Last element is code
-      const tokenParts = parts.slice(1, parts.length - 1); // Everything between 'code_' and code
-      const token = tokenParts.join('_'); // Rejoin with '_'
-      
-      console.log('🔍 Parsed:', { token, selectedCode }); // ✅ Debug
+      console.log('🔍 Parsed:', { token, selectedCode });
       
       await this.handleCodeSelection(ctx, token, selectedCode, telegramId);
     }
@@ -240,7 +254,7 @@ async handleCallbackQuery(ctx) {
 
   /**
    * Handle code selection
-   * ✅ FIXED: Now passes Telegram user data
+   * ✅ FIXED: Now fetches and passes avatar URL
    */
   async handleCodeSelection(ctx, loginToken, selectedCode, telegramId) {
     try {
@@ -258,7 +272,12 @@ async handleCallbackQuery(ctx) {
         return;
       }
 
-      // ✅ FIXED: Pass Telegram user data to verifyLogin
+      // ✅ FETCH AVATAR URL
+      const photoUrl = await this.getUserPhotoUrl(ctx.from.id);
+      
+      logger.info(`Fetched avatar for user ${telegramId}: ${photoUrl || 'no photo'}`);
+
+      // ✅ PASS TELEGRAM DATA WITH AVATAR
       const result = await telegramAuthService.verifyLogin(
         loginToken,
         telegramId,
@@ -268,6 +287,7 @@ async handleCallbackQuery(ctx) {
           last_name: ctx.from.last_name,
           username: ctx.from.username,
           language_code: ctx.from.language_code,
+          photo_url: photoUrl,  // ✅ AVATAR URL
         }
       );
 
@@ -285,7 +305,7 @@ You have logged in on your browser
 
       this.sessions.delete(telegramId);
 
-      logger.info(`User ${telegramId} logged in successfully`);
+      logger.info(`User ${telegramId} logged in successfully with avatar`);
     } catch (error) {
       logger.error('Handle code selection error:', error);
       await ctx.answerCallbackQuery('❌ Xatolik yuz berdi');
