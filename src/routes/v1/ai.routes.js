@@ -181,4 +181,37 @@ router.post(
   }
 );
 
+
+/**
+ * POST /api/v1/ai/analyze-ad
+ * Analyze ad and get recommendations
+ */
+router.post(
+  '/analyze-ad',
+  authenticate,
+  validate([
+    body('text').isString().isLength({ min: 1 }),
+    body('mediaUrl').optional().isString(),
+    body('buttons').optional().isArray(),
+    body('targetAudience').optional().isString(),
+  ]),
+  async (req, res, next) => {
+    try {
+      const { text, mediaUrl, buttons, targetAudience } = req.body;
+
+      const analysis = await adRecommendationsService.analyzeAd({
+        text,
+        mediaUrl,
+        buttons,
+        targetAudience,
+      });
+
+      response.success(res, analysis, 'Ad analyzed successfully');
+    } catch (error) {
+      next(error);
+    }
+  }
+);
+
+
 export default router;
