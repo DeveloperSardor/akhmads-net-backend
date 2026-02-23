@@ -1,10 +1,10 @@
 // src/services/ai/textOptimizationService.js
-import openai from '../../config/openai.js';
+import { geminiChat } from '../../config/gemini.js';
 import logger from '../../utils/logger.js';
 
 /**
  * AI Text Optimization Service
- * Uses OpenAI GPT-4 to improve ad text
+ * Uses Google Gemini (free tier) to improve ad text
  */
 class TextOptimizationService {
   /**
@@ -21,23 +21,18 @@ class TextOptimizationService {
 
       const systemPrompt = this.buildSystemPrompt(language, targetAudience, tone, maxLength);
 
-      const response = await openai.chat.completions.create({
-        model: 'gpt-4',
-        messages: [
-          { role: 'system', content: systemPrompt },
-          { role: 'user', content: text },
-        ],
+      const optimizedText = await geminiChat({
+        system: systemPrompt,
+        user: text,
+        maxTokens: 500,
         temperature: 0.7,
-        max_tokens: 500,
       });
 
-      const optimizedText = response.choices[0].message.content.trim();
-
-      logger.info('✅ Ad text optimized');
+      logger.info('✅ Ad text optimized with Gemini');
 
       return {
         original: text,
-        optimized: optimizedText,
+        optimized: optimizedText.trim(),
         suggestions: this.extractSuggestions(text, optimizedText),
         improvements: [
           'Clarity improved',
@@ -62,19 +57,17 @@ class TextOptimizationService {
 - Be engaging and persuasive
 - Be under 1024 characters
 
-Return ONLY a JSON array of variations, no other text.`;
+Return ONLY a JSON array of strings (variations), no other text, no markdown.`;
 
-      const response = await openai.chat.completions.create({
-        model: 'gpt-4',
-        messages: [
-          { role: 'system', content: systemPrompt },
-          { role: 'user', content: text },
-        ],
+      const result = await geminiChat({
+        system: systemPrompt,
+        user: text,
+        maxTokens: 1000,
         temperature: 0.9,
-        max_tokens: 1000,
       });
 
-      const variations = JSON.parse(response.choices[0].message.content);
+      const cleaned = result.replace(/```json\n?|\n?```/g, '').trim();
+      const variations = JSON.parse(cleaned);
 
       logger.info(`✅ Generated ${variations.length} variations`);
 
@@ -91,8 +84,8 @@ Return ONLY a JSON array of variations, no other text.`;
   async suggestEmojis(text, isPremium = false) {
     try {
       const emojiType = isPremium ? 'premium animated emojis' : 'standard emojis';
-      
-      const systemPrompt = `You are an emoji expert. Suggest 5-10 relevant ${emojiType} for the following advertisement text. Return ONLY a JSON object with this format:
+
+      const systemPrompt = `You are an emoji expert. Suggest 5-10 relevant ${emojiType} for the following advertisement text. Return ONLY a JSON object with this exact format, no markdown:
 {
   "emojis": ["😊", "🎉", "✨"],
   "placements": [
@@ -101,17 +94,15 @@ Return ONLY a JSON array of variations, no other text.`;
   ]
 }`;
 
-      const response = await openai.chat.completions.create({
-        model: 'gpt-3.5-turbo',
-        messages: [
-          { role: 'system', content: systemPrompt },
-          { role: 'user', content: text },
-        ],
+      const result = await geminiChat({
+        system: systemPrompt,
+        user: text,
+        maxTokens: 200,
         temperature: 0.5,
-        max_tokens: 200,
       });
 
-      const suggestions = JSON.parse(response.choices[0].message.content);
+      const cleaned = result.replace(/```json\n?|\n?```/g, '').trim();
+      const suggestions = JSON.parse(cleaned);
 
       logger.info('✅ Emoji suggestions generated');
 
@@ -132,12 +123,12 @@ Return ONLY a JSON array of variations, no other text.`;
       en: 'English',
     };
 
-    return `You are an expert advertisement copywriter specializing in ${languageMap[language]} language.
+    return `You are an expert advertisement copywriter specializing in ${languageMap[language] || 'Uzbek'} language.
 
 Your task: Optimize the advertisement text to maximize engagement and conversions.
 
 Guidelines:
-- Language: ${languageMap[language]}
+- Language: ${languageMap[language] || 'Uzbek'}
 - Target Audience: ${targetAudience}
 - Tone: ${tone}
 - Maximum length: ${maxLength} characters
@@ -172,23 +163,18 @@ Return ONLY the optimized text, nothing else.`;
   }
 
   /**
-   * Improve button text
+   * Optimize button text
    */
   async optimizeButtonText(buttonText) {
     try {
-      const systemPrompt = `You are a UX copywriter. Make this button text more compelling and action-oriented. Keep it SHORT (max 20 characters). Return ONLY the optimized button text.`;
-
-      const response = await openai.chat.completions.create({
-        model: 'gpt-3.5-turbo',
-        messages: [
-          { role: 'system', content: systemPrompt },
-          { role: 'user', content: buttonText },
-        ],
+      const result = await geminiChat({
+        system: `You are a UX copywriter. Make this button text more compelling and action-oriented. Keep it SHORT (max 20 characters). Return ONLY the optimized button text, nothing else.`,
+        user: buttonText,
+        maxTokens: 30,
         temperature: 0.7,
-        max_tokens: 30,
       });
 
-      return response.choices[0].message.content.trim();
+      return result.trim();
     } catch (error) {
       logger.error('Optimize button text failed:', error);
       return buttonText;

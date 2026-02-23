@@ -1,82 +1,23 @@
-import axios from 'axios';
+// src/services/ai/aiModerationService.js
+import { geminiChat } from '../../config/gemini.js';
 import logger from '../../utils/logger.js';
 
 /**
  * AI Moderation Service
- * Uses OpenAI Moderation API or Claude for content moderation
+ * Uses Google Gemini (free tier) for content moderation
  */
 class AiModerationService {
   constructor() {
-    this.provider = process.env.AI_MODERATION_PROVIDER || 'openai'; // 'openai' or 'anthropic'
-    this.openaiKey = process.env.OPENAI_API_KEY;
-    this.anthropicKey = process.env.ANTHROPIC_API_KEY;
     this.enabled = process.env.AI_MODERATION_ENABLED === 'true';
   }
 
   /**
-   * Moderate content using OpenAI
+   * Moderate content using Gemini
    */
-  async moderateWithOpenAI(text) {
+  async moderateWithGemini(text) {
     try {
-      if (!this.openaiKey) {
-        logger.warn('OpenAI API key not configured');
-        return this.getDefaultResult(true);
-      }
-
-      const response = await axios.post(
-        'https://api.openai.com/v1/moderations',
-        { input: text },
-        {
-          headers: {
-            'Content-Type': 'application/json',
-            Authorization: `Bearer ${this.openaiKey}`,
-          },
-        }
-      );
-
-      const result = response.data.results[0];
-
-      const flags = [];
-      if (result.categories.hate) flags.push('hate_speech');
-      if (result.categories.violence) flags.push('violence');
-      if (result.categories.sexual) flags.push('sexual_content');
-      if (result.categories['self-harm']) flags.push('self_harm');
-      if (result.categories['hate/threatening']) flags.push('threatening');
-      if (result.categories['violence/graphic']) flags.push('graphic_violence');
-
-      return {
-        passed: !result.flagged,
-        confidence: this.calculateConfidence(result.category_scores),
-        flags,
-        provider: 'openai',
-        checkedAt: new Date(),
-        rawResult: result,
-      };
-    } catch (error) {
-      logger.error('OpenAI moderation failed:', error);
-      return this.getDefaultResult(true); // Fail open
-    }
-  }
-
-  /**
-   * Moderate content using Anthropic Claude
-   */
-  async moderateWithAnthropic(text) {
-    try {
-      if (!this.anthropicKey) {
-        logger.warn('Anthropic API key not configured');
-        return this.getDefaultResult(true);
-      }
-
-      const response = await axios.post(
-        'https://api.anthropic.com/v1/messages',
-        {
-          model: 'claude-3-haiku-20240307',
-          max_tokens: 500,
-          messages: [
-            {
-              role: 'user',
-              content: `You are a content moderator. Analyze this text and determine if it contains:
+      const result = await geminiChat({
+        user: `You are a content moderator. Analyze this text and determine if it contains:
 1. Hate speech or discrimination
 2. Violence or threats
 3. Sexual content
@@ -86,38 +27,31 @@ class AiModerationService {
 
 Text: "${text}"
 
-Respond ONLY with JSON:
+Respond ONLY with JSON, no markdown:
 {
-  "safe": true/false,
-  "violations": ["category1", "category2"],
-  "severity": "low/medium/high",
+  "safe": true,
+  "violations": [],
+  "severity": "low",
   "explanation": "brief reason"
 }`,
-            },
-          ],
-        },
-        {
-          headers: {
-            'Content-Type': 'application/json',
-            'x-api-key': this.anthropicKey,
-            'anthropic-version': '2023-06-01',
-          },
-        }
-      );
+        maxTokens: 300,
+        temperature: 0.1,
+      });
 
-      const result = JSON.parse(response.data.content[0].text);
+      const cleaned = result.replace(/```json\n?|\n?```/g, '').trim();
+      const parsed = JSON.parse(cleaned);
 
       return {
-        passed: result.safe,
-        confidence: result.severity === 'high' ? 0.95 : result.severity === 'medium' ? 0.8 : 0.6,
-        flags: result.violations || [],
-        provider: 'anthropic',
+        passed: parsed.safe,
+        confidence: parsed.severity === 'high' ? 0.95 : parsed.severity === 'medium' ? 0.8 : 0.6,
+        flags: parsed.violations || [],
+        provider: 'gemini',
         checkedAt: new Date(),
-        rawResult: result,
+        rawResult: parsed,
       };
     } catch (error) {
-      logger.error('Anthropic moderation failed:', error);
-      return this.getDefaultResult(true); // Fail open
+      logger.error('Gemini moderation failed:', error);
+      return this.getDefaultResult(true);
     }
   }
 
@@ -137,15 +71,10 @@ Respond ONLY with JSON:
         return basicCheck;
       }
 
-      // Use AI provider
-      if (this.provider === 'anthropic') {
-        return await this.moderateWithAnthropic(text);
-      } else {
-        return await this.moderateWithOpenAI(text);
-      }
+      return await this.moderateWithGemini(text);
     } catch (error) {
       logger.error('AI moderation failed:', error);
-      return this.getDefaultResult(true); // Fail open
+      return this.getDefaultResult(true);
     }
   }
 
@@ -154,16 +83,8 @@ Respond ONLY with JSON:
    */
   basicKeywordFilter(text) {
     const forbiddenWords = [
-      'scam',
-      'hack',
-      'fraud',
-      'ponzi',
-      'pyramid',
-      'illegal',
-      'drugs',
-      'weapon',
-      'terror',
-      'nazi',
+      'scam', 'hack', 'fraud', 'ponzi', 'pyramid',
+      'illegal', 'drugs', 'weapon', 'terror', 'nazi',
     ];
 
     const textLower = text.toLowerCase();
@@ -184,14 +105,6 @@ Respond ONLY with JSON:
   }
 
   /**
-   * Calculate confidence from OpenAI scores
-   */
-  calculateConfidence(scores) {
-    const maxScore = Math.max(...Object.values(scores));
-    return maxScore > 0.8 ? 0.95 : maxScore > 0.5 ? 0.8 : 0.6;
-  }
-
-  /**
    * Get default result (when AI unavailable)
    */
   getDefaultResult(passed) {
@@ -209,10 +122,9 @@ Respond ONLY with JSON:
    */
   async moderateAd(ad) {
     try {
-      const textToCheck = `${ad.title}\n\n${ad.text}`;
+      const textToCheck = `${ad.title || ''}\n\n${ad.text}`;
       const result = await this.moderateContent(textToCheck);
 
-      // Store result in database
       const prisma = (await import('../../config/database.js')).default;
       await prisma.ad.update({
         where: { id: ad.id },

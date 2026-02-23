@@ -6,6 +6,8 @@ import { authenticate } from '../../middleware/auth.js';
 import { validate } from '../../middleware/validate.js';
 import { body } from 'express-validator';
 import response from '../../utils/response.js';
+import adRecommendationsService from '../../services/ai/adRecommendationsService.js';
+
 
 const router = Router();
 

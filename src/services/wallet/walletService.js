@@ -1,3 +1,4 @@
+// src/services/wallet/walletService.js
 import prisma from '../../config/database.js';
 import logger from '../../utils/logger.js';
 import { InsufficientFundsError, NotFoundError } from '../../utils/errors.js';
