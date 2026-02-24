@@ -3,6 +3,7 @@ import { Bot, InputFile } from 'grammy';
 import logger from '../../utils/logger.js';
 import prisma from '../../config/database.js';
 import { ValidationError } from '../../utils/errors.js';
+import encryption from '../../utils/encryption.js';
 
 /**
  * Telegram Preview Service
@@ -69,13 +70,11 @@ class TelegramPreviewService {
 
         sentMessage = await bot.api.sendPhoto(user.telegramId, photoSource, {
           caption: `🧪 PREVIEW\n\n${text}`,
-          parse_mode: 'HTML',
           reply_markup: replyMarkup,
         });
       } else {
         // Send text only
         sentMessage = await bot.api.sendMessage(user.telegramId, `🧪 PREVIEW\n\n${text}`, {
-          parse_mode: 'HTML',
           reply_markup: replyMarkup,
         });
       }
@@ -88,18 +87,25 @@ class TelegramPreviewService {
         chatId: sentMessage.chat.id,
       };
     } catch (error) {
-      logger.error('Send ad preview failed:', error);
+      logger.error('Send ad preview failed:', {
+        message: error.message,
+        description: error.description,
+        stack: error.stack,
+      });
 
-      // Better error messages
-      if (error.message?.includes('bot was blocked')) {
-        throw new ValidationError('You have blocked the bot. Please unblock it first.');
+      if (error.message?.includes('bot was blocked') || error.description?.includes('blocked')) {
+        throw new ValidationError('Siz botni blokladingiz. Iltimos, avval botni blokdan chiqaring.');
       }
 
-      if (error.message?.includes('user not found')) {
-        throw new ValidationError('Telegram user not found');
+      if (error.message?.includes('user not found') || error.description?.includes('user not found')) {
+        throw new ValidationError('Telegram foydalanuvchisi topilmadi. Avval bot bilan /start bosing.');
       }
 
-      throw error;
+      if (error.description?.includes('chat not found')) {
+        throw new ValidationError('Chat topilmadi. Bot bilan /start bosing: @akhmadsnetbot');
+      }
+
+      throw new Error(`Telegram preview yuborishda xato: ${error.message || error.description || 'Noma lum xato'}`);
     }
   }
 
@@ -118,7 +124,6 @@ class TelegramPreviewService {
       }
 
       // Decrypt bot token
-      const encryption = require('../../utils/encryption.js').default;
       const decryptedToken = encryption.decrypt(bot.tokenEncrypted);
 
       const telegramBot = new Bot(decryptedToken);
@@ -167,12 +172,10 @@ class TelegramPreviewService {
 
         sentMessage = await telegramBot.api.sendPhoto(user.telegramId, photoSource, {
           caption: `🧪 TEST AD\n\n${text}`,
-          parse_mode: 'HTML',
           reply_markup: replyMarkup,
         });
       } else {
         sentMessage = await telegramBot.api.sendMessage(user.telegramId, `🧪 TEST AD\n\n${text}`, {
-          parse_mode: 'HTML',
           reply_markup: replyMarkup,
         });
       }

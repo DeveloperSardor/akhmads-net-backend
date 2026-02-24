@@ -1,0 +1,2547 @@
+{
+    "info": {
+        "name": "Akhmads.net API",
+        "_postman_id": "akhmads-net-v1",
+        "description": "Akhmads.net Backend API - Full Collection",
+        "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+    },
+    "variable": [
+        {
+            "key": "baseUrl",
+            "value": "http://localhost:3000/api/v1",
+            "type": "string"
+        },
+        {
+            "key": "accessToken",
+            "value": "",
+            "type": "string"
+        },
+        {
+            "key": "refreshToken",
+            "value": "",
+            "type": "string"
+        },
+        {
+            "key": "adId",
+            "value": "",
+            "type": "string"
+        },
+        {
+            "key": "botId",
+            "value": "",
+            "type": "string"
+        },
+        {
+            "key": "botApiKey",
+            "value": "",
+            "type": "string"
+        }
+    ],
+    "auth": {
+        "type": "bearer",
+        "bearer": [
+            {
+                "key": "token",
+                "value": "{{accessToken}}",
+                "type": "string"
+            }
+        ]
+    },
+    "item": [
+        {
+            "name": "🔐 Auth",
+            "item": [
+                {
+                    "name": "Initiate Login (Telegram)",
+                    "request": {
+                        "method": "POST",
+                        "header": [],
+                        "url": {
+                            "raw": "{{baseUrl}}/auth/login/initiate",
+                            "host": [
+                                "{{baseUrl}}"
+                            ],
+                            "path": [
+                                "auth",
+                                "login",
+                                "initiate"
+                            ]
+                        }
+                    }
+                },
+                {
+                    "name": "Check Login Status",
+                    "request": {
+                        "method": "GET",
+                        "header": [],
+                        "url": {
+                            "raw": "{{baseUrl}}/auth/login/status/:token",
+                            "host": [
+                                "{{baseUrl}}"
+                            ],
+                            "path": [
+                                "auth",
+                                "login",
+                                "status",
+                                ":token"
+                            ],
+                            "variable": [
+                                {
+                                    "key": "token",
+                                    "value": "YOUR_TOKEN_HERE"
+                                }
+                            ]
+                        }
+                    }
+                },
+                {
+                    "name": "Refresh Token",
+                    "request": {
+                        "method": "POST",
+                        "header": [
+                            {
+                                "key": "Content-Type",
+                                "value": "application/json"
+                            }
+                        ],
+                        "body": {
+                            "mode": "raw",
+                            "raw": "{\n  \"refreshToken\": \"{{refreshToken}}\"\n}"
+                        },
+                        "url": {
+                            "raw": "{{baseUrl}}/auth/refresh",
+                            "host": [
+                                "{{baseUrl}}"
+                            ],
+                            "path": [
+                                "auth",
+                                "refresh"
+                            ]
+                        }
+                    }
+                },
+                {
+                    "name": "Logout",
+                    "request": {
+                        "auth": {
+                            "type": "bearer",
+                            "bearer": [
+                                {
+                                    "key": "token",
+                                    "value": "{{accessToken}}"
+                                }
+                            ]
+                        },
+                        "method": "POST",
+                        "header": [],
+                        "url": {
+                            "raw": "{{baseUrl}}/auth/logout",
+                            "host": [
+                                "{{baseUrl}}"
+                            ],
+                            "path": [
+                                "auth",
+                                "logout"
+                            ]
+                        }
+                    }
+                },
+                {
+                    "name": "Get Current User (me)",
+                    "request": {
+                        "auth": {
+                            "type": "bearer",
+                            "bearer": [
+                                {
+                                    "key": "token",
+                                    "value": "{{accessToken}}"
+                                }
+                            ]
+                        },
+                        "method": "GET",
+                        "header": [],
+                        "url": {
+                            "raw": "{{baseUrl}}/auth/me",
+                            "host": [
+                                "{{baseUrl}}"
+                            ],
+                            "path": [
+                                "auth",
+                                "me"
+                            ]
+                        }
+                    }
+                }
+            ]
+        },
+        {
+            "name": "👤 User",
+            "item": [
+                {
+                    "name": "Get Profile (with wallet & stats)",
+                    "request": {
+                        "method": "GET",
+                        "header": [],
+                        "url": {
+                            "raw": "{{baseUrl}}/user/profile",
+                            "host": [
+                                "{{baseUrl}}"
+                            ],
+                            "path": [
+                                "user",
+                                "profile"
+                            ]
+                        }
+                    }
+                },
+                {
+                    "name": "Update Profile",
+                    "request": {
+                        "method": "PUT",
+                        "header": [
+                            {
+                                "key": "Content-Type",
+                                "value": "application/json"
+                            }
+                        ],
+                        "body": {
+                            "mode": "raw",
+                            "raw": "{\n  \"firstName\": \"John\",\n  \"lastName\": \"Doe\",\n  \"email\": \"john@example.com\",\n  \"username\": \"johndoe\",\n  \"locale\": \"uz\"\n}"
+                        },
+                        "url": {
+                            "raw": "{{baseUrl}}/user/profile",
+                            "host": [
+                                "{{baseUrl}}"
+                            ],
+                            "path": [
+                                "user",
+                                "profile"
+                            ]
+                        }
+                    }
+                },
+                {
+                    "name": "Get User Stats",
+                    "request": {
+                        "method": "GET",
+                        "header": [],
+                        "url": {
+                            "raw": "{{baseUrl}}/user/stats",
+                            "host": [
+                                "{{baseUrl}}"
+                            ],
+                            "path": [
+                                "user",
+                                "stats"
+                            ]
+                        }
+                    }
+                }
+            ]
+        },
+        {
+            "name": "📢 Ads",
+            "item": [
+                {
+                    "name": "Get Pricing Tiers",
+                    "request": {
+                        "method": "GET",
+                        "header": [],
+                        "url": {
+                            "raw": "{{baseUrl}}/ads/pricing",
+                            "host": [
+                                "{{baseUrl}}"
+                            ],
+                            "path": [
+                                "ads",
+                                "pricing"
+                            ]
+                        }
+                    }
+                },
+                {
+                    "name": "Get Pricing Estimate",
+                    "request": {
+                        "method": "POST",
+                        "header": [
+                            {
+                                "key": "Content-Type",
+                                "value": "application/json"
+                            }
+                        ],
+                        "body": {
+                            "mode": "raw",
+                            "raw": "{\n  \"impressions\": 1000,\n  \"category\": \"general\",\n  \"cpmBid\": 2.5\n}"
+                        },
+                        "url": {
+                            "raw": "{{baseUrl}}/ads/pricing/estimate",
+                            "host": [
+                                "{{baseUrl}}"
+                            ],
+                            "path": [
+                                "ads",
+                                "pricing",
+                                "estimate"
+                            ]
+                        }
+                    }
+                },
+                {
+                    "name": "Get Targeting Options",
+                    "request": {
+                        "method": "GET",
+                        "header": [],
+                        "url": {
+                            "raw": "{{baseUrl}}/ads/targeting/options",
+                            "host": [
+                                "{{baseUrl}}"
+                            ],
+                            "path": [
+                                "ads",
+                                "targeting",
+                                "options"
+                            ]
+                        }
+                    }
+                },
+                {
+                    "name": "Create Ad",
+                    "request": {
+                        "method": "POST",
+                        "header": [
+                            {
+                                "key": "Content-Type",
+                                "value": "application/json"
+                            }
+                        ],
+                        "body": {
+                            "mode": "raw",
+                            "raw": "{\n  \"contentType\": \"TEXT\",\n  \"title\": \"My Ad Title\",\n  \"text\": \"This is my advertisement text that is at least 10 chars.\",\n  \"targetImpressions\": 1000,\n  \"cpmBid\": 2.5,\n  \"buttons\": [\n    { \"text\": \"Visit Now\", \"url\": \"https://example.com\" }\n  ],\n  \"targeting\": {\n    \"languages\": [\"uz\", \"ru\"]\n  }\n}"
+                        },
+                        "url": {
+                            "raw": "{{baseUrl}}/ads",
+                            "host": [
+                                "{{baseUrl}}"
+                            ],
+                            "path": [
+                                "ads"
+                            ]
+                        }
+                    }
+                },
+                {
+                    "name": "Preview Ad",
+                    "request": {
+                        "method": "POST",
+                        "header": [
+                            {
+                                "key": "Content-Type",
+                                "value": "application/json"
+                            }
+                        ],
+                        "body": {
+                            "mode": "raw",
+                            "raw": "{\n  \"contentType\": \"TEXT\",\n  \"text\": \"My ad preview text\",\n  \"buttons\": [{ \"text\": \"Click\", \"url\": \"https://example.com\" }]\n}"
+                        },
+                        "url": {
+                            "raw": "{{baseUrl}}/ads/preview",
+                            "host": [
+                                "{{baseUrl}}"
+                            ],
+                            "path": [
+                                "ads",
+                                "preview"
+                            ]
+                        }
+                    }
+                },
+                {
+                    "name": "Get My Ads",
+                    "request": {
+                        "method": "GET",
+                        "header": [],
+                        "url": {
+                            "raw": "{{baseUrl}}/ads?status=ACTIVE&limit=20&offset=0",
+                            "host": [
+                                "{{baseUrl}}"
+                            ],
+                            "path": [
+                                "ads"
+                            ],
+                            "query": [
+                                {
+                                    "key": "status",
+                                    "value": "ACTIVE"
+                                },
+                                {
+                                    "key": "limit",
+                                    "value": "20"
+                                },
+                                {
+                                    "key": "offset",
+                                    "value": "0"
+                                }
+                            ]
+                        }
+                    }
+                },
+                {
+                    "name": "Get Saved Ads",
+                    "request": {
+                        "method": "GET",
+                        "header": [],
+                        "url": {
+                            "raw": "{{baseUrl}}/ads/saved",
+                            "host": [
+                                "{{baseUrl}}"
+                            ],
+                            "path": [
+                                "ads",
+                                "saved"
+                            ]
+                        }
+                    }
+                },
+                {
+                    "name": "Get Stats Overview",
+                    "request": {
+                        "method": "GET",
+                        "header": [],
+                        "url": {
+                            "raw": "{{baseUrl}}/ads/stats/overview?days=30",
+                            "host": [
+                                "{{baseUrl}}"
+                            ],
+                            "path": [
+                                "ads",
+                                "stats",
+                                "overview"
+                            ],
+                            "query": [
+                                {
+                                    "key": "days",
+                                    "value": "30"
+                                }
+                            ]
+                        }
+                    }
+                },
+                {
+                    "name": "Upload Ad Media (File)",
+                    "request": {
+                        "method": "POST",
+                        "header": [],
+                        "body": {
+                            "mode": "formdata",
+                            "formdata": [
+                                {
+                                    "key": "media",
+                                    "type": "file",
+                                    "src": ""
+                                }
+                            ]
+                        },
+                        "url": {
+                            "raw": "{{baseUrl}}/ads/upload-media",
+                            "host": [
+                                "{{baseUrl}}"
+                            ],
+                            "path": [
+                                "ads",
+                                "upload-media"
+                            ]
+                        }
+                    }
+                },
+                {
+                    "name": "Upload Ad Media (Base64)",
+                    "request": {
+                        "method": "POST",
+                        "header": [
+                            {
+                                "key": "Content-Type",
+                                "value": "application/json"
+                            }
+                        ],
+                        "body": {
+                            "mode": "raw",
+                            "raw": "{\n  \"base64Data\": \"data:image/png;base64,iVBORw0KGgo=\"\n}"
+                        },
+                        "url": {
+                            "raw": "{{baseUrl}}/ads/upload-base64",
+                            "host": [
+                                "{{baseUrl}}"
+                            ],
+                            "path": [
+                                "ads",
+                                "upload-base64"
+                            ]
+                        }
+                    }
+                },
+                {
+                    "name": "Get Ad By ID",
+                    "request": {
+                        "method": "GET",
+                        "header": [],
+                        "url": {
+                            "raw": "{{baseUrl}}/ads/{{adId}}",
+                            "host": [
+                                "{{baseUrl}}"
+                            ],
+                            "path": [
+                                "ads",
+                                "{{adId}}"
+                            ]
+                        }
+                    }
+                },
+                {
+                    "name": "Update Ad",
+                    "request": {
+                        "method": "PUT",
+                        "header": [
+                            {
+                                "key": "Content-Type",
+                                "value": "application/json"
+                            }
+                        ],
+                        "body": {
+                            "mode": "raw",
+                            "raw": "{\n  \"title\": \"Updated Title\",\n  \"text\": \"Updated ad text content here\"\n}"
+                        },
+                        "url": {
+                            "raw": "{{baseUrl}}/ads/{{adId}}",
+                            "host": [
+                                "{{baseUrl}}"
+                            ],
+                            "path": [
+                                "ads",
+                                "{{adId}}"
+                            ]
+                        }
+                    }
+                },
+                {
+                    "name": "Delete Ad",
+                    "request": {
+                        "method": "DELETE",
+                        "header": [],
+                        "url": {
+                            "raw": "{{baseUrl}}/ads/{{adId}}",
+                            "host": [
+                                "{{baseUrl}}"
+                            ],
+                            "path": [
+                                "ads",
+                                "{{adId}}"
+                            ]
+                        }
+                    }
+                },
+                {
+                    "name": "Submit Ad for Review",
+                    "request": {
+                        "method": "POST",
+                        "header": [],
+                        "url": {
+                            "raw": "{{baseUrl}}/ads/{{adId}}/submit",
+                            "host": [
+                                "{{baseUrl}}"
+                            ],
+                            "path": [
+                                "ads",
+                                "{{adId}}",
+                                "submit"
+                            ]
+                        }
+                    }
+                },
+                {
+                    "name": "Pause Ad",
+                    "request": {
+                        "method": "POST",
+                        "header": [],
+                        "url": {
+                            "raw": "{{baseUrl}}/ads/{{adId}}/pause",
+                            "host": [
+                                "{{baseUrl}}"
+                            ],
+                            "path": [
+                                "ads",
+                                "{{adId}}",
+                                "pause"
+                            ]
+                        }
+                    }
+                },
+                {
+                    "name": "Resume Ad",
+                    "request": {
+                        "method": "POST",
+                        "header": [],
+                        "url": {
+                            "raw": "{{baseUrl}}/ads/{{adId}}/resume",
+                            "host": [
+                                "{{baseUrl}}"
+                            ],
+                            "path": [
+                                "ads",
+                                "{{adId}}",
+                                "resume"
+                            ]
+                        }
+                    }
+                },
+                {
+                    "name": "Duplicate Ad",
+                    "request": {
+                        "method": "POST",
+                        "header": [],
+                        "url": {
+                            "raw": "{{baseUrl}}/ads/{{adId}}/duplicate",
+                            "host": [
+                                "{{baseUrl}}"
+                            ],
+                            "path": [
+                                "ads",
+                                "{{adId}}",
+                                "duplicate"
+                            ]
+                        }
+                    }
+                },
+                {
+                    "name": "Archive Ad",
+                    "request": {
+                        "method": "POST",
+                        "header": [],
+                        "url": {
+                            "raw": "{{baseUrl}}/ads/{{adId}}/archive",
+                            "host": [
+                                "{{baseUrl}}"
+                            ],
+                            "path": [
+                                "ads",
+                                "{{adId}}",
+                                "archive"
+                            ]
+                        }
+                    }
+                },
+                {
+                    "name": "Unarchive Ad",
+                    "request": {
+                        "method": "POST",
+                        "header": [],
+                        "url": {
+                            "raw": "{{baseUrl}}/ads/{{adId}}/unarchive",
+                            "host": [
+                                "{{baseUrl}}"
+                            ],
+                            "path": [
+                                "ads",
+                                "{{adId}}",
+                                "unarchive"
+                            ]
+                        }
+                    }
+                },
+                {
+                    "name": "Toggle Save Ad",
+                    "request": {
+                        "method": "POST",
+                        "header": [],
+                        "url": {
+                            "raw": "{{baseUrl}}/ads/{{adId}}/save",
+                            "host": [
+                                "{{baseUrl}}"
+                            ],
+                            "path": [
+                                "ads",
+                                "{{adId}}",
+                                "save"
+                            ]
+                        }
+                    }
+                },
+                {
+                    "name": "Set Ad Schedule",
+                    "request": {
+                        "method": "POST",
+                        "header": [
+                            {
+                                "key": "Content-Type",
+                                "value": "application/json"
+                            }
+                        ],
+                        "body": {
+                            "mode": "raw",
+                            "raw": "{\n  \"startDate\": \"2026-03-01T00:00:00Z\",\n  \"endDate\": \"2026-03-31T23:59:59Z\",\n  \"timezone\": \"Asia/Tashkent\",\n  \"activeDays\": [1,2,3,4,5],\n  \"activeHours\": [9,10,11,12,13,14,15,16,17]\n}"
+                        },
+                        "url": {
+                            "raw": "{{baseUrl}}/ads/{{adId}}/schedule",
+                            "host": [
+                                "{{baseUrl}}"
+                            ],
+                            "path": [
+                                "ads",
+                                "{{adId}}",
+                                "schedule"
+                            ]
+                        }
+                    }
+                },
+                {
+                    "name": "Remove Ad Schedule",
+                    "request": {
+                        "method": "DELETE",
+                        "header": [],
+                        "url": {
+                            "raw": "{{baseUrl}}/ads/{{adId}}/schedule",
+                            "host": [
+                                "{{baseUrl}}"
+                            ],
+                            "path": [
+                                "ads",
+                                "{{adId}}",
+                                "schedule"
+                            ]
+                        }
+                    }
+                },
+                {
+                    "name": "Get Ad Performance",
+                    "request": {
+                        "method": "GET",
+                        "header": [],
+                        "url": {
+                            "raw": "{{baseUrl}}/ads/{{adId}}/performance",
+                            "host": [
+                                "{{baseUrl}}"
+                            ],
+                            "path": [
+                                "ads",
+                                "{{adId}}",
+                                "performance"
+                            ]
+                        }
+                    }
+                },
+                {
+                    "name": "Get Ad Daily Stats",
+                    "request": {
+                        "method": "GET",
+                        "header": [],
+                        "url": {
+                            "raw": "{{baseUrl}}/ads/{{adId}}/stats/daily?days=30",
+                            "host": [
+                                "{{baseUrl}}"
+                            ],
+                            "path": [
+                                "ads",
+                                "{{adId}}",
+                                "stats",
+                                "daily"
+                            ],
+                            "query": [
+                                {
+                                    "key": "days",
+                                    "value": "30"
+                                }
+                            ]
+                        }
+                    }
+                },
+                {
+                    "name": "Get Ad Hourly Stats",
+                    "request": {
+                        "method": "GET",
+                        "header": [],
+                        "url": {
+                            "raw": "{{baseUrl}}/ads/{{adId}}/stats/hourly",
+                            "host": [
+                                "{{baseUrl}}"
+                            ],
+                            "path": [
+                                "ads",
+                                "{{adId}}",
+                                "stats",
+                                "hourly"
+                            ]
+                        }
+                    }
+                },
+                {
+                    "name": "Get Ad Clicks",
+                    "request": {
+                        "method": "GET",
+                        "header": [],
+                        "url": {
+                            "raw": "{{baseUrl}}/ads/{{adId}}/clicks?limit=100&offset=0",
+                            "host": [
+                                "{{baseUrl}}"
+                            ],
+                            "path": [
+                                "ads",
+                                "{{adId}}",
+                                "clicks"
+                            ],
+                            "query": [
+                                {
+                                    "key": "limit",
+                                    "value": "100"
+                                },
+                                {
+                                    "key": "offset",
+                                    "value": "0"
+                                }
+                            ]
+                        }
+                    }
+                },
+                {
+                    "name": "Export Ad Impressions (Excel)",
+                    "request": {
+                        "method": "GET",
+                        "header": [],
+                        "url": {
+                            "raw": "{{baseUrl}}/ads/{{adId}}/export",
+                            "host": [
+                                "{{baseUrl}}"
+                            ],
+                            "path": [
+                                "ads",
+                                "{{adId}}",
+                                "export"
+                            ]
+                        }
+                    }
+                },
+                {
+                    "name": "Send Test Ad",
+                    "request": {
+                        "method": "POST",
+                        "header": [
+                            {
+                                "key": "Content-Type",
+                                "value": "application/json"
+                            }
+                        ],
+                        "body": {
+                            "mode": "raw",
+                            "raw": "{\n  \"telegramUserId\": \"515063926\"\n}"
+                        },
+                        "url": {
+                            "raw": "{{baseUrl}}/ads/{{adId}}/test",
+                            "host": [
+                                "{{baseUrl}}"
+                            ],
+                            "path": [
+                                "ads",
+                                "{{adId}}",
+                                "test"
+                            ]
+                        }
+                    }
+                },
+                {
+                    "name": "[Bot API] SendPost",
+                    "request": {
+                        "auth": {
+                            "type": "noauth"
+                        },
+                        "method": "POST",
+                        "header": [
+                            {
+                                "key": "Content-Type",
+                                "value": "application/json"
+                            },
+                            {
+                                "key": "X-API-Key",
+                                "value": "{{botApiKey}}"
+                            }
+                        ],
+                        "body": {
+                            "mode": "raw",
+                            "raw": "{\n  \"SendToChatId\": 515063926\n}"
+                        },
+                        "url": {
+                            "raw": "{{baseUrl}}/ad/SendPost",
+                            "host": [
+                                "{{baseUrl}}"
+                            ],
+                            "path": [
+                                "ad",
+                                "SendPost"
+                            ]
+                        }
+                    }
+                }
+            ]
+        },
+        {
+            "name": "🤖 Bots",
+            "item": [
+                {
+                    "name": "Register Bot",
+                    "request": {
+                        "method": "POST",
+                        "header": [
+                            {
+                                "key": "Content-Type",
+                                "value": "application/json"
+                            }
+                        ],
+                        "body": {
+                            "mode": "raw",
+                            "raw": "{\n  \"token\": \"1234567890:AAFakeTokenHere\",\n  \"category\": \"news\",\n  \"language\": \"uz\",\n  \"shortDescription\": \"My Telegram bot description\",\n  \"monetized\": true\n}"
+                        },
+                        "url": {
+                            "raw": "{{baseUrl}}/bots",
+                            "host": [
+                                "{{baseUrl}}"
+                            ],
+                            "path": [
+                                "bots"
+                            ]
+                        }
+                    }
+                },
+                {
+                    "name": "Get My Bots",
+                    "request": {
+                        "method": "GET",
+                        "header": [],
+                        "url": {
+                            "raw": "{{baseUrl}}/bots",
+                            "host": [
+                                "{{baseUrl}}"
+                            ],
+                            "path": [
+                                "bots"
+                            ]
+                        }
+                    }
+                },
+                {
+                    "name": "Get Bot By ID",
+                    "request": {
+                        "method": "GET",
+                        "header": [],
+                        "url": {
+                            "raw": "{{baseUrl}}/bots/{{botId}}",
+                            "host": [
+                                "{{baseUrl}}"
+                            ],
+                            "path": [
+                                "bots",
+                                "{{botId}}"
+                            ]
+                        }
+                    }
+                },
+                {
+                    "name": "Update Bot",
+                    "request": {
+                        "method": "PUT",
+                        "header": [
+                            {
+                                "key": "Content-Type",
+                                "value": "application/json"
+                            }
+                        ],
+                        "body": {
+                            "mode": "raw",
+                            "raw": "{\n  \"shortDescription\": \"Updated description\",\n  \"category\": \"tech\",\n  \"language\": \"ru\",\n  \"frequencyMinutes\": 60,\n  \"postFilter\": \"all\",\n  \"monetized\": true\n}"
+                        },
+                        "url": {
+                            "raw": "{{baseUrl}}/bots/{{botId}}",
+                            "host": [
+                                "{{baseUrl}}"
+                            ],
+                            "path": [
+                                "bots",
+                                "{{botId}}"
+                            ]
+                        }
+                    }
+                },
+                {
+                    "name": "Pause / Resume Bot",
+                    "request": {
+                        "method": "POST",
+                        "header": [
+                            {
+                                "key": "Content-Type",
+                                "value": "application/json"
+                            }
+                        ],
+                        "body": {
+                            "mode": "raw",
+                            "raw": "{\n  \"isPaused\": true\n}"
+                        },
+                        "url": {
+                            "raw": "{{baseUrl}}/bots/{{botId}}/pause",
+                            "host": [
+                                "{{baseUrl}}"
+                            ],
+                            "path": [
+                                "bots",
+                                "{{botId}}",
+                                "pause"
+                            ]
+                        }
+                    }
+                },
+                {
+                    "name": "Regenerate API Key",
+                    "request": {
+                        "method": "POST",
+                        "header": [],
+                        "url": {
+                            "raw": "{{baseUrl}}/bots/{{botId}}/regenerate-api-key",
+                            "host": [
+                                "{{baseUrl}}"
+                            ],
+                            "path": [
+                                "bots",
+                                "{{botId}}",
+                                "regenerate-api-key"
+                            ]
+                        }
+                    }
+                },
+                {
+                    "name": "Update Bot Token",
+                    "request": {
+                        "method": "PUT",
+                        "header": [
+                            {
+                                "key": "Content-Type",
+                                "value": "application/json"
+                            }
+                        ],
+                        "body": {
+                            "mode": "raw",
+                            "raw": "{\n  \"newToken\": \"1234567890:AANewTokenHere\"\n}"
+                        },
+                        "url": {
+                            "raw": "{{baseUrl}}/bots/{{botId}}/token",
+                            "host": [
+                                "{{baseUrl}}"
+                            ],
+                            "path": [
+                                "bots",
+                                "{{botId}}",
+                                "token"
+                            ]
+                        }
+                    }
+                },
+                {
+                    "name": "Delete Bot",
+                    "request": {
+                        "method": "DELETE",
+                        "header": [],
+                        "url": {
+                            "raw": "{{baseUrl}}/bots/{{botId}}",
+                            "host": [
+                                "{{baseUrl}}"
+                            ],
+                            "path": [
+                                "bots",
+                                "{{botId}}"
+                            ]
+                        }
+                    }
+                },
+                {
+                    "name": "Get Bot Stats",
+                    "request": {
+                        "method": "GET",
+                        "header": [],
+                        "url": {
+                            "raw": "{{baseUrl}}/bots/{{botId}}/stats?period=7d",
+                            "host": [
+                                "{{baseUrl}}"
+                            ],
+                            "path": [
+                                "bots",
+                                "{{botId}}",
+                                "stats"
+                            ],
+                            "query": [
+                                {
+                                    "key": "period",
+                                    "value": "7d"
+                                }
+                            ]
+                        }
+                    }
+                },
+                {
+                    "name": "Get Integration Code",
+                    "request": {
+                        "method": "GET",
+                        "header": [],
+                        "url": {
+                            "raw": "{{baseUrl}}/bots/{{botId}}/integration?language=python",
+                            "host": [
+                                "{{baseUrl}}"
+                            ],
+                            "path": [
+                                "bots",
+                                "{{botId}}",
+                                "integration"
+                            ],
+                            "query": [
+                                {
+                                    "key": "language",
+                                    "value": "python"
+                                }
+                            ]
+                        }
+                    }
+                }
+            ]
+        },
+        {
+            "name": "💰 Wallet",
+            "item": [
+                {
+                    "name": "Get Wallet",
+                    "request": {
+                        "method": "GET",
+                        "header": [],
+                        "url": {
+                            "raw": "{{baseUrl}}/wallet",
+                            "host": [
+                                "{{baseUrl}}"
+                            ],
+                            "path": [
+                                "wallet"
+                            ]
+                        }
+                    }
+                },
+                {
+                    "name": "Get Transaction History",
+                    "request": {
+                        "method": "GET",
+                        "header": [],
+                        "url": {
+                            "raw": "{{baseUrl}}/wallet/transactions?limit=50&offset=0",
+                            "host": [
+                                "{{baseUrl}}"
+                            ],
+                            "path": [
+                                "wallet",
+                                "transactions"
+                            ],
+                            "query": [
+                                {
+                                    "key": "limit",
+                                    "value": "50"
+                                },
+                                {
+                                    "key": "offset",
+                                    "value": "0"
+                                }
+                            ]
+                        }
+                    }
+                },
+                {
+                    "name": "Get Ledger Entries",
+                    "request": {
+                        "method": "GET",
+                        "header": [],
+                        "url": {
+                            "raw": "{{baseUrl}}/wallet/ledger?limit=50&offset=0",
+                            "host": [
+                                "{{baseUrl}}"
+                            ],
+                            "path": [
+                                "wallet",
+                                "ledger"
+                            ],
+                            "query": [
+                                {
+                                    "key": "limit",
+                                    "value": "50"
+                                },
+                                {
+                                    "key": "offset",
+                                    "value": "0"
+                                }
+                            ]
+                        }
+                    }
+                },
+                {
+                    "name": "Balance Check",
+                    "request": {
+                        "method": "GET",
+                        "header": [],
+                        "url": {
+                            "raw": "{{baseUrl}}/wallet/balance-check",
+                            "host": [
+                                "{{baseUrl}}"
+                            ],
+                            "path": [
+                                "wallet",
+                                "balance-check"
+                            ]
+                        }
+                    }
+                }
+            ]
+        },
+        {
+            "name": "💳 Payments",
+            "item": [
+                {
+                    "name": "Initiate Deposit",
+                    "request": {
+                        "method": "POST",
+                        "header": [
+                            {
+                                "key": "Content-Type",
+                                "value": "application/json"
+                            }
+                        ],
+                        "body": {
+                            "mode": "raw",
+                            "raw": "{\n  \"provider\": \"CRYPTO\",\n  \"amount\": 10\n}"
+                        },
+                        "url": {
+                            "raw": "{{baseUrl}}/payments/deposit/initiate",
+                            "host": [
+                                "{{baseUrl}}"
+                            ],
+                            "path": [
+                                "payments",
+                                "deposit",
+                                "initiate"
+                            ]
+                        }
+                    }
+                },
+                {
+                    "name": "Get Deposit History",
+                    "request": {
+                        "method": "GET",
+                        "header": [],
+                        "url": {
+                            "raw": "{{baseUrl}}/payments/deposit/history?limit=20&offset=0",
+                            "host": [
+                                "{{baseUrl}}"
+                            ],
+                            "path": [
+                                "payments",
+                                "deposit",
+                                "history"
+                            ],
+                            "query": [
+                                {
+                                    "key": "limit",
+                                    "value": "20"
+                                },
+                                {
+                                    "key": "offset",
+                                    "value": "0"
+                                }
+                            ]
+                        }
+                    }
+                },
+                {
+                    "name": "Check Deposit Status",
+                    "request": {
+                        "method": "GET",
+                        "header": [],
+                        "url": {
+                            "raw": "{{baseUrl}}/payments/deposit/:transactionId/status",
+                            "host": [
+                                "{{baseUrl}}"
+                            ],
+                            "path": [
+                                "payments",
+                                "deposit",
+                                ":transactionId",
+                                "status"
+                            ],
+                            "variable": [
+                                {
+                                    "key": "transactionId",
+                                    "value": ""
+                                }
+                            ]
+                        }
+                    }
+                },
+                {
+                    "name": "Get Withdraw Info",
+                    "request": {
+                        "method": "GET",
+                        "header": [],
+                        "url": {
+                            "raw": "{{baseUrl}}/payments/withdraw/info",
+                            "host": [
+                                "{{baseUrl}}"
+                            ],
+                            "path": [
+                                "payments",
+                                "withdraw",
+                                "info"
+                            ]
+                        }
+                    }
+                },
+                {
+                    "name": "Request Withdrawal",
+                    "request": {
+                        "method": "POST",
+                        "header": [
+                            {
+                                "key": "Content-Type",
+                                "value": "application/json"
+                            }
+                        ],
+                        "body": {
+                            "mode": "raw",
+                            "raw": "{\n  \"amount\": 10,\n  \"bep20Address\": \"0xYourBEP20AddressHere40Characters00\"\n}"
+                        },
+                        "url": {
+                            "raw": "{{baseUrl}}/payments/withdraw/request",
+                            "host": [
+                                "{{baseUrl}}"
+                            ],
+                            "path": [
+                                "payments",
+                                "withdraw",
+                                "request"
+                            ]
+                        }
+                    }
+                },
+                {
+                    "name": "Get Withdrawal History",
+                    "request": {
+                        "method": "GET",
+                        "header": [],
+                        "url": {
+                            "raw": "{{baseUrl}}/payments/withdraw/history?limit=20&offset=0",
+                            "host": [
+                                "{{baseUrl}}"
+                            ],
+                            "path": [
+                                "payments",
+                                "withdraw",
+                                "history"
+                            ],
+                            "query": [
+                                {
+                                    "key": "limit",
+                                    "value": "20"
+                                },
+                                {
+                                    "key": "offset",
+                                    "value": "0"
+                                }
+                            ]
+                        }
+                    }
+                },
+                {
+                    "name": "Get All Transactions",
+                    "request": {
+                        "method": "GET",
+                        "header": [],
+                        "url": {
+                            "raw": "{{baseUrl}}/payments/transactions?limit=50&offset=0",
+                            "host": [
+                                "{{baseUrl}}"
+                            ],
+                            "path": [
+                                "payments",
+                                "transactions"
+                            ],
+                            "query": [
+                                {
+                                    "key": "limit",
+                                    "value": "50"
+                                },
+                                {
+                                    "key": "offset",
+                                    "value": "0"
+                                }
+                            ]
+                        }
+                    }
+                },
+                {
+                    "name": "[Webhook] Payme Callback",
+                    "request": {
+                        "auth": {
+                            "type": "noauth"
+                        },
+                        "method": "POST",
+                        "header": [
+                            {
+                                "key": "Content-Type",
+                                "value": "application/json"
+                            },
+                            {
+                                "key": "Authorization",
+                                "value": "Basic base64EncodedKey"
+                            }
+                        ],
+                        "body": {
+                            "mode": "raw",
+                            "raw": "{\n  \"jsonrpc\": \"2.0\",\n  \"method\": \"CheckPerformTransaction\",\n  \"params\": { \"id\": \"txn_id\" },\n  \"id\": 1\n}"
+                        },
+                        "url": {
+                            "raw": "{{baseUrl}}/payments/payme/callback",
+                            "host": [
+                                "{{baseUrl}}"
+                            ],
+                            "path": [
+                                "payments",
+                                "payme",
+                                "callback"
+                            ]
+                        }
+                    }
+                },
+                {
+                    "name": "[Webhook] CryptoPay Webhook",
+                    "request": {
+                        "auth": {
+                            "type": "noauth"
+                        },
+                        "method": "POST",
+                        "header": [
+                            {
+                                "key": "Content-Type",
+                                "value": "application/json"
+                            },
+                            {
+                                "key": "crypto-pay-api-signature",
+                                "value": "signature_here"
+                            }
+                        ],
+                        "body": {
+                            "mode": "raw",
+                            "raw": "{\n  \"update_type\": \"invoice_paid\",\n  \"update_id\": 1,\n  \"request_date\": \"2026-01-01T00:00:00Z\",\n  \"payload\": {}\n}"
+                        },
+                        "url": {
+                            "raw": "{{baseUrl}}/payments/cryptopay/webhook",
+                            "host": [
+                                "{{baseUrl}}"
+                            ],
+                            "path": [
+                                "payments",
+                                "cryptopay",
+                                "webhook"
+                            ]
+                        }
+                    }
+                }
+            ]
+        },
+        {
+            "name": "📊 Analytics",
+            "item": [
+                {
+                    "name": "Advertiser Overview",
+                    "request": {
+                        "method": "GET",
+                        "header": [],
+                        "url": {
+                            "raw": "{{baseUrl}}/analytics/advertiser/overview",
+                            "host": [
+                                "{{baseUrl}}"
+                            ],
+                            "path": [
+                                "analytics",
+                                "advertiser",
+                                "overview"
+                            ]
+                        }
+                    }
+                },
+                {
+                    "name": "Bot Owner Overview",
+                    "request": {
+                        "method": "GET",
+                        "header": [],
+                        "url": {
+                            "raw": "{{baseUrl}}/analytics/owner/overview",
+                            "host": [
+                                "{{baseUrl}}"
+                            ],
+                            "path": [
+                                "analytics",
+                                "owner",
+                                "overview"
+                            ]
+                        }
+                    }
+                },
+                {
+                    "name": "Bot Detailed Stats",
+                    "request": {
+                        "method": "GET",
+                        "header": [],
+                        "url": {
+                            "raw": "{{baseUrl}}/analytics/owner/bot/{{botId}}?period=7d",
+                            "host": [
+                                "{{baseUrl}}"
+                            ],
+                            "path": [
+                                "analytics",
+                                "owner",
+                                "bot",
+                                "{{botId}}"
+                            ],
+                            "query": [
+                                {
+                                    "key": "period",
+                                    "value": "7d"
+                                }
+                            ]
+                        }
+                    }
+                }
+            ]
+        },
+        {
+            "name": "🤖 AI",
+            "item": [
+                {
+                    "name": "Optimize Ad Text",
+                    "request": {
+                        "method": "POST",
+                        "header": [
+                            {
+                                "key": "Content-Type",
+                                "value": "application/json"
+                            }
+                        ],
+                        "body": {
+                            "mode": "raw",
+                            "raw": "{\n  \"text\": \"Buy our amazing product now!\",\n  \"language\": \"uz\",\n  \"targetAudience\": \"entrepreneurs\",\n  \"tone\": \"professional\"\n}"
+                        },
+                        "url": {
+                            "raw": "{{baseUrl}}/ai/optimize-text",
+                            "host": [
+                                "{{baseUrl}}"
+                            ],
+                            "path": [
+                                "ai",
+                                "optimize-text"
+                            ]
+                        }
+                    }
+                },
+                {
+                    "name": "Generate Text Variations",
+                    "request": {
+                        "method": "POST",
+                        "header": [
+                            {
+                                "key": "Content-Type",
+                                "value": "application/json"
+                            }
+                        ],
+                        "body": {
+                            "mode": "raw",
+                            "raw": "{\n  \"text\": \"Buy our amazing product now!\",\n  \"count\": 3\n}"
+                        },
+                        "url": {
+                            "raw": "{{baseUrl}}/ai/generate-variations",
+                            "host": [
+                                "{{baseUrl}}"
+                            ],
+                            "path": [
+                                "ai",
+                                "generate-variations"
+                            ]
+                        }
+                    }
+                },
+                {
+                    "name": "Suggest Emojis",
+                    "request": {
+                        "method": "POST",
+                        "header": [
+                            {
+                                "key": "Content-Type",
+                                "value": "application/json"
+                            }
+                        ],
+                        "body": {
+                            "mode": "raw",
+                            "raw": "{\n  \"text\": \"Our new software product launch!\",\n  \"isPremium\": false\n}"
+                        },
+                        "url": {
+                            "raw": "{{baseUrl}}/ai/suggest-emojis",
+                            "host": [
+                                "{{baseUrl}}"
+                            ],
+                            "path": [
+                                "ai",
+                                "suggest-emojis"
+                            ]
+                        }
+                    }
+                },
+                {
+                    "name": "Optimize Button Text",
+                    "request": {
+                        "method": "POST",
+                        "header": [
+                            {
+                                "key": "Content-Type",
+                                "value": "application/json"
+                            }
+                        ],
+                        "body": {
+                            "mode": "raw",
+                            "raw": "{\n  \"buttonText\": \"Click here\"\n}"
+                        },
+                        "url": {
+                            "raw": "{{baseUrl}}/ai/optimize-button",
+                            "host": [
+                                "{{baseUrl}}"
+                            ],
+                            "path": [
+                                "ai",
+                                "optimize-button"
+                            ]
+                        }
+                    }
+                },
+                {
+                    "name": "Check Content Safety",
+                    "request": {
+                        "method": "POST",
+                        "header": [
+                            {
+                                "key": "Content-Type",
+                                "value": "application/json"
+                            }
+                        ],
+                        "body": {
+                            "mode": "raw",
+                            "raw": "{\n  \"text\": \"Ad content to check\"\n}"
+                        },
+                        "url": {
+                            "raw": "{{baseUrl}}/ai/check-safety",
+                            "host": [
+                                "{{baseUrl}}"
+                            ],
+                            "path": [
+                                "ai",
+                                "check-safety"
+                            ]
+                        }
+                    }
+                },
+                {
+                    "name": "Check Spam",
+                    "request": {
+                        "method": "POST",
+                        "header": [
+                            {
+                                "key": "Content-Type",
+                                "value": "application/json"
+                            }
+                        ],
+                        "body": {
+                            "mode": "raw",
+                            "raw": "{\n  \"text\": \"Ad content to check for spam\"\n}"
+                        },
+                        "url": {
+                            "raw": "{{baseUrl}}/ai/check-spam",
+                            "host": [
+                                "{{baseUrl}}"
+                            ],
+                            "path": [
+                                "ai",
+                                "check-spam"
+                            ]
+                        }
+                    }
+                },
+                {
+                    "name": "Comprehensive Safety Check",
+                    "request": {
+                        "method": "POST",
+                        "header": [
+                            {
+                                "key": "Content-Type",
+                                "value": "application/json"
+                            }
+                        ],
+                        "body": {
+                            "mode": "raw",
+                            "raw": "{\n  \"text\": \"Ad content to comprehensively check\",\n  \"buttons\": [{ \"text\": \"Buy\", \"url\": \"https://example.com\" }],\n  \"mediaUrl\": \"\"\n}"
+                        },
+                        "url": {
+                            "raw": "{{baseUrl}}/ai/comprehensive-check",
+                            "host": [
+                                "{{baseUrl}}"
+                            ],
+                            "path": [
+                                "ai",
+                                "comprehensive-check"
+                            ]
+                        }
+                    }
+                },
+                {
+                    "name": "Analyze Ad",
+                    "request": {
+                        "method": "POST",
+                        "header": [
+                            {
+                                "key": "Content-Type",
+                                "value": "application/json"
+                            }
+                        ],
+                        "body": {
+                            "mode": "raw",
+                            "raw": "{\n  \"text\": \"Ad text to analyze\",\n  \"targetAudience\": \"young entrepreneurs\",\n  \"buttons\": [{ \"text\": \"Learn More\", \"url\": \"https://example.com\" }]\n}"
+                        },
+                        "url": {
+                            "raw": "{{baseUrl}}/ai/analyze-ad",
+                            "host": [
+                                "{{baseUrl}}"
+                            ],
+                            "path": [
+                                "ai",
+                                "analyze-ad"
+                            ]
+                        }
+                    }
+                }
+            ]
+        },
+        {
+            "name": "📁 Upload",
+            "item": [
+                {
+                    "name": "Upload Image",
+                    "request": {
+                        "method": "POST",
+                        "header": [],
+                        "body": {
+                            "mode": "formdata",
+                            "formdata": [
+                                {
+                                    "key": "file",
+                                    "type": "file",
+                                    "src": ""
+                                }
+                            ]
+                        },
+                        "url": {
+                            "raw": "{{baseUrl}}/upload/image",
+                            "host": [
+                                "{{baseUrl}}"
+                            ],
+                            "path": [
+                                "upload",
+                                "image"
+                            ]
+                        }
+                    }
+                },
+                {
+                    "name": "Upload Video",
+                    "request": {
+                        "method": "POST",
+                        "header": [],
+                        "body": {
+                            "mode": "formdata",
+                            "formdata": [
+                                {
+                                    "key": "file",
+                                    "type": "file",
+                                    "src": ""
+                                }
+                            ]
+                        },
+                        "url": {
+                            "raw": "{{baseUrl}}/upload/video",
+                            "host": [
+                                "{{baseUrl}}"
+                            ],
+                            "path": [
+                                "upload",
+                                "video"
+                            ]
+                        }
+                    }
+                }
+            ]
+        },
+        {
+            "name": "🛡️ Admin",
+            "item": [
+                {
+                    "name": "Moderation - Pending Ads",
+                    "request": {
+                        "method": "GET",
+                        "header": [],
+                        "url": {
+                            "raw": "{{baseUrl}}/admin/moderation/ads/pending?limit=20&offset=0",
+                            "host": [
+                                "{{baseUrl}}"
+                            ],
+                            "path": [
+                                "admin",
+                                "moderation",
+                                "ads",
+                                "pending"
+                            ],
+                            "query": [
+                                {
+                                    "key": "limit",
+                                    "value": "20"
+                                },
+                                {
+                                    "key": "offset",
+                                    "value": "0"
+                                }
+                            ]
+                        }
+                    }
+                },
+                {
+                    "name": "Moderation - All Ads",
+                    "request": {
+                        "method": "GET",
+                        "header": [],
+                        "url": {
+                            "raw": "{{baseUrl}}/admin/moderation/ads/all?status=PENDING_REVIEW&limit=20&offset=0",
+                            "host": [
+                                "{{baseUrl}}"
+                            ],
+                            "path": [
+                                "admin",
+                                "moderation",
+                                "ads",
+                                "all"
+                            ],
+                            "query": [
+                                {
+                                    "key": "status",
+                                    "value": "PENDING_REVIEW"
+                                },
+                                {
+                                    "key": "limit",
+                                    "value": "20"
+                                },
+                                {
+                                    "key": "offset",
+                                    "value": "0"
+                                }
+                            ]
+                        }
+                    }
+                },
+                {
+                    "name": "Moderation - Get Ad Details",
+                    "request": {
+                        "method": "GET",
+                        "header": [],
+                        "url": {
+                            "raw": "{{baseUrl}}/admin/moderation/ads/{{adId}}",
+                            "host": [
+                                "{{baseUrl}}"
+                            ],
+                            "path": [
+                                "admin",
+                                "moderation",
+                                "ads",
+                                "{{adId}}"
+                            ]
+                        }
+                    }
+                },
+                {
+                    "name": "Moderation - Approve Ad",
+                    "request": {
+                        "method": "POST",
+                        "header": [
+                            {
+                                "key": "Content-Type",
+                                "value": "application/json"
+                            }
+                        ],
+                        "body": {
+                            "mode": "raw",
+                            "raw": "{\n  \"scheduledStart\": null\n}"
+                        },
+                        "url": {
+                            "raw": "{{baseUrl}}/admin/moderation/ads/{{adId}}/approve",
+                            "host": [
+                                "{{baseUrl}}"
+                            ],
+                            "path": [
+                                "admin",
+                                "moderation",
+                                "ads",
+                                "{{adId}}",
+                                "approve"
+                            ]
+                        }
+                    }
+                },
+                {
+                    "name": "Moderation - Reject Ad",
+                    "request": {
+                        "method": "POST",
+                        "header": [
+                            {
+                                "key": "Content-Type",
+                                "value": "application/json"
+                            }
+                        ],
+                        "body": {
+                            "mode": "raw",
+                            "raw": "{\n  \"reason\": \"Ad contains prohibited content\"\n}"
+                        },
+                        "url": {
+                            "raw": "{{baseUrl}}/admin/moderation/ads/{{adId}}/reject",
+                            "host": [
+                                "{{baseUrl}}"
+                            ],
+                            "path": [
+                                "admin",
+                                "moderation",
+                                "ads",
+                                "{{adId}}",
+                                "reject"
+                            ]
+                        }
+                    }
+                },
+                {
+                    "name": "Moderation - Request Edit",
+                    "request": {
+                        "method": "POST",
+                        "header": [
+                            {
+                                "key": "Content-Type",
+                                "value": "application/json"
+                            }
+                        ],
+                        "body": {
+                            "mode": "raw",
+                            "raw": "{\n  \"feedback\": \"Please update the ad text to comply with guidelines\"\n}"
+                        },
+                        "url": {
+                            "raw": "{{baseUrl}}/admin/moderation/ads/{{adId}}/request-edit",
+                            "host": [
+                                "{{baseUrl}}"
+                            ],
+                            "path": [
+                                "admin",
+                                "moderation",
+                                "ads",
+                                "{{adId}}",
+                                "request-edit"
+                            ]
+                        }
+                    }
+                },
+                {
+                    "name": "Moderation - Pending Bots",
+                    "request": {
+                        "method": "GET",
+                        "header": [],
+                        "url": {
+                            "raw": "{{baseUrl}}/admin/moderation/bots?limit=20&offset=0",
+                            "host": [
+                                "{{baseUrl}}"
+                            ],
+                            "path": [
+                                "admin",
+                                "moderation",
+                                "bots"
+                            ],
+                            "query": [
+                                {
+                                    "key": "limit",
+                                    "value": "20"
+                                },
+                                {
+                                    "key": "offset",
+                                    "value": "0"
+                                }
+                            ]
+                        }
+                    }
+                },
+                {
+                    "name": "Moderation - Approve Bot",
+                    "request": {
+                        "method": "POST",
+                        "header": [],
+                        "url": {
+                            "raw": "{{baseUrl}}/admin/moderation/bots/{{botId}}/approve",
+                            "host": [
+                                "{{baseUrl}}"
+                            ],
+                            "path": [
+                                "admin",
+                                "moderation",
+                                "bots",
+                                "{{botId}}",
+                                "approve"
+                            ]
+                        }
+                    }
+                },
+                {
+                    "name": "Moderation - Reject Bot",
+                    "request": {
+                        "method": "POST",
+                        "header": [
+                            {
+                                "key": "Content-Type",
+                                "value": "application/json"
+                            }
+                        ],
+                        "body": {
+                            "mode": "raw",
+                            "raw": "{\n  \"reason\": \"Bot does not meet requirements\"\n}"
+                        },
+                        "url": {
+                            "raw": "{{baseUrl}}/admin/moderation/bots/{{botId}}/reject",
+                            "host": [
+                                "{{baseUrl}}"
+                            ],
+                            "path": [
+                                "admin",
+                                "moderation",
+                                "bots",
+                                "{{botId}}",
+                                "reject"
+                            ]
+                        }
+                    }
+                },
+                {
+                    "name": "Withdrawals - Pending",
+                    "request": {
+                        "method": "GET",
+                        "header": [],
+                        "url": {
+                            "raw": "{{baseUrl}}/admin/withdrawals/pending?limit=20&offset=0",
+                            "host": [
+                                "{{baseUrl}}"
+                            ],
+                            "path": [
+                                "admin",
+                                "withdrawals",
+                                "pending"
+                            ],
+                            "query": [
+                                {
+                                    "key": "limit",
+                                    "value": "20"
+                                },
+                                {
+                                    "key": "offset",
+                                    "value": "0"
+                                }
+                            ]
+                        }
+                    }
+                },
+                {
+                    "name": "Withdrawals - All",
+                    "request": {
+                        "method": "GET",
+                        "header": [],
+                        "url": {
+                            "raw": "{{baseUrl}}/admin/withdrawals/all?status=REQUESTED&limit=50&offset=0",
+                            "host": [
+                                "{{baseUrl}}"
+                            ],
+                            "path": [
+                                "admin",
+                                "withdrawals",
+                                "all"
+                            ],
+                            "query": [
+                                {
+                                    "key": "status",
+                                    "value": "REQUESTED"
+                                },
+                                {
+                                    "key": "limit",
+                                    "value": "50"
+                                },
+                                {
+                                    "key": "offset",
+                                    "value": "0"
+                                }
+                            ]
+                        }
+                    }
+                },
+                {
+                    "name": "Withdrawals - Approve",
+                    "request": {
+                        "method": "POST",
+                        "header": [],
+                        "url": {
+                            "raw": "{{baseUrl}}/admin/withdrawals/:id/approve",
+                            "host": [
+                                "{{baseUrl}}"
+                            ],
+                            "path": [
+                                "admin",
+                                "withdrawals",
+                                ":id",
+                                "approve"
+                            ],
+                            "variable": [
+                                {
+                                    "key": "id",
+                                    "value": ""
+                                }
+                            ]
+                        }
+                    }
+                },
+                {
+                    "name": "Withdrawals - Reject",
+                    "request": {
+                        "method": "POST",
+                        "header": [
+                            {
+                                "key": "Content-Type",
+                                "value": "application/json"
+                            }
+                        ],
+                        "body": {
+                            "mode": "raw",
+                            "raw": "{\n  \"reason\": \"Invalid wallet address\"\n}"
+                        },
+                        "url": {
+                            "raw": "{{baseUrl}}/admin/withdrawals/:id/reject",
+                            "host": [
+                                "{{baseUrl}}"
+                            ],
+                            "path": [
+                                "admin",
+                                "withdrawals",
+                                ":id",
+                                "reject"
+                            ],
+                            "variable": [
+                                {
+                                    "key": "id",
+                                    "value": ""
+                                }
+                            ]
+                        }
+                    }
+                },
+                {
+                    "name": "Users - Get All",
+                    "request": {
+                        "method": "GET",
+                        "header": [],
+                        "url": {
+                            "raw": "{{baseUrl}}/admin/users?limit=50&offset=0",
+                            "host": [
+                                "{{baseUrl}}"
+                            ],
+                            "path": [
+                                "admin",
+                                "users"
+                            ],
+                            "query": [
+                                {
+                                    "key": "limit",
+                                    "value": "50"
+                                },
+                                {
+                                    "key": "offset",
+                                    "value": "0"
+                                }
+                            ]
+                        }
+                    }
+                },
+                {
+                    "name": "Users - Get Details",
+                    "request": {
+                        "method": "GET",
+                        "header": [],
+                        "url": {
+                            "raw": "{{baseUrl}}/admin/users/:id",
+                            "host": [
+                                "{{baseUrl}}"
+                            ],
+                            "path": [
+                                "admin",
+                                "users",
+                                ":id"
+                            ],
+                            "variable": [
+                                {
+                                    "key": "id",
+                                    "value": ""
+                                }
+                            ]
+                        }
+                    }
+                },
+                {
+                    "name": "Users - Update Role",
+                    "request": {
+                        "method": "PUT",
+                        "header": [
+                            {
+                                "key": "Content-Type",
+                                "value": "application/json"
+                            }
+                        ],
+                        "body": {
+                            "mode": "raw",
+                            "raw": "{\n  \"role\": \"MODERATOR\"\n}"
+                        },
+                        "url": {
+                            "raw": "{{baseUrl}}/admin/users/:id/role",
+                            "host": [
+                                "{{baseUrl}}"
+                            ],
+                            "path": [
+                                "admin",
+                                "users",
+                                ":id",
+                                "role"
+                            ],
+                            "variable": [
+                                {
+                                    "key": "id",
+                                    "value": ""
+                                }
+                            ]
+                        }
+                    }
+                },
+                {
+                    "name": "Users - Ban",
+                    "request": {
+                        "method": "POST",
+                        "header": [
+                            {
+                                "key": "Content-Type",
+                                "value": "application/json"
+                            }
+                        ],
+                        "body": {
+                            "mode": "raw",
+                            "raw": "{\n  \"reason\": \"Violation of terms of service\"\n}"
+                        },
+                        "url": {
+                            "raw": "{{baseUrl}}/admin/users/:id/ban",
+                            "host": [
+                                "{{baseUrl}}"
+                            ],
+                            "path": [
+                                "admin",
+                                "users",
+                                ":id",
+                                "ban"
+                            ],
+                            "variable": [
+                                {
+                                    "key": "id",
+                                    "value": ""
+                                }
+                            ]
+                        }
+                    }
+                },
+                {
+                    "name": "Users - Unban",
+                    "request": {
+                        "method": "POST",
+                        "header": [],
+                        "url": {
+                            "raw": "{{baseUrl}}/admin/users/:id/unban",
+                            "host": [
+                                "{{baseUrl}}"
+                            ],
+                            "path": [
+                                "admin",
+                                "users",
+                                ":id",
+                                "unban"
+                            ],
+                            "variable": [
+                                {
+                                    "key": "id",
+                                    "value": ""
+                                }
+                            ]
+                        }
+                    }
+                },
+                {
+                    "name": "Pricing - Get All Tiers",
+                    "request": {
+                        "method": "GET",
+                        "header": [],
+                        "url": {
+                            "raw": "{{baseUrl}}/admin/pricing/tiers",
+                            "host": [
+                                "{{baseUrl}}"
+                            ],
+                            "path": [
+                                "admin",
+                                "pricing",
+                                "tiers"
+                            ]
+                        }
+                    }
+                },
+                {
+                    "name": "Pricing - Get Active Tiers",
+                    "request": {
+                        "method": "GET",
+                        "header": [],
+                        "url": {
+                            "raw": "{{baseUrl}}/admin/pricing/tiers/active",
+                            "host": [
+                                "{{baseUrl}}"
+                            ],
+                            "path": [
+                                "admin",
+                                "pricing",
+                                "tiers",
+                                "active"
+                            ]
+                        }
+                    }
+                },
+                {
+                    "name": "Pricing - Create Tier",
+                    "request": {
+                        "method": "POST",
+                        "header": [
+                            {
+                                "key": "Content-Type",
+                                "value": "application/json"
+                            }
+                        ],
+                        "body": {
+                            "mode": "raw",
+                            "raw": "{\n  \"name\": \"Starter\",\n  \"impressions\": 1000,\n  \"priceUsd\": 5.00,\n  \"isActive\": true,\n  \"sortOrder\": 1\n}"
+                        },
+                        "url": {
+                            "raw": "{{baseUrl}}/admin/pricing/tiers",
+                            "host": [
+                                "{{baseUrl}}"
+                            ],
+                            "path": [
+                                "admin",
+                                "pricing",
+                                "tiers"
+                            ]
+                        }
+                    }
+                },
+                {
+                    "name": "Pricing - Update Tier",
+                    "request": {
+                        "method": "PUT",
+                        "header": [
+                            {
+                                "key": "Content-Type",
+                                "value": "application/json"
+                            }
+                        ],
+                        "body": {
+                            "mode": "raw",
+                            "raw": "{\n  \"priceUsd\": 6.00,\n  \"isActive\": true\n}"
+                        },
+                        "url": {
+                            "raw": "{{baseUrl}}/admin/pricing/tiers/:id",
+                            "host": [
+                                "{{baseUrl}}"
+                            ],
+                            "path": [
+                                "admin",
+                                "pricing",
+                                "tiers",
+                                ":id"
+                            ],
+                            "variable": [
+                                {
+                                    "key": "id",
+                                    "value": ""
+                                }
+                            ]
+                        }
+                    }
+                },
+                {
+                    "name": "Pricing - Delete Tier",
+                    "request": {
+                        "method": "DELETE",
+                        "header": [],
+                        "url": {
+                            "raw": "{{baseUrl}}/admin/pricing/tiers/:id",
+                            "host": [
+                                "{{baseUrl}}"
+                            ],
+                            "path": [
+                                "admin",
+                                "pricing",
+                                "tiers",
+                                ":id"
+                            ],
+                            "variable": [
+                                {
+                                    "key": "id",
+                                    "value": ""
+                                }
+                            ]
+                        }
+                    }
+                },
+                {
+                    "name": "Pricing - Bulk Create Tiers",
+                    "request": {
+                        "method": "POST",
+                        "header": [
+                            {
+                                "key": "Content-Type",
+                                "value": "application/json"
+                            }
+                        ],
+                        "body": {
+                            "mode": "raw",
+                            "raw": "{\n  \"tiers\": [\n    { \"name\": \"Starter\", \"impressions\": 1000, \"priceUsd\": 5.00 },\n    { \"name\": \"Basic\", \"impressions\": 5000, \"priceUsd\": 20.00 },\n    { \"name\": \"Pro\", \"impressions\": 10000, \"priceUsd\": 35.00 }\n  ]\n}"
+                        },
+                        "url": {
+                            "raw": "{{baseUrl}}/admin/pricing/tiers/bulk",
+                            "host": [
+                                "{{baseUrl}}"
+                            ],
+                            "path": [
+                                "admin",
+                                "pricing",
+                                "tiers",
+                                "bulk"
+                            ]
+                        }
+                    }
+                },
+                {
+                    "name": "Pricing - Get Platform Fee",
+                    "request": {
+                        "method": "GET",
+                        "header": [],
+                        "url": {
+                            "raw": "{{baseUrl}}/admin/pricing/platform-fee",
+                            "host": [
+                                "{{baseUrl}}"
+                            ],
+                            "path": [
+                                "admin",
+                                "pricing",
+                                "platform-fee"
+                            ]
+                        }
+                    }
+                },
+                {
+                    "name": "Pricing - Update Platform Fee",
+                    "request": {
+                        "method": "PUT",
+                        "header": [
+                            {
+                                "key": "Content-Type",
+                                "value": "application/json"
+                            }
+                        ],
+                        "body": {
+                            "mode": "raw",
+                            "raw": "{\n  \"percentage\": 20\n}"
+                        },
+                        "url": {
+                            "raw": "{{baseUrl}}/admin/pricing/platform-fee",
+                            "host": [
+                                "{{baseUrl}}"
+                            ],
+                            "path": [
+                                "admin",
+                                "pricing",
+                                "platform-fee"
+                            ]
+                        }
+                    }
+                },
+                {
+                    "name": "Pricing - Calculate Preview",
+                    "request": {
+                        "method": "POST",
+                        "header": [
+                            {
+                                "key": "Content-Type",
+                                "value": "application/json"
+                            }
+                        ],
+                        "body": {
+                            "mode": "raw",
+                            "raw": "{\n  \"impressions\": 5000,\n  \"category\": \"tech\",\n  \"cpmBid\": 3.0\n}"
+                        },
+                        "url": {
+                            "raw": "{{baseUrl}}/admin/pricing/calculate",
+                            "host": [
+                                "{{baseUrl}}"
+                            ],
+                            "path": [
+                                "admin",
+                                "pricing",
+                                "calculate"
+                            ]
+                        }
+                    }
+                },
+                {
+                    "name": "Pricing - Stats",
+                    "request": {
+                        "method": "GET",
+                        "header": [],
+                        "url": {
+                            "raw": "{{baseUrl}}/admin/pricing/stats",
+                            "host": [
+                                "{{baseUrl}}"
+                            ],
+                            "path": [
+                                "admin",
+                                "pricing",
+                                "stats"
+                            ]
+                        }
+                    }
+                }
+            ]
+        }
+    ]
+}
