@@ -23,17 +23,15 @@ class RedisStore {
 
   async increment(key) {
     const redisKey = `${this.prefix}${key}`;
-    
+
     try {
       // Get current count
       const current = await this.client.get(redisKey);
-      
+
       if (current === null) {
         // First request - set to 1 with expiry
-        await this.client.set(redisKey, 1, {
-          PX: this.windowMs, // Expire in milliseconds
-        });
-        
+        await this.client.set(redisKey, '1', Math.ceil(this.windowMs / 1000));
+
         return {
           totalHits: 1,
           resetTime: new Date(Date.now() + this.windowMs),
@@ -41,7 +39,7 @@ class RedisStore {
       } else {
         // Increment existing count
         const totalHits = await this.client.incr(redisKey);
-        
+
         return {
           totalHits,
           resetTime: new Date(Date.now() + this.windowMs),
@@ -131,11 +129,11 @@ export const apiRateLimiter = createRateLimiter({
   skip: (req) => {
     // Skip rate limiting for super admins
     if (req.userRole === 'SUPER_ADMIN') return true;
-    
+
     // Skip in development for specific endpoints
     if (process.env.NODE_ENV === 'development') {
-      if (req.path.includes('/auth/login/status/') || 
-          req.path.includes('/auth/login/initiate')) {
+      if (req.path.includes('/auth/login/status/') ||
+        req.path.includes('/auth/login/initiate')) {
         return true;
       }
     }
@@ -166,9 +164,9 @@ export const botApiRateLimiter = createRateLimiter({
  * Custom rate limiter for specific actions
  */
 export const customRateLimiter = (windowMs, max, message) => {
-  return createRateLimiter({ 
-    windowMs, 
-    max, 
+  return createRateLimiter({
+    windowMs,
+    max,
     message,
     prefix: 'rl:custom:',
   });
@@ -221,9 +219,9 @@ export const actionRateLimiter = (action, max, windowSeconds) => {
       }
 
       const key = `action:${req.userId}:${action}`;
-      
+
       const count = await redis.incr(key);
-      
+
       if (count === 1) {
         await redis.expire(key, windowSeconds);
       }

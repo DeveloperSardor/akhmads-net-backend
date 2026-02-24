@@ -1,5 +1,5 @@
 // src/services/telegram/telegramPreviewService.js
-import { Bot } from 'grammy';
+import { Bot, InputFile } from 'grammy';
 import logger from '../../utils/logger.js';
 import prisma from '../../config/database.js';
 import { ValidationError } from '../../utils/errors.js';
@@ -25,7 +25,7 @@ class TelegramPreviewService {
 
       // Use platform bot
       const botToken = process.env.TELEGRAM_BOT_TOKEN;
-      
+
       if (!botToken) {
         throw new Error('Telegram bot token not configured');
       }
@@ -42,7 +42,7 @@ class TelegramPreviewService {
           text: btn.text,
           url: btn.url,
         }]);
-        
+
         replyMarkup = {
           inline_keyboard: keyboard,
         };
@@ -50,10 +50,24 @@ class TelegramPreviewService {
 
       // Send message
       let sentMessage;
-      
+
       if (mediaUrl) {
-        // Send with image
-        sentMessage = await bot.api.sendPhoto(user.telegramId, mediaUrl, {
+        // Local URL bo'lsa (localhost/127.0.0.1) - buffer sifatida yuborish
+        const isLocalUrl = mediaUrl.includes('localhost') || mediaUrl.includes('127.0.0.1');
+        let photoSource;
+
+        if (isLocalUrl) {
+          const response = await fetch(mediaUrl);
+          if (!response.ok) throw new Error(`Failed to fetch image: ${response.status}`);
+          const arrayBuffer = await response.arrayBuffer();
+          const buffer = Buffer.from(arrayBuffer);
+          const filename = mediaUrl.split('/').pop() || 'image.jpg';
+          photoSource = new InputFile(buffer, filename);
+        } else {
+          photoSource = mediaUrl;
+        }
+
+        sentMessage = await bot.api.sendPhoto(user.telegramId, photoSource, {
           caption: `🧪 PREVIEW\n\n${text}`,
           parse_mode: 'HTML',
           reply_markup: replyMarkup,
@@ -75,16 +89,16 @@ class TelegramPreviewService {
       };
     } catch (error) {
       logger.error('Send ad preview failed:', error);
-      
+
       // Better error messages
       if (error.message?.includes('bot was blocked')) {
         throw new ValidationError('You have blocked the bot. Please unblock it first.');
       }
-      
+
       if (error.message?.includes('user not found')) {
         throw new ValidationError('Telegram user not found');
       }
-      
+
       throw error;
     }
   }
@@ -127,7 +141,7 @@ class TelegramPreviewService {
           text: btn.text,
           url: btn.url,
         }]);
-        
+
         replyMarkup = {
           inline_keyboard: keyboard,
         };
@@ -135,9 +149,23 @@ class TelegramPreviewService {
 
       // Send
       let sentMessage;
-      
+
       if (mediaUrl) {
-        sentMessage = await telegramBot.api.sendPhoto(user.telegramId, mediaUrl, {
+        const isLocalUrl = mediaUrl.includes('localhost') || mediaUrl.includes('127.0.0.1');
+        let photoSource;
+
+        if (isLocalUrl) {
+          const response = await fetch(mediaUrl);
+          if (!response.ok) throw new Error(`Failed to fetch image: ${response.status}`);
+          const arrayBuffer = await response.arrayBuffer();
+          const buffer = Buffer.from(arrayBuffer);
+          const filename = mediaUrl.split('/').pop() || 'image.jpg';
+          photoSource = new InputFile(buffer, filename);
+        } else {
+          photoSource = mediaUrl;
+        }
+
+        sentMessage = await telegramBot.api.sendPhoto(user.telegramId, photoSource, {
           caption: `🧪 TEST AD\n\n${text}`,
           parse_mode: 'HTML',
           reply_markup: replyMarkup,

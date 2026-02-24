@@ -160,7 +160,7 @@ class AdService {
       // Update ad status to PENDING_REVIEW
       const updated = await prisma.ad.update({
         where: { id: adId },
-        data: { 
+        data: {
           status: 'PENDING_REVIEW',
           // scheduledAt can be set here if needed
         },
@@ -208,7 +208,7 @@ class AdService {
 
       // Update ad status
       const newStatus = scheduledStart ? 'SCHEDULED' : 'RUNNING';
-      
+
       const updated = await prisma.ad.update({
         where: { id: adId },
         data: {
@@ -286,11 +286,11 @@ class AdService {
     try {
       const { status, limit = 20, offset = 0, includeArchived = false } = filters;
 
-      const where = { 
+      const where = {
         advertiserId,
         isArchived: includeArchived ? undefined : false,
       };
-      
+
       if (status) where.status = status;
 
       const ads = await prisma.ad.findMany({
@@ -484,7 +484,7 @@ class AdService {
 
       // Can delete: DRAFT, REJECTED, COMPLETED, PAUSED
       const deletableStatuses = ['DRAFT', 'REJECTED', 'COMPLETED', 'PAUSED'];
-      
+
       if (!deletableStatuses.includes(ad.status)) {
         throw new ValidationError(`Cannot delete ad with status: ${ad.status}`);
       }
@@ -727,24 +727,24 @@ class AdService {
         }
 
         logger.info(`✅ Test ad sent successfully`);
-        
+
         return {
           success: true,
           message: 'Test ad sent to your Telegram!',
         };
       } catch (error) {
         logger.error('Telegram API error:', error);
-        
+
         const errorMsg = error.message || '';
-        
+
         if (errorMsg === 'USER_BLOCKED_BOT') {
           throw new ValidationError('You blocked the bot. Please unblock and try again.');
         }
-        
+
         if (errorMsg === 'CHAT_NOT_FOUND') {
           throw new ValidationError('Invalid Telegram ID');
         }
-        
+
         throw new ValidationError(`Failed to send: ${errorMsg}`);
       }
     } catch (error) {
@@ -771,10 +771,10 @@ class AdService {
       // Prepare buttons
       let replyMarkup = null;
       if (ad.buttons) {
-        const buttons = typeof ad.buttons === 'string' 
-          ? JSON.parse(ad.buttons) 
+        const buttons = typeof ad.buttons === 'string'
+          ? JSON.parse(ad.buttons)
           : ad.buttons;
-        
+
         if (buttons && buttons.length > 0) {
           replyMarkup = {
             inline_keyboard: [
@@ -795,6 +795,68 @@ class AdService {
     } catch (error) {
       logger.error('Prepare test message failed:', error);
       throw new ValidationError('Failed to prepare test message');
+    }
+  }
+
+  /**
+   * Toggle save ad (save/unsave)
+   */
+  async toggleSaveAd(adId, userId) {
+    try {
+      const ad = await prisma.ad.findUnique({ where: { id: adId } });
+
+      if (!ad) {
+        throw new NotFoundError('Ad not found');
+      }
+
+      // Check if already saved
+      const existing = await prisma.savedAd.findUnique({
+        where: { userId_adId: { userId, adId } },
+      });
+
+      if (existing) {
+        // Unsave
+        await prisma.savedAd.delete({
+          where: { userId_adId: { userId, adId } },
+        });
+        logger.info(`🔖 Ad unsaved: ${adId} by ${userId}`);
+        return { saved: false };
+      } else {
+        // Save
+        await prisma.savedAd.create({
+          data: { userId, adId },
+        });
+        logger.info(`🔖 Ad saved: ${adId} by ${userId}`);
+        return { saved: true };
+      }
+    } catch (error) {
+      logger.error('Toggle save ad failed:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * Get user's saved ads
+   */
+  async getSavedAds(userId, limit = 20, offset = 0) {
+    try {
+      const savedAds = await prisma.savedAd.findMany({
+        where: { userId },
+        include: { ad: true },
+        orderBy: { createdAt: 'desc' },
+        take: limit,
+        skip: offset,
+      });
+
+      const total = await prisma.savedAd.count({ where: { userId } });
+
+      return {
+        ads: savedAds.map(s => s.ad),
+        total,
+      };
+    } catch (error) {
+      logger.error('Get saved ads failed:', error);
+      throw error;
     }
   }
 }

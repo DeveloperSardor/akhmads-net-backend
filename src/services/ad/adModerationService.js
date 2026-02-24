@@ -61,7 +61,7 @@ class AdModerationService {
 
       // Run AI safety check if enabled
       const aiResult = await aiModerationService.moderateAd(ad);
-      
+
       if (!aiResult.passed) {
         logger.warn(`AI flagged ad ${adId}: ${aiResult.flags.join(', ')}`);
         // Auto-reject if AI confidence is high
@@ -72,6 +72,12 @@ class AdModerationService {
             `Auto-rejected by AI: ${aiResult.flags.join(', ')}`
           );
         }
+      }
+
+      // Confirm reserved funds (reserved → totalSpent)
+      const cost = parseFloat(ad.totalCost);
+      if (cost > 0) {
+        await walletService.confirmAdReserve(ad.advertiserId, adId, cost);
       }
 
       // Update ad to APPROVED and start running
@@ -128,8 +134,11 @@ class AdModerationService {
         throw new ValidationError('Only submitted ads can be rejected');
       }
 
-      // Release reserved funds
-      await walletService.releaseReserved(ad.advertiserId, ad.totalCost);
+      // Refund reserved funds (reserved → available)
+      const cost = parseFloat(ad.totalCost);
+      if (cost > 0) {
+        await walletService.refundAdReserve(ad.advertiserId, adId, cost);
+      }
 
       // Update ad status
       const updated = await prisma.ad.update({
@@ -177,8 +186,11 @@ class AdModerationService {
         throw new NotFoundError('Ad not found');
       }
 
-      // Release reserved funds
-      await walletService.releaseReserved(ad.advertiserId, ad.totalCost);
+      // Refund reserved funds (reserved → available)
+      const cost = parseFloat(ad.totalCost);
+      if (cost > 0) {
+        await walletService.refundAdReserve(ad.advertiserId, adId, cost);
+      }
 
       // Update ad to draft with feedback
       const updated = await prisma.ad.update({
@@ -212,7 +224,7 @@ class AdModerationService {
       // For now, just basic keyword check
       const forbiddenWords = ['scam', 'hack', 'fraud'];
       const textLower = ad.text.toLowerCase();
-      
+
       const flagged = forbiddenWords.some(word => textLower.includes(word));
 
       const result = {
