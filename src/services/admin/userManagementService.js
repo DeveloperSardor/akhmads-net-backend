@@ -98,13 +98,28 @@ class UserManagementService {
   }
 
   /**
-   * Update user role
+   * Update user role(s)
+   * Supports both single role (string) and multiple roles (array)
    */
-  async updateUserRole(userId, newRole, adminId) {
+  async updateUserRole(userId, newRolesInput, adminId) {
     try {
+      // Convert to array if string is provided
+      const newRoles = Array.isArray(newRolesInput) ? newRolesInput : [newRolesInput];
+
+      // Determine the highest privilege "main" role for backward compatibility
+      // Order: SUPER_ADMIN > ADMIN > MODERATOR > BOT_OWNER > ADVERTISER
+      let mainRole = 'ADVERTISER';
+      if (newRoles.includes('SUPER_ADMIN')) mainRole = 'SUPER_ADMIN';
+      else if (newRoles.includes('ADMIN')) mainRole = 'ADMIN';
+      else if (newRoles.includes('MODERATOR')) mainRole = 'MODERATOR';
+      else if (newRoles.includes('BOT_OWNER')) mainRole = 'BOT_OWNER';
+
       const user = await prisma.user.update({
         where: { id: userId },
-        data: { role: newRole },
+        data: {
+          role: mainRole,
+          roles: newRoles
+        },
       });
 
       // Create audit log
@@ -114,11 +129,11 @@ class UserManagementService {
           action: 'USER_ROLE_UPDATED',
           entityType: 'user',
           entityId: userId,
-          metadata: { newRole },
+          metadata: JSON.stringify({ newRole: mainRole, newRoles }),
         },
       });
 
-      logger.info(`User role updated: ${userId} -> ${newRole}`);
+      logger.info(`User role updated: ${userId} -> main: ${mainRole}, roles: [${newRoles.join(', ')}]`);
       return user;
     } catch (error) {
       logger.error('Update user role failed:', error);

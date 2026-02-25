@@ -42,8 +42,10 @@ enum WithdrawStatus {
   APPROVED
   SENT
   CONFIRMED
+  COMPLETED
   FAILED
   REJECTED
+  CANCELLED
 }
 
 enum PaymentProvider {

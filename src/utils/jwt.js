@@ -49,6 +49,7 @@ class JWT {
             userId: user.id,
             telegramId: user.telegramId,
             role: user.role,
+            roles: user.roles || [],
             email: user.email,
         };
 

@@ -36,7 +36,7 @@ router.get(
   async (req, res, next) => {
     try {
       const { limit = 20, offset = 0 } = req.query;
-      
+
       // Get ads with PENDING_REVIEW status
       const ads = await prisma.ad.findMany({
         where: { status: 'PENDING_REVIEW' },
@@ -103,12 +103,12 @@ router.post(
   ]),
   async (req, res, next) => {
     try {
-      const scheduledStart = req.body.scheduledStart 
-        ? new Date(req.body.scheduledStart) 
+      const scheduledStart = req.body.scheduledStart
+        ? new Date(req.body.scheduledStart)
         : null;
 
       const ad = await adService.approveAd(
-        req.params.id, 
+        req.params.id,
         req.userId,
         scheduledStart
       );
@@ -370,7 +370,7 @@ router.get(
   '/withdrawals/all',
   requireAdmin,
   validate([
-    query('status').optional().isIn(['REQUESTED', 'PENDING_REVIEW', 'COMPLETED', 'REJECTED']),
+    query('status').optional().isIn(['REQUESTED', 'PENDING_REVIEW', 'APPROVED', 'SENT', 'CONFIRMED', 'COMPLETED', 'FAILED', 'REJECTED', 'CANCELLED']),
     query('limit').optional().isInt({ min: 1, max: 100 }),
     query('offset').optional().isInt({ min: 0 }),
   ]),
@@ -507,11 +507,18 @@ router.put(
   requireSuperAdmin,
   validate([
     param('id').isString(),
-    body('role').isIn(['ADVERTISER', 'BOT_OWNER', 'MODERATOR', 'ADMIN']),
+    body('roles').optional().isArray(),
+    body('roles.*').optional().isIn(['ADVERTISER', 'BOT_OWNER', 'MODERATOR', 'ADMIN', 'SUPER_ADMIN']),
+    body('role').optional().isIn(['ADVERTISER', 'BOT_OWNER', 'MODERATOR', 'ADMIN', 'SUPER_ADMIN']),
   ]),
   async (req, res, next) => {
     try {
-      const user = await userManagementService.updateUserRole(req.params.id, req.body.role, req.userId);
+      const rolesInput = req.body.roles || req.body.role;
+      if (!rolesInput || (Array.isArray(rolesInput) && rolesInput.length === 0)) {
+        return res.status(400).json({ success: false, error: 'Role or roles array is required' });
+      }
+
+      const user = await userManagementService.updateUserRole(req.params.id, rolesInput, req.userId);
       response.success(res, { user }, 'User role updated');
     } catch (error) {
       next(error);
@@ -680,7 +687,7 @@ router.post(
 router.get('/pricing/platform-fee', requireAdmin, async (req, res, next) => {
   try {
     const percentage = await pricingService.getPlatformFee();
-    response.success(res, { 
+    response.success(res, {
       platformFeePercentage: percentage,
       description: 'Platform fee charged on all ad revenue'
     });
@@ -709,7 +716,7 @@ router.put(
         parseFloat(req.body.percentage),
         req.userId
       );
-      response.success(res, { 
+      response.success(res, {
         platformFeePercentage: parseFloat(setting.value),
         message: `Platform fee updated to ${setting.value}%`
       });
