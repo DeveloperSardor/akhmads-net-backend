@@ -13,20 +13,20 @@ const router = Router();
  * Initiate Telegram login
  */
 router.post('/login/initiate',
-   authRateLimiter, 
-   async (req, res, next) => {
-  try {
-    const ipAddress = req.ip;
-    const userAgent = req.get('user-agent');
+  authRateLimiter,
+  async (req, res, next) => {
+    try {
+      const ipAddress = req.ip;
+      const userAgent = req.get('user-agent');
 
-    const result = await telegramAuthService.initiateLogin(ipAddress, userAgent);
+      const result = await telegramAuthService.initiateLogin(ipAddress, userAgent);
 
-    // ✅ Return both code (for browser) and codes (for bot)
-    response.success(res, result, 'Login session initiated');
-  } catch (error) {
-    next(error);
-  }
-});
+      // ✅ Return both code (for browser) and codes (for bot)
+      response.success(res, result, 'Login session initiated');
+    } catch (error) {
+      next(error);
+    }
+  });
 
 /**
  * GET /api/v1/auth/login/status/:token
@@ -93,6 +93,54 @@ router.get('/me', authenticate, async (req, res, next) => {
     const user = await req.user;
 
     response.success(res, { user });
+  } catch (error) {
+    next(error);
+  }
+});
+
+/**
+ * POST /api/v1/auth/telegram-widget
+ * Login via Telegram auth URL (from bot button)
+ * Verifies HMAC hash and returns JWT tokens
+ */
+router.post('/telegram-widget', async (req, res, next) => {
+  try {
+    const { id, first_name, last_name, username, photo_url, auth_date, hash: receivedHash } = req.body;
+
+    if (!id || !auth_date || !receivedHash) {
+      return response.validationError(res, [{ field: 'hash', message: 'Missing required fields' }]);
+    }
+
+    // Check auth_date freshness (max 24 hours)
+    const now = Math.floor(Date.now() / 1000);
+    if (now - parseInt(auth_date) > 86400) {
+      return response.error(res, 'Auth data expired', 401);
+    }
+
+    // Verify hash
+    const botToken = process.env.TELEGRAM_BOT_TOKEN;
+    const { default: hashUtil } = await import('../../utils/hash.js');
+    const isValid = hashUtil.verifyTelegramHash(
+      { id, first_name, last_name, username, photo_url, auth_date },
+      botToken
+    );
+
+    if (!isValid) {
+      return response.error(res, 'Invalid auth data', 401);
+    }
+
+    const telegramId = id.toString();
+
+    // Find or create user and generate tokens
+    const result = await telegramAuthService.verifyWidgetLogin(telegramId, {
+      first_name,
+      last_name,
+      username,
+      photo_url,
+      language_code: 'en',
+    });
+
+    response.success(res, result, 'Login successful');
   } catch (error) {
     next(error);
   }

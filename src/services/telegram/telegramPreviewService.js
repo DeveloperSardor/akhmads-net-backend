@@ -1,81 +1,77 @@
 // src/services/telegram/telegramPreviewService.js
 import { Bot, InputFile } from 'grammy';
+import { TelegramClient } from 'telegram';
+import { StringSession } from 'telegram/sessions/index.js';
 import logger from '../../utils/logger.js';
 import prisma from '../../config/database.js';
 import { ValidationError } from '../../utils/errors.js';
 import encryption from '../../utils/encryption.js';
 
-/**
- * Telegram Preview Service
- * Send real preview messages to Telegram
- */
+// Userbot client (singleton)
+let userbotClient = null;
+
+const getUserbotClient = async () => {
+  if (userbotClient && userbotClient.connected) return userbotClient;
+
+  const session = process.env.TELEGRAM_USER_SESSION || '';
+  const apiId = parseInt(process.env.TELEGRAM_API_ID);
+  const apiHash = process.env.TELEGRAM_API_HASH;
+
+  const client = new TelegramClient(
+    new StringSession(session),
+    apiId,
+    apiHash,
+    { connectionRetries: 5, useWSS: false }
+  );
+
+  await client.connect();
+  userbotClient = client;
+  return client;
+};
+
 class TelegramPreviewService {
-  /**
-   * Send ad preview to user's Telegram
-   */
   async sendAdPreview(userId, adData) {
     try {
-      // Get user
-      const user = await prisma.user.findUnique({
-        where: { id: userId },
-      });
+      const user = await prisma.user.findUnique({ where: { id: userId } });
 
       if (!user || !user.telegramId) {
         throw new ValidationError('User not found or Telegram not linked');
       }
 
-      // Use platform bot
-      const botToken = process.env.TELEGRAM_BOT_TOKEN;
-
-      if (!botToken) {
-        throw new Error('Telegram bot token not configured');
-      }
-
-      const bot = new Bot(botToken);
-
-      // Prepare message
       const { text, mediaUrl, buttons } = adData;
 
-      // Prepare inline keyboard
-      let replyMarkup = undefined;
+      // Inline keyboard
+      let buttons_markup = undefined;
       if (buttons && buttons.length > 0) {
-        const keyboard = buttons.map(btn => [{
-          text: btn.text,
-          url: btn.url,
-        }]);
-
-        replyMarkup = {
-          inline_keyboard: keyboard,
-        };
+        buttons_markup = buttons.map(btn => [{ text: btn.text, url: btn.url }]);
       }
 
-      // Send message
+      const client = await getUserbotClient();
+
       let sentMessage;
 
       if (mediaUrl) {
-        // Local URL bo'lsa (localhost/127.0.0.1) - buffer sifatida yuborish
-        const isLocalUrl = mediaUrl.includes('localhost') || mediaUrl.includes('127.0.0.1');
-        let photoSource;
+        // Fetch image as buffer
+        const response = await fetch(mediaUrl);
+        if (!response.ok) throw new Error(`Failed to fetch image: ${response.status}`);
+        const arrayBuffer = await response.arrayBuffer();
+        const buffer = Buffer.from(arrayBuffer);
 
-        if (isLocalUrl) {
-          const response = await fetch(mediaUrl);
-          if (!response.ok) throw new Error(`Failed to fetch image: ${response.status}`);
-          const arrayBuffer = await response.arrayBuffer();
-          const buffer = Buffer.from(arrayBuffer);
-          const filename = mediaUrl.split('/').pop() || 'image.jpg';
-          photoSource = new InputFile(buffer, filename);
-        } else {
-          photoSource = mediaUrl;
-        }
-
-        sentMessage = await bot.api.sendPhoto(user.telegramId, photoSource, {
+        sentMessage = await client.sendFile(user.telegramId.toString(), {
+          file: buffer,
           caption: `🧪 PREVIEW\n\n${text}`,
-          reply_markup: replyMarkup,
+          parseMode: 'html',
+          buttons: buttons_markup ? buttons_markup.map(row =>
+            row.map(btn => client.buildReplyMarkup?.({}) || { text: btn.text, url: btn.url })
+          ) : undefined,
+          forceDocument: false,
+          attributes: [],
         });
       } else {
-        // Send text only
-        sentMessage = await bot.api.sendMessage(user.telegramId, `🧪 PREVIEW\n\n${text}`, {
-          reply_markup: replyMarkup,
+        const { Api } = await import('telegram');
+        sentMessage = await client.sendMessage(user.telegramId.toString(), {
+          message: `🧪 PREVIEW\n\n${text}`,
+          parseMode: 'html',
         });
       }
 
@@ -83,89 +79,49 @@ class TelegramPreviewService {
 
       return {
         success: true,
-        messageId: sentMessage.message_id,
-        chatId: sentMessage.chat.id,
+        messageId: sentMessage.id,
+        chatId: user.telegramId,
       };
     } catch (error) {
-      logger.error('Send ad preview failed:', {
-        message: error.message,
-        description: error.description,
-        stack: error.stack,
-      });
+      logger.error('Telegram preview yuborishda xato:', { message: error.message, stack: error.stack });
 
-      if (error.message?.includes('bot was blocked') || error.description?.includes('blocked')) {
-        throw new ValidationError('Siz botni blokladingiz. Iltimos, avval botni blokdan chiqaring.');
+      if (error.message?.includes('bot was blocked')) {
+        throw new ValidationError('Siz botni blokladingiz.');
       }
 
-      if (error.message?.includes('user not found') || error.description?.includes('user not found')) {
-        throw new ValidationError('Telegram foydalanuvchisi topilmadi. Avval bot bilan /start bosing.');
-      }
-
-      if (error.description?.includes('chat not found')) {
-        throw new ValidationError('Chat topilmadi. Bot bilan /start bosing: @akhmadsnetbot');
-      }
-
-      throw new Error(`Telegram preview yuborishda xato: ${error.message || error.description || 'Noma lum xato'}`);
+      throw new Error(`Telegram preview yuborishda xato: ${error.message}`);
     }
   }
 
-  /**
-   * Send test ad via specific bot
-   */
   async sendTestAdViaBot(botId, userId, adData) {
     try {
-      // Get bot
-      const bot = await prisma.bot.findUnique({
-        where: { id: botId },
-      });
+      const bot = await prisma.bot.findUnique({ where: { id: botId } });
+      if (!bot) throw new ValidationError('Bot not found');
 
-      if (!bot) {
-        throw new ValidationError('Bot not found');
-      }
-
-      // Decrypt bot token
       const decryptedToken = encryption.decrypt(bot.tokenEncrypted);
-
       const telegramBot = new Bot(decryptedToken);
+      const user = await prisma.user.findUnique({ where: { id: userId } });
 
-      // Get user
-      const user = await prisma.user.findUnique({
-        where: { id: userId },
-      });
+      if (!user || !user.telegramId) throw new ValidationError('User not found');
 
-      if (!user || !user.telegramId) {
-        throw new ValidationError('User not found');
-      }
-
-      // Prepare message
       const { text, mediaUrl, buttons } = adData;
 
       let replyMarkup = undefined;
       if (buttons && buttons.length > 0) {
-        const keyboard = buttons.map(btn => [{
-          text: btn.text,
-          url: btn.url,
-        }]);
-
-        replyMarkup = {
-          inline_keyboard: keyboard,
-        };
+        replyMarkup = { inline_keyboard: buttons.map(btn => [{ text: btn.text, url: btn.url }]) };
       }
 
-      // Send
       let sentMessage;
 
       if (mediaUrl) {
-        const isLocalUrl = mediaUrl.includes('localhost') || mediaUrl.includes('127.0.0.1');
+        const isLocalUrl = mediaUrl.includes('localhost') || mediaUrl.includes('127.0.0.1') || mediaUrl.includes('176.222.52.47');
         let photoSource;
 
         if (isLocalUrl) {
           const response = await fetch(mediaUrl);
           if (!response.ok) throw new Error(`Failed to fetch image: ${response.status}`);
           const arrayBuffer = await response.arrayBuffer();
-          const buffer = Buffer.from(arrayBuffer);
-          const filename = mediaUrl.split('/').pop() || 'image.jpg';
-          photoSource = new InputFile(buffer, filename);
+          photoSource = new InputFile(Buffer.from(arrayBuffer), 'image.jpg');
         } else {
           photoSource = mediaUrl;
         }
@@ -180,40 +136,23 @@ class TelegramPreviewService {
         });
       }
 
-      logger.info(`✅ Test ad sent via bot ${botId} to ${user.telegramId}`);
-
-      return {
-        success: true,
-        messageId: sentMessage.message_id,
-      };
+      return { success: true, messageId: sentMessage.message_id };
     } catch (error) {
       logger.error('Send test ad via bot failed:', error);
       throw error;
     }
   }
 
-  /**
-   * Delete preview message
-   */
   async deletePreviewMessage(userId, messageId) {
     try {
-      const user = await prisma.user.findUnique({
-        where: { id: userId },
-      });
-
-      if (!user || !user.telegramId) {
-        return;
-      }
+      const user = await prisma.user.findUnique({ where: { id: userId } });
+      if (!user || !user.telegramId) return;
 
       const botToken = process.env.TELEGRAM_BOT_TOKEN;
       const bot = new Bot(botToken);
-
       await bot.api.deleteMessage(user.telegramId, messageId);
-
-      logger.info(`🗑️ Preview message deleted: ${messageId}`);
     } catch (error) {
       logger.error('Delete preview message failed:', error);
-      // Don't throw - deletion errors shouldn't break flow
     }
   }
 }

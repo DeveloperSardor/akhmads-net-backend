@@ -132,7 +132,7 @@ class TelegramAuthService {
         logger.info(`New user created: ${user.id} (${user.firstName} ${user.lastName})`);
       } else {
         // ✅ UPDATE EXISTING USER if Telegram data changed
-        const needsUpdate = 
+        const needsUpdate =
           telegramUser.first_name !== user.firstName ||
           telegramUser.last_name !== user.lastName ||
           telegramUser.username !== user.username ||
@@ -201,6 +201,87 @@ class TelegramAuthService {
       };
     } catch (error) {
       logger.error('Login verification failed:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * Verify Widget Login (from bot URL button)
+   * Finds or creates user, returns JWT tokens directly
+   */
+  async verifyWidgetLogin(telegramId, telegramUser = {}) {
+    try {
+      let user = await prisma.user.findUnique({
+        where: { telegramId },
+        include: { wallet: true },
+      });
+
+      if (!user) {
+        user = await prisma.user.create({
+          data: {
+            telegramId,
+            firstName: telegramUser.first_name || null,
+            lastName: telegramUser.last_name || null,
+            username: telegramUser.username || null,
+            avatarUrl: telegramUser.photo_url || null,
+            locale: telegramUser.language_code || 'en',
+            role: 'ADVERTISER',
+            roles: ['ADVERTISER'],
+            isActive: true,
+          },
+        });
+        await prisma.wallet.create({ data: { userId: user.id } });
+        logger.info(`New user via widget login: ${user.id}`);
+      } else {
+        const needsUpdate =
+          telegramUser.first_name !== user.firstName ||
+          telegramUser.last_name !== user.lastName ||
+          telegramUser.username !== user.username ||
+          (telegramUser.photo_url && telegramUser.photo_url !== user.avatarUrl);
+
+        if (needsUpdate) {
+          user = await prisma.user.update({
+            where: { id: user.id },
+            data: {
+              firstName: telegramUser.first_name || user.firstName,
+              lastName: telegramUser.last_name || user.lastName,
+              username: telegramUser.username || user.username,
+              avatarUrl: telegramUser.photo_url || user.avatarUrl,
+            },
+          });
+        }
+      }
+
+      if (user.isBanned) throw new AuthenticationError('Account is banned');
+      if (!user.isActive) throw new AuthenticationError('Account is inactive');
+
+      await prisma.user.update({
+        where: { id: user.id },
+        data: { lastLoginAt: new Date() },
+      });
+
+      const tokens = jwtUtil.generateTokenPair(user);
+      await redis.set(`refresh_token:${user.id}`, tokens.refreshToken, 7 * 24 * 60 * 60);
+
+      logger.info(`Widget login success: ${user.id}`);
+
+      return {
+        user: {
+          id: user.id,
+          telegramId: user.telegramId,
+          email: user.email,
+          username: user.username,
+          firstName: user.firstName,
+          lastName: user.lastName,
+          role: user.role,
+          roles: user.roles,
+          avatarUrl: user.avatarUrl,
+          locale: user.locale,
+        },
+        tokens,
+      };
+    } catch (error) {
+      logger.error('Widget login failed:', error);
       throw error;
     }
   }

@@ -23,18 +23,18 @@ class Hash {
    */
   generateLoginCodes() {
     const codes = new Set();
-    
+
     // Generate 4 unique codes
     while (codes.size < 4) {
       codes.add(this.generateCode(4));
     }
-    
+
     const codesArray = Array.from(codes);
-    
+
     // Pick random code as correct one
     const correctIndex = Math.floor(Math.random() * 4);
     const correctCode = codesArray[correctIndex];
-    
+
     return {
       codes: codesArray,      // [1301, 5617, 6535, 8866]
       correctCode,            // 5617 (example)
@@ -46,6 +46,29 @@ class Hash {
    */
   generateRandomString(length = 32) {
     return crypto.randomBytes(length).toString('hex');
+  }
+
+  /**
+   * Generate Telegram Login Widget-compatible HMAC-SHA256 hash
+   * See: https://core.telegram.org/widgets/login#checking-authorization
+   */
+  generateTelegramHash(data, botToken) {
+    const secretKey = crypto.createHash('sha256').update(botToken).digest();
+    const checkString = Object.keys(data)
+      .filter(k => k !== 'hash' && data[k] !== undefined && data[k] !== null)
+      .sort()
+      .map(k => `${k}=${data[k]}`)
+      .join('\n');
+    return crypto.createHmac('sha256', secretKey).update(checkString).digest('hex');
+  }
+
+  /**
+   * Verify Telegram auth data hash
+   */
+  verifyTelegramHash(data, botToken) {
+    const { hash: receivedHash, ...rest } = data;
+    const expectedHash = this.generateTelegramHash(rest, botToken);
+    return receivedHash === expectedHash;
   }
 }
 

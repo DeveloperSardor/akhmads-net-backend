@@ -1,4 +1,8 @@
-import { InlineKeyboard } from 'grammy';
+import { InlineKeyboard, InputFile } from 'grammy';
+import { createReadStream } from 'fs';
+import { join, dirname } from 'path';
+import { fileURLToPath } from 'url';
+import crypto from 'crypto';
 import telegramAuthService from '../auth/telegramAuthService.js';
 import prisma from '../../config/database.js';
 import hash from '../../utils/hash.js';
@@ -16,7 +20,7 @@ class LoginBotHandler {
 
   setup(bot) {
     this.bot = bot; // ✅ Store bot instance for API calls
-    
+
     // /start command
     bot.command('start', async (ctx) => {
       try {
@@ -50,7 +54,7 @@ class LoginBotHandler {
   async getUserPhotoUrl(userId) {
     try {
       const photos = await this.bot.api.getUserProfilePhotos(userId, { limit: 1 });
-      
+
       if (!photos.photos || photos.photos.length === 0 || photos.photos[0].length === 0) {
         return null;
       }
@@ -58,10 +62,10 @@ class LoginBotHandler {
       // Get largest photo
       const photo = photos.photos[0][photos.photos[0].length - 1];
       const file = await this.bot.api.getFile(photo.file_id);
-      
+
       // Construct URL
       const photoUrl = `https://api.telegram.org/file/bot${this.bot.token}/${file.file_path}`;
-      
+
       return photoUrl;
     } catch (error) {
       logger.error('Get user photo failed:', error);
@@ -77,12 +81,13 @@ class LoginBotHandler {
   }
 
   /**
-   * Show main menu (GramAds style)
+   * Show main menu — Professional Telegram Auth
+   * Generates a signed Telegram Login Widget URL → URL button directly
    */
   async showMainMenu(ctx) {
-    const telegramId = ctx.from.id.toString();
-    
-    // Get or create user
+    const from = ctx.from;
+    const telegramId = from.id.toString();
+
     let user = await prisma.user.findUnique({
       where: { telegramId },
       include: { wallet: true },
@@ -92,41 +97,91 @@ class LoginBotHandler {
       user = await prisma.user.create({
         data: {
           telegramId,
-          firstName: ctx.from.first_name,
-          lastName: ctx.from.last_name,
-          username: ctx.from.username,
+          firstName: from.first_name,
+          lastName: from.last_name,
+          username: from.username,
           role: 'ADVERTISER',
           isActive: true,
         },
       });
-
-      await prisma.wallet.create({
-        data: { userId: user.id },
-      });
+      await prisma.wallet.create({ data: { userId: user.id } });
     }
 
     const balance = user.wallet?.available || 0;
     const name = user.firstName || 'User';
+    const frontendUrl = this.getFrontendUrl();
 
-    const keyboard = new InlineKeyboard()
-      .text('📢 Tap to authorize on the website', 'authorize_web')
-      .row()
-      .text('📁 Channel 📄', 'channel').text('💬 Chat 💬', 'chat');
+    // ── Generate signed Telegram auth URL ──────────────────────────────────
+    const photoUrl = await this.getUserPhotoUrl(from.id);
+    const authDate = Math.floor(Date.now() / 1000);
 
-    const welcomeText = `
-🎯 **AKHMADS.NET**
-Telegram Ad Network
+    const authData = {
+      id: from.id,
+      first_name: from.first_name,
+      ...(from.last_name && { last_name: from.last_name }),
+      ...(from.username && { username: from.username }),
+      ...(photoUrl && { photo_url: photoUrl }),
+      auth_date: authDate,
+    };
 
-👤 ${name}
-💰 Balance: ${balance} ($${(parseFloat(balance) / 100).toFixed(2)})
+    // HMAC-SHA256 hash (Telegram Login Widget spec)
+    const botToken = process.env.TELEGRAM_BOT_TOKEN;
+    const secretKey = crypto.createHash('sha256').update(botToken).digest();
+    const checkString = Object.keys(authData).sort().map(k => `${k}=${authData[k]}`).join('\n');
+    const authHash = crypto.createHmac('sha256', secretKey).update(checkString).digest('hex');
 
-- Blog • Support •
-- Telegram Mini App •
-`;
+    const params = new URLSearchParams({
+      ...authData,
+      hash: authHash,
+    });
+    const authUrl = `${frontendUrl}/?${params.toString()}`;
+    // ──────────────────────────────────────────────────────────────────────
 
-    await ctx.reply(welcomeText, {
+    const welcomeText = `✨ AKHMADS.NET\nTelegram Ad Network\n\n👤 ${name}\n💰 Balance: $${(parseFloat(balance) / 100).toFixed(2)}\n\n🌐 Blog · 💬 Support · 📱 Telegram Mini App`;
+
+    // Helper: UTF-16 offset + length hisoblash
+    const getEmojiEntity = (str, searchEmoji, customEmojiId) => {
+      const idx = str.indexOf(searchEmoji);
+      if (idx === -1) return null;
+      let offset = 0;
+      for (let i = 0; i < idx;) {
+        const cp = str.codePointAt(i);
+        offset += cp > 0xFFFF ? 2 : 1;
+        i += cp > 0xFFFF ? 2 : 1;
+      }
+      const cp = str.codePointAt(idx);
+      return { type: 'custom_emoji', offset, length: cp > 0xFFFF ? 2 : 1, custom_emoji_id: customEmojiId };
+    };
+
+    const messageEntities = [
+      getEmojiEntity(welcomeText, '✨', '5890925363067886150'),
+      getEmojiEntity(welcomeText, '👤', '5260399854500191689'),
+      getEmojiEntity(welcomeText, '💰', '5904462880941545555'),
+      getEmojiEntity(welcomeText, '🌐', '5776233299424843260'),
+      getEmojiEntity(welcomeText, '💬', '5904248647972820334'),
+      getEmojiEntity(welcomeText, '📱', '6033070647213560346'),
+    ].filter(Boolean);
+
+    // Telegram faqat https:// URL larni qabul qiladi
+    // Localhost (http://) uchun callback button ishlatamiz
+    const isHttp = authUrl.startsWith('http://');
+    const keyboard = new InlineKeyboard();
+    if (isHttp) {
+      // localhost: authUrl ni sessions'ga saqlaymiz, callback orqali beramiz
+      this.sessions.set(`auth_url:${telegramId}`, authUrl);
+      keyboard.text('🌐 Авторизоваться', 'authorize_web');
+    } else {
+      keyboard.url('🌐 Авторизоваться', authUrl);
+    }
+    keyboard.row().text('📁 Channel', 'channel').text('💬 Chat', 'chat');
+
+    // GIF + caption + keyboard — bitta xabarda
+    const __dirname = dirname(fileURLToPath(import.meta.url));
+    const gifPath = join(__dirname, '../../../main-gif.mov');
+    await ctx.replyWithAnimation(new InputFile(createReadStream(gifPath)), {
+      caption: welcomeText,
+      caption_entities: messageEntities,
       reply_markup: keyboard,
-      parse_mode: 'Markdown',
     });
   }
 
@@ -160,17 +215,17 @@ Telegram Ad Network
 
       // Get codes from Redis
       const codesJson = await redis.get(`login_codes:${token}`);
-      
+
       if (!codesJson) {
         await ctx.reply('❌ Kodlar topilmadi. Qaytadan login qiling.');
         return;
       }
-      
+
       const codes = JSON.parse(codesJson);
       const correctCode = session.correctCode;
-      
+
       console.log('🔍 Bot handler codes:', { codes, correctCode });
-      
+
       // Store in memory
       this.sessions.set(telegramId, {
         loginToken: token,
@@ -179,7 +234,7 @@ Telegram Ad Network
       });
 
       const keyboard = new InlineKeyboard();
-      
+
       // Add 4 code buttons
       codes.forEach((code, idx) => {
         keyboard.text(code, `code_${token}_${code}`);
@@ -200,57 +255,47 @@ What code do you currently see in the browser?
     }
   }
 
- /**
- * Handle callback queries
- */
-async handleCallbackQuery(ctx) {
-  try {
-    const data = ctx.callbackQuery.data;
-    const telegramId = ctx.from.id.toString();
+  /**
+  * Handle callback queries
+  */
+  async handleCallbackQuery(ctx) {
+    try {
+      const data = ctx.callbackQuery.data;
+      const telegramId = ctx.from.id.toString();
 
-    console.log('🔍 Callback data:', data);
+      console.log('🔍 Callback data:', data);
 
-    if (data === 'authorize_web') {
-      await ctx.answerCallbackQuery();
-      
-      const frontendUrl = this.getFrontendUrl();
-      
-      if (process.env.NODE_ENV === 'development') {
-        await ctx.reply(
-          `🌐 Login qilish uchun quyidagi havolaga o'ting:\n\n${frontendUrl}\n\n⚠️ Havolani nusxalang va browserda oching.`
-        );
-      } else {
-        await ctx.reply(
-          `🌐 Login qilish uchun quyidagi tugmani bosing:`,
-          {
-            reply_markup: new InlineKeyboard()
-              .url('🔗 Open Website', frontendUrl)
-          }
-        );
+      if (data === 'authorize_web') {
+        const authUrl = this.sessions.get(`auth_url:${telegramId}`);
+        await ctx.answerCallbackQuery(); // spinner'ni o'chiramiz
+        if (authUrl) {
+          await ctx.reply('🔐 Login qilish uchun:', {
+            reply_markup: new InlineKeyboard().url('🌐 Kirish', authUrl),
+          });
+        }
+        return;
       }
-      return;
-    }
 
-    if (data === 'channel' || data === 'chat') {
-      await ctx.answerCallbackQuery('Coming soon!');
-      return;
-    }
+      if (data === 'channel' || data === 'chat') {
+        await ctx.answerCallbackQuery('Coming soon!');
+        return;
+      }
 
-    if (data.startsWith('code_')) {
-      const parts = data.split('_');
-      const selectedCode = parts[parts.length - 1];
-      const tokenParts = parts.slice(1, parts.length - 1);
-      const token = tokenParts.join('_');
-      
-      console.log('🔍 Parsed:', { token, selectedCode });
-      
-      await this.handleCodeSelection(ctx, token, selectedCode, telegramId);
+      if (data.startsWith('code_')) {
+        const parts = data.split('_');
+        const selectedCode = parts[parts.length - 1];
+        const tokenParts = parts.slice(1, parts.length - 1);
+        const token = tokenParts.join('_');
+
+        console.log('🔍 Parsed:', { token, selectedCode });
+
+        await this.handleCodeSelection(ctx, token, selectedCode, telegramId);
+      }
+    } catch (error) {
+      logger.error('Handle callback query error:', error);
+      await ctx.answerCallbackQuery('❌ Xatolik yuz berdi');
     }
-  } catch (error) {
-    logger.error('Handle callback query error:', error);
-    await ctx.answerCallbackQuery('❌ Xatolik yuz berdi');
   }
-}
 
   /**
    * Handle code selection
@@ -274,7 +319,7 @@ async handleCallbackQuery(ctx) {
 
       // ✅ FETCH AVATAR URL
       const photoUrl = await this.getUserPhotoUrl(ctx.from.id);
-      
+
       logger.info(`Fetched avatar for user ${telegramId}: ${photoUrl || 'no photo'}`);
 
       // ✅ PASS TELEGRAM DATA WITH AVATAR
