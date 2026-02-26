@@ -103,8 +103,28 @@ const createRateLimiter = (options) => {
       return req.userRole === 'SUPER_ADMIN';
     }),
     keyGenerator: (req) => {
-      // Use user ID if authenticated, otherwise IP
-      return req.userId || req.ip;
+      // 1. Use user ID if authenticated
+      if (req.userId) return req.userId;
+      
+      // 2. Check for Cloudflare IP
+      if (req.headers['cf-connecting-ip']) {
+        return req.headers['cf-connecting-ip'];
+      }
+      
+      // 3. Check for standard Nginx/Proxy Forwarded IP
+      const forwardedFor = req.headers['x-forwarded-for'];
+      if (forwardedFor) {
+        // x-forwarded-for can be a comma separated list, take the first one (original client)
+        return forwardedFor.split(',')[0].trim();
+      }
+      
+      // 4. Check real-ip
+      if (req.headers['x-real-ip']) {
+         return req.headers['x-real-ip'];
+      }
+
+      // 5. Fallback to Express req.ip (which relies on trust proxy)
+      return req.ip;
     },
   });
 };
@@ -183,7 +203,14 @@ export const slidingWindowRateLimiter = (options) => {
 
   return async (req, res, next) => {
     try {
-      const key = `sw:${req.userId || req.ip}:${identifier}`;
+      let clientIp = req.userId;
+      if (!clientIp) {
+        if (req.headers['cf-connecting-ip']) clientIp = req.headers['cf-connecting-ip'];
+        else if (req.headers['x-forwarded-for']) clientIp = req.headers['x-forwarded-for'].split(',')[0].trim();
+        else if (req.headers['x-real-ip']) clientIp = req.headers['x-real-ip'];
+        else clientIp = req.ip;
+      }
+      const key = `sw:${clientIp}:${identifier}`;
       const now = Date.now();
       const windowStart = now - windowMs;
 
