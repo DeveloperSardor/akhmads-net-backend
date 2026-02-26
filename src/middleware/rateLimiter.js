@@ -130,6 +130,9 @@ export const apiRateLimiter = createRateLimiter({
     // Skip rate limiting for super admins
     if (req.userRole === 'SUPER_ADMIN') return true;
 
+    // Skip avatar fetching (public proxy, heavily hit)
+    if (req.path.includes('/bots/avatar/')) return true;
+
     // Skip in development for specific endpoints
     if (process.env.NODE_ENV === 'development') {
       if (req.path.includes('/auth/login/status/') ||

@@ -8,6 +8,7 @@ import { validate } from "../../middleware/validate.js";
 import { body, param, query } from "express-validator";
 import response from "../../utils/response.js";
 import prisma from "../../config/database.js";
+import redis from "../../config/redis.js";
 import axios from "axios";
 
 const router = Router();
@@ -19,46 +20,73 @@ const router = Router();
 router.get("/avatar/:username", async (req, res, next) => {
   try {
     const username = req.params.username.replace("@", "");
-    const fallbackImage =
-      "https://ui-avatars.com/api/?name=" +
-      username +
-      "&background=random&color=fff&size=128";
+    const fallbackImage = `https://ui-avatars.com/api/?name=${username}&background=random&color=fff&size=128`;
 
-    // Fetch the public telegram web view
-    const htmlResponse = await axios.get(`https://t.me/${username}`, {
-      timeout: 3000,
-      headers: {
-        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)", // Avoid quick blocks
-      },
-    });
+    // 1. Check Redis for a cached target URL string (O(1) Memory & Speed)
+    const cacheKey = `avatar:url:${username}`;
+    let targetUrl = await redis.get(cacheKey);
 
-    // Extract the og:image content tag
-    const match = htmlResponse.data.match(
-      /<meta property="?og:image"? content="?([^">]+)"?/i,
-    );
-    if (match && match[1] && match[1].includes("cdn")) {
-      // Stream the image directly to bypass any CDN ISP blocks on the client-side
-      const imageResponse = await axios.get(match[1], {
-        responseType: 'stream',
-        timeout: 5000,
+    // 2. If valid string not in Redis, discover it
+    if (!targetUrl) {
+      // 2a. Check if Bot exists in our Postgres DB and has an uploaded CDN avatar
+      const dbBot = await prisma.bot.findFirst({
+        where: { username },
+        select: { avatarUrl: true },
       });
-      res.set('Content-Type', imageResponse.headers['content-type']);
-      res.set('Cache-Control', 'public, max-age=86400');
-      return imageResponse.data.pipe(res);
+
+      if (dbBot && dbBot.avatarUrl) {
+        targetUrl = dbBot.avatarUrl; // Will be minio / s3 url
+        await redis.set(cacheKey, targetUrl, 86400); // 24h cache
+      } else {
+        // 2b. If legacy bot or missing avatar, scrape its public Telegram page
+        try {
+          const htmlResponse = await axios.get(`https://t.me/${username}`, {
+            timeout: 3000,
+            headers: {
+              "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)",
+            },
+          });
+
+          const match = htmlResponse.data.match(
+            /<meta property="?og:image"? content="?([^">]+)"?/i,
+          );
+
+          if (match && match[1] && match[1].includes("cdn")) {
+            targetUrl = match[1]; // Set to Telegram CDN URL
+            await redis.set(cacheKey, targetUrl, 21600); // 6h cache (Telegram CDN links change)
+          } else {
+            targetUrl = fallbackImage;
+            await redis.set(cacheKey, targetUrl, 86400); // 24h cache
+          }
+        } catch (scrapeErr) {
+          // Scrape failed (e.g. timeout or deleted bot)
+          targetUrl = fallbackImage;
+        }
+      }
     }
 
-    const fallbackResponse = await axios.get(fallbackImage, { responseType: 'stream' });
-    res.set('Content-Type', fallbackResponse.headers['content-type']);
-    res.set('Cache-Control', 'public, max-age=86400');
-    return fallbackResponse.data.pipe(res);
+    // 3. Stream the target image pipeline directly back to the client
+    const sourceResponse = await axios.get(targetUrl, {
+      responseType: "stream",
+      timeout: 5000,
+    });
+    res.set("Content-Type", sourceResponse.headers["content-type"]);
+    res.set("Cache-Control", "public, max-age=86400"); // Let the browser cache the stream binary
+    return sourceResponse.data.pipe(res);
+
   } catch (error) {
+    // Ultimate fallback if the eventual target stream link is dead or blocks us
+    const fallbackImage = `https://ui-avatars.com/api/?name=${req.params.username.replace("@", "")}&background=random&color=fff&size=128`;
     try {
-      const fallbackResponse = await axios.get(fallbackImage, { responseType: 'stream' });
-      res.set('Content-Type', fallbackResponse.headers['content-type']);
-      res.set('Cache-Control', 'public, max-age=86400');
+      const fallbackResponse = await axios.get(fallbackImage, {
+        responseType: "stream",
+        timeout: 3000,
+      });
+      res.set("Content-Type", fallbackResponse.headers["content-type"]);
+      res.set("Cache-Control", "public, max-age=86400");
       return fallbackResponse.data.pipe(res);
     } catch (innerError) {
-      return res.status(404).send('Avatar not found');
+      return res.status(404).send("Avatar not found");
     }
   }
 });
