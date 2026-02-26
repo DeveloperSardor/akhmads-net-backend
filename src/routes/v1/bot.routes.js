@@ -8,11 +8,62 @@ import { validate } from '../../middleware/validate.js';
 import { body, param, query } from 'express-validator';
 import response from '../../utils/response.js';
 import prisma from '../../config/database.js';
+import axios from 'axios';
 
 const router = Router();
 
-// All routes require authentication
+/**
+ * @route GET /api/v1/bots/avatar/:username
+ * @desc Dynamically fetch and proxy bot's real-time telegram profile avatar picture
+ */
+router.get('/avatar/:username', async (req, res, next) => {
+  try {
+    const username = req.params.username.replace('@', '');
+    const fallbackImage = 'https://ui-avatars.com/api/?name=' + username + '&background=random&color=fff&size=128';
+
+    // Fetch the public telegram web view
+    const htmlResponse = await axios.get(`https://t.me/${username}`, {
+      timeout: 3000,
+      headers: {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)' // Avoid quick blocks
+      }
+    });
+
+    // Extract the og:image content tag
+    const match = htmlResponse.data.match(/<meta property="?og:image"? content="?([^">]+)"?/i);
+    if (match && match[1] && match[1].includes('cdn')) {
+      return res.redirect(302, match[1]); // Redirect to the actual telegram CDN image
+    }
+
+    // Fallback if no avatar is publicly accessible
+    return res.redirect(302, fallbackImage);
+  } catch (error) {
+    const fallbackImage = 'https://ui-avatars.com/api/?name=' + req.params.username.replace('@', '') + '&background=random&color=fff&size=128';
+    return res.redirect(302, fallbackImage);
+  }
+});
+
+// All other routes require authentication
 router.use(authenticate);
+
+/**
+ * @route GET /api/v1/bots/verify-token
+ * @desc Verify bot token and get info before registration
+ */
+router.post(
+  '/verify-token',
+  validate([
+    body('token').isString().notEmpty().withMessage('Bot token is required'),
+  ]),
+  async (req, res, next) => {
+    try {
+      const info = await botService.verifyTokenWithAvatar(req.body.token);
+      response.success(res, info, 'Bot verified successfully');
+    } catch (error) {
+      next(error);
+    }
+  }
+);
 
 /**
  * POST /api/v1/bots
@@ -35,25 +86,6 @@ router.post(
       
       // ✅ Return both bot and apiKey
       response.created(res, { bot, apiKey: bot.apiKey }, 'Bot registered successfully');
-    } catch (error) {
-      next(error);
-    }
-  }
-);
-
-/**
- * POST /api/v1/bots/verify-token
- * Verify bot token and preview its basic info and avatar
- */
-router.post(
-  '/verify-token',
-  validate([
-    body('token').isString().notEmpty(),
-  ]),
-  async (req, res, next) => {
-    try {
-      const info = await botService.verifyTokenWithAvatar(req.body.token);
-      response.success(res, info, 'Bot verified successfully');
     } catch (error) {
       next(error);
     }
