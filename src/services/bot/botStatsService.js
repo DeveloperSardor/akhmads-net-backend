@@ -111,7 +111,7 @@ class BotStatsService {
       );
 
       return {
-        period: { days, startDate },
+        period: { days, startDate: new Date(Date.now() - days * 24 * 60 * 60 * 1000) },
         daily: stats,
         totals,
       };
