@@ -4,6 +4,8 @@ import encryption from '../../utils/encryption.js';
 import jwtUtil from '../../utils/jwt.js';
 import logger from '../../utils/logger.js';
 import { NotFoundError, ConflictError, ExternalServiceError } from '../../utils/errors.js';
+import axios from 'axios';
+import storageService from '../storage/storageService.js';
 
 /**
  * Bot Service
@@ -57,6 +59,47 @@ class BotService {
         username: botInfo.username,
       });
 
+      // --- Fetch Avatar and BotStat data ---
+      let avatarUrl = null;
+      let botstatData = null;
+      let totalMembers = 0;
+      let activeMembers = 0;
+
+      try {
+        const photoUrl = await telegramAPI.getBotProfilePhotoUrl(data.token);
+        if (photoUrl) {
+          const response = await axios.get(photoUrl, { responseType: 'arraybuffer' });
+          const buffer = Buffer.from(response.data, 'binary');
+          const ext = photoUrl.split('.').pop() || 'jpg';
+          const filename = storageService.generateFilename(`avatar.${ext}`, ownerId);
+          
+          const uploadResult = await storageService.uploadFile({
+            buffer,
+            filename,
+            mimetype: response.headers['content-type'] || 'image/jpeg',
+          });
+          avatarUrl = uploadResult.url;
+        }
+      } catch (err) {
+        logger.error('Failed to fetch/upload bot avatar:', err.message);
+      }
+
+      try {
+        const botstatKey = process.env.BOT_STAT_IO;
+        if (botstatKey) {
+          const usernameForApi = botInfo.username.startsWith('@') ? botInfo.username : `@${botInfo.username}`;
+          const statRes = await axios.get(`https://api.botstat.io/get/${usernameForApi}/${botstatKey}`);
+          if (statRes.data && statRes.data.ok && statRes.data.result) {
+            botstatData = statRes.data.result;
+            activeMembers = botstatData.users_live || 0;
+            totalMembers = (botstatData.users_live || 0) + (botstatData.users_die || 0);
+          }
+        }
+      } catch (err) {
+        logger.error('Failed to fetch botstat data:', err.message);
+      }
+      // ------------------------------------
+
       // ✅ Create bot with monetization flag
       const bot = await prisma.bot.create({
         data: {
@@ -72,6 +115,10 @@ class BotService {
           language: data.language || 'uz',
           monetized: data.monetized !== undefined ? data.monetized : true,
           status: 'PENDING',
+          avatarUrl,
+          botstatData,
+          activeMembers,
+          totalMembers,
         },
       });
 

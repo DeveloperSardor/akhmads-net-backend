@@ -163,7 +163,9 @@ class DistributionService {
             options: poll.options,
           });
         } else {
-          sentMessage = await telegramAPI.sendMessage(botToken, chatId, message.text, {
+          sentMessage = await telegramAPI.sendMessage(botToken, {
+            chat_id: chatId,
+            text: message.text,
             parse_mode: message.parseMode,
             reply_markup: message.replyMarkup,
           });

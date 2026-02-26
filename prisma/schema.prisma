@@ -325,6 +325,9 @@ model Bot {
   blockedCategories Json?  @map("blocked_categories")
   frequencyMinutes  Int    @default(5) @map("frequency_minutes")
 
+  avatarUrl         String? @map("avatar_url")
+  botstatData       Json?   @map("botstat_data")
+
   totalEarnings   Decimal @default(0) @map("total_earnings") @db.Decimal(12, 2)
   pendingEarnings Decimal @default(0) @map("pending_earnings") @db.Decimal(12, 2)
   currentEcpm     Decimal @default(0) @map("current_ecpm") @db.Decimal(10, 4)

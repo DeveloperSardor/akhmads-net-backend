@@ -38,6 +38,60 @@ class TelegramAPI {
   }
 
   /**
+   * Get bot profile photo URL
+   * @param {string} token - Bot token
+   * @param {string} botId - Bot ID (usually extracted from getMe)
+   * @returns {Promise<string|null>} - URL of the bot's profile photo or null
+   */
+  async getBotProfilePhotoUrl(token) {
+    try {
+      // 1. Get the bot's profile photos using getMe and getUserProfilePhotos
+      const botMe = await this.getMe(token);
+      
+      const photosResponse = await axios.get(
+        `${this.baseURL}/bot${token}/getUserProfilePhotos`,
+        { 
+          params: { user_id: botMe.id, limit: 1 },
+          timeout: 10000 
+        }
+      );
+
+      if (!photosResponse.data.ok) {
+        throw new Error(photosResponse.data.description || 'Failed to get user profile photos');
+      }
+
+      const photos = photosResponse.data.result.photos;
+      if (!photos || photos.length === 0 || photos[0].length === 0) {
+        return null; // No profile photo found
+      }
+
+      // Get the highest resolution photo (usually the last in the array)
+      const fileId = photos[0][photos[0].length - 1].file_id;
+
+      // 2. Get the file path
+      const fileResponse = await axios.get(
+        `${this.baseURL}/bot${token}/getFile`,
+        { 
+          params: { file_id: fileId },
+          timeout: 10000 
+        }
+      );
+
+      if (!fileResponse.data.ok) {
+        throw new Error(fileResponse.data.description || 'Failed to get file info');
+      }
+
+      const filePath = fileResponse.data.result.file_path;
+
+      // 3. Construct the full URL
+      return `https://api.telegram.org/file/bot${token}/${filePath}`;
+    } catch (error) {
+      logger.error('Telegram getBotProfilePhotoUrl error:', error.message);
+      return null; // Fail gracefully, don't break registration if picture fetch fails
+    }
+  }
+
+  /**
    * Send message
    * @param {string} token - Bot token
    * @param {object} params - Message parameters
