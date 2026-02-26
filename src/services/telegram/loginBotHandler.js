@@ -153,8 +153,8 @@ class LoginBotHandler {
       });
 
       await ctx.answerCallbackQuery();
-      await ctx.deleteMessage();
-      await this.showMainMenu(ctx, user);
+      // await ctx.deleteMessage(); // REMOVED: No more delete
+      await this.showMainMenu(ctx, user, { edit: true });
     } catch (error) {
       logger.error('Set language error:', error);
       await ctx.answerCallbackQuery('❌ Error');
@@ -164,7 +164,7 @@ class LoginBotHandler {
   /**
    * Show main menu — Professional Telegram Auth
    */
-  async showMainMenu(ctx, user = null) {
+  async showMainMenu(ctx, user = null, options = { edit: false }) {
     const from = ctx.from;
     const telegramId = from.id.toString();
 
@@ -252,25 +252,43 @@ class LoginBotHandler {
       .text(i18n.t(locale, 'channel'), 'channel')
       .text(i18n.t(locale, 'chat'), 'chat')
       .row()
+      .webApp(i18n.t(locale, 'open_mini_app'), frontendUrl)
+      .row()
       .text('🌐 Tilni o\'zgartirish / Change Language', 'change_lang');
 
     const __dirname = dirname(fileURLToPath(import.meta.url));
     const gifPath = join(__dirname, '../../../main-gif.mov');
     
     try {
-      await ctx.replyWithAnimation(new InputFile(createReadStream(gifPath)), {
-        caption: welcomeText,
-        caption_entities: messageEntities,
-        reply_markup: keyboard,
-        parse_mode: 'HTML'
-      });
+      if (options.edit) {
+        await ctx.editMessageCaption(welcomeText, {
+          reply_markup: keyboard,
+          caption_entities: messageEntities,
+          parse_mode: 'HTML'
+        });
+      } else {
+        await ctx.replyWithAnimation(new InputFile(createReadStream(gifPath)), {
+          caption: welcomeText,
+          caption_entities: messageEntities,
+          reply_markup: keyboard,
+          parse_mode: 'HTML'
+        });
+      }
     } catch (error) {
-      // Fallback if animation fails
-      await ctx.reply(welcomeText, {
-        entities: messageEntities,
-        reply_markup: keyboard,
-        parse_mode: 'HTML'
-      });
+      // Fallback if animation fails or can't be edited
+      if (options.edit) {
+        await ctx.editMessageText(welcomeText, {
+          entities: messageEntities,
+          reply_markup: keyboard,
+          parse_mode: 'HTML'
+        });
+      } else {
+        await ctx.reply(welcomeText, {
+          entities: messageEntities,
+          reply_markup: keyboard,
+          parse_mode: 'HTML'
+        });
+      }
     }
   }
 
@@ -434,7 +452,7 @@ class LoginBotHandler {
       );
 
       const keyboard = new InlineKeyboard()
-        .text(i18n.t(locale, 'open_mini_app'), 'mini_app');
+        .webApp(i18n.t(locale, 'open_mini_app'), this.getFrontendUrl());
 
       const successText = i18n.t(locale, 'auth_success');
 

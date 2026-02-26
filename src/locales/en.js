@@ -1,5 +1,5 @@
 export default {
-  welcome: "✨ <b>AKHMADS.NET</b>\nTelegram Ad Network\n\n👤 <b>{name}</b>\n💰 Balance: <b>${balance}</b>\n\n🌐 Blog · 💬 Support · 📱 Telegram Mini App",
+  welcome: "✨ AKHMADS.NET\nTelegram Ad Network\n\n👤 {name}\n💰 Balance: ${balance}\n\n🌐 Blog · 💬 Support · 📱 Telegram Mini App",
   select_language: "Please select your language:",
   auth_web: "🌐 Authorize",
   channel: "📁 Channel",
