@@ -162,37 +162,51 @@ class BotStatsService {
         return;
       }
 
-      // Format username for BotStat.io API
-      const usernameForApi = bot.username.startsWith('@') ? bot.username : `@${bot.username}`;
+      // We'll try both with and without @ because BotStat API can be picky
+      const usernamesToTry = [
+        bot.username.replace(/^@/, ''), // plain
+        bot.username.startsWith('@') ? bot.username : `@${bot.username}` // with @
+      ];
       
-      try {
-        const response = await axios.get(`https://www.botstat.io/get/${usernameForApi}/${botstatKey}`, {
-          timeout: 10000,
-          // Add basic agent header just in case
-          headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36' }
-        });
+      let success = false;
+      let lastError = null;
 
-        if (response.data && response.data.ok && response.data.result) {
-          const result = response.data.result;
-          const activeMembers = result.users_live || 0;
-          const totalMembers = (result.users_live || 0) + (result.users_die || 0);
+      for (const usernameForApi of usernamesToTry) {
+        if (success) break;
 
-          await prisma.bot.update({
-            where: { id: botId },
-            data: {
-              totalMembers,
-              activeMembers,
-              botstatData: result,
-              lastStatsSync: new Date(),
-            },
+        try {
+          const response = await axios.get(`https://api.botstat.io/get/${usernameForApi}/${botstatKey}`, {
+            timeout: 10000,
+            headers: { 'User-Agent': 'Mozilla/5.0 (BotStatSync/1.0)' }
           });
 
-          logger.info(`Member count synced for bot @${bot.username}: ${totalMembers} total, ${activeMembers} active`);
-        } else {
-          logger.warn(`BotStat.io sync failed for @${bot.username}: ${response.data?.result || 'Unknown error'}`);
+          if (response.data && response.data.ok && response.data.result) {
+            const result = response.data.result;
+            const activeMembers = result.users_live || 0;
+            const totalMembers = (result.users_live || 0) + (result.users_die || 0);
+
+            await prisma.bot.update({
+              where: { id: botId },
+              data: {
+                totalMembers,
+                activeMembers,
+                botstatData: result,
+                lastStatsSync: new Date(),
+              },
+            });
+
+            logger.info(`Member count synced for bot @${bot.username} using "${usernameForApi}": ${totalMembers} total, ${activeMembers} active`);
+            success = true;
+          } else {
+            lastError = response.data?.result?.message || response.data?.result || 'Unknown error';
+          }
+        } catch (axiosErr) {
+          lastError = axiosErr.message;
         }
-      } catch (axiosErr) {
-        logger.error(`BotStat.io API request failed for @${bot.username}:`, axiosErr.message);
+      }
+
+      if (!success) {
+        logger.warn(`BotStat.io sync failed for @${bot.username} after trying both formats. Last error: ${JSON.stringify(lastError)}`);
       }
     } catch (error) {
       logger.error('Sync member count failed:', error);
