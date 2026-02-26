@@ -1,4 +1,5 @@
 import prisma from '../../config/database.js';
+import axios from 'axios';
 import logger from '../../utils/logger.js';
 import { startOfDay, endOfDay, subDays } from 'date-fns';
 
