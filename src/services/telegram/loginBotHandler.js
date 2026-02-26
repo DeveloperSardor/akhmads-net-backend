@@ -251,9 +251,16 @@ class LoginBotHandler {
     keyboard.row()
       .text(i18n.t(locale, 'channel'), 'channel')
       .text(i18n.t(locale, 'chat'), 'chat')
-      .row()
-      .webApp(i18n.t(locale, 'open_mini_app'), frontendUrl)
-      .row()
+      .row();
+
+    // ✅ Mini App requires HTTPS
+    if (frontendUrl.startsWith('https://')) {
+      keyboard.webApp(i18n.t(locale, 'open_mini_app'), frontendUrl);
+    } else {
+      keyboard.url(i18n.t(locale, 'open_mini_app'), frontendUrl);
+    }
+
+    keyboard.row()
       .text('🌐 Tilni o\'zgartirish / Change Language', 'change_lang');
 
     const __dirname = dirname(fileURLToPath(import.meta.url));
@@ -451,8 +458,14 @@ class LoginBotHandler {
         }
       );
 
-      const keyboard = new InlineKeyboard()
-        .webApp(i18n.t(locale, 'open_mini_app'), this.getFrontendUrl());
+      const frontendUrl = this.getFrontendUrl();
+      const keyboard = new InlineKeyboard();
+      
+      if (frontendUrl.startsWith('https://')) {
+        keyboard.webApp(i18n.t(locale, 'open_mini_app'), frontendUrl);
+      } else {
+        keyboard.url(i18n.t(locale, 'open_mini_app'), frontendUrl);
+      }
 
       const successText = i18n.t(locale, 'auth_success');
 
