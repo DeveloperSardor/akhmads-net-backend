@@ -212,33 +212,9 @@ class LoginBotHandler {
 
     const welcomeText = i18n.t(locale, 'welcome', {
       name,
-      balance: (parseFloat(balance) / 100).toFixed(2)
+      balance: (parseFloat(balance) / 100).toFixed(2),
+      miniAppUrl: `https://t.me/akhmadsnetbot/app`
     });
-
-    // Premium Emoji IDs from locale
-    const emojiIds = i18n.emojis(locale);
-
-    const getEmojiEntity = (str, searchEmoji, customEmojiId) => {
-      const idx = str.indexOf(searchEmoji);
-      if (idx === -1) return null;
-      let offset = 0;
-      for (let i = 0; i < idx;) {
-        const cp = str.codePointAt(i);
-        offset += cp > 0xFFFF ? 2 : 1;
-        i += cp > 0xFFFF ? 2 : 1;
-      }
-      const cp = str.codePointAt(idx);
-      return { type: 'custom_emoji', offset, length: cp > 0xFFFF ? 2 : 1, custom_emoji_id: customEmojiId };
-    };
-
-    const messageEntities = [
-      getEmojiEntity(welcomeText, '✨', emojiIds.sparkles),
-      getEmojiEntity(welcomeText, '👤', emojiIds.user),
-      getEmojiEntity(welcomeText, '💰', emojiIds.money),
-      getEmojiEntity(welcomeText, '🌐', emojiIds.web),
-      getEmojiEntity(welcomeText, '💬', emojiIds.chat),
-      getEmojiEntity(welcomeText, '📱', emojiIds.phone),
-    ].filter(Boolean);
 
     const isHttp = authUrl.startsWith('http://');
     const keyboard = new InlineKeyboard();
@@ -249,10 +225,18 @@ class LoginBotHandler {
       keyboard.url(i18n.t(locale, 'auth_web'), authUrl);
     }
     keyboard.row()
-    keyboard.row()
       .text(i18n.t(locale, 'channel'), 'channel')
       .text(i18n.t(locale, 'chat'), 'chat')
-      .row()
+      .row();
+
+    // ✅ Mini App requires HTTPS
+    if (frontendUrl.startsWith('https://')) {
+      keyboard.webApp(i18n.t(locale, 'open_mini_app'), frontendUrl);
+    } else {
+      keyboard.url(i18n.t(locale, 'open_mini_app'), frontendUrl);
+    }
+
+    keyboard.row()
       .text('🌐 Tilni o\'zgartirish / Change Language', 'change_lang');
 
     const __dirname = dirname(fileURLToPath(import.meta.url));
@@ -262,26 +246,26 @@ class LoginBotHandler {
       if (options.edit) {
         await ctx.editMessageCaption(welcomeText, {
           reply_markup: keyboard,
-          caption_entities: messageEntities,
+          parse_mode: 'HTML'
         });
       } else {
         await ctx.replyWithAnimation(new InputFile(createReadStream(gifPath)), {
           caption: welcomeText,
-          caption_entities: messageEntities,
           reply_markup: keyboard,
+          parse_mode: 'HTML'
         });
       }
     } catch (error) {
       // Fallback if animation fails or can't be edited
       if (options.edit) {
         await ctx.editMessageText(welcomeText, {
-          entities: messageEntities,
           reply_markup: keyboard,
+          parse_mode: 'HTML'
         });
       } else {
         await ctx.reply(welcomeText, {
-          entities: messageEntities,
           reply_markup: keyboard,
+          parse_mode: 'HTML'
         });
       }
     }
@@ -446,10 +430,22 @@ class LoginBotHandler {
         }
       );
 
+      const frontendUrl = this.getFrontendUrl();
+      const keyboard = new InlineKeyboard();
+      
+      if (frontendUrl.startsWith('https://')) {
+        keyboard.webApp(i18n.t(locale, 'open_mini_app'), frontendUrl);
+      } else {
+        keyboard.url(i18n.t(locale, 'open_mini_app'), frontendUrl);
+      }
+
       const successText = i18n.t(locale, 'auth_success');
 
       await ctx.answerCallbackQuery('✅');
-      await ctx.editMessageText(successText);
+      await ctx.editMessageText(successText, { 
+        reply_markup: keyboard,
+        parse_mode: 'HTML'
+      });
 
       this.sessions.delete(telegramId);
 
