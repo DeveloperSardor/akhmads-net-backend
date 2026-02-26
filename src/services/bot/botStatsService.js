@@ -166,8 +166,10 @@ class BotStatsService {
       const usernameForApi = bot.username.startsWith('@') ? bot.username : `@${bot.username}`;
       
       try {
-        const response = await axios.get(`https://api.botstat.io/get/${usernameForApi}/${botstatKey}`, {
-          timeout: 10000
+        const response = await axios.get(`https://www.botstat.io/get/${usernameForApi}/${botstatKey}`, {
+          timeout: 10000,
+          // Add basic agent header just in case
+          headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36' }
         });
 
         if (response.data && response.data.ok && response.data.result) {
@@ -203,7 +205,9 @@ class BotStatsService {
   async syncAllBots() {
     try {
       const bots = await prisma.bot.findMany({
-        where: { status: 'ACTIVE' },
+        where: { 
+          status: { in: ['ACTIVE', 'PENDING'] }
+        },
         select: { id: true }
       });
 
