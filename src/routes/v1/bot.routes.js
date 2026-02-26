@@ -1,14 +1,14 @@
-import { Router } from 'express';
-import botService from '../../services/bot/botService.js';
-import botStatsService from '../../services/bot/botStatsService.js';
-import botIntegrationService from '../../services/bot/botIntegrationService.js';
-import { authenticate } from '../../middleware/auth.js';
-import { requireBotOwner } from '../../middleware/rbac.js';
-import { validate } from '../../middleware/validate.js';
-import { body, param, query } from 'express-validator';
-import response from '../../utils/response.js';
-import prisma from '../../config/database.js';
-import axios from 'axios';
+import { Router } from "express";
+import botService from "../../services/bot/botService.js";
+import botStatsService from "../../services/bot/botStatsService.js";
+import botIntegrationService from "../../services/bot/botIntegrationService.js";
+import { authenticate } from "../../middleware/auth.js";
+import { requireBotOwner } from "../../middleware/rbac.js";
+import { validate } from "../../middleware/validate.js";
+import { body, param, query } from "express-validator";
+import response from "../../utils/response.js";
+import prisma from "../../config/database.js";
+import axios from "axios";
 
 const router = Router();
 
@@ -16,30 +16,50 @@ const router = Router();
  * @route GET /api/v1/bots/avatar/:username
  * @desc Dynamically fetch and proxy bot's real-time telegram profile avatar picture
  */
-router.get('/avatar/:username', async (req, res, next) => {
+router.get("/avatar/:username", async (req, res, next) => {
   try {
-    const username = req.params.username.replace('@', '');
-    const fallbackImage = 'https://ui-avatars.com/api/?name=' + username + '&background=random&color=fff&size=128';
+    const username = req.params.username.replace("@", "");
+    const fallbackImage =
+      "https://ui-avatars.com/api/?name=" +
+      username +
+      "&background=random&color=fff&size=128";
 
     // Fetch the public telegram web view
     const htmlResponse = await axios.get(`https://t.me/${username}`, {
       timeout: 3000,
       headers: {
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)' // Avoid quick blocks
-      }
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)", // Avoid quick blocks
+      },
     });
 
     // Extract the og:image content tag
-    const match = htmlResponse.data.match(/<meta property="?og:image"? content="?([^">]+)"?/i);
-    if (match && match[1] && match[1].includes('cdn')) {
-      return res.redirect(302, match[1]); // Redirect to the actual telegram CDN image
+    const match = htmlResponse.data.match(
+      /<meta property="?og:image"? content="?([^">]+)"?/i,
+    );
+    if (match && match[1] && match[1].includes("cdn")) {
+      // Stream the image directly to bypass any CDN ISP blocks on the client-side
+      const imageResponse = await axios.get(match[1], {
+        responseType: 'stream',
+        timeout: 5000,
+      });
+      res.set('Content-Type', imageResponse.headers['content-type']);
+      res.set('Cache-Control', 'public, max-age=86400');
+      return imageResponse.data.pipe(res);
     }
 
-    // Fallback if no avatar is publicly accessible
-    return res.redirect(302, fallbackImage);
+    const fallbackResponse = await axios.get(fallbackImage, { responseType: 'stream' });
+    res.set('Content-Type', fallbackResponse.headers['content-type']);
+    res.set('Cache-Control', 'public, max-age=86400');
+    return fallbackResponse.data.pipe(res);
   } catch (error) {
-    const fallbackImage = 'https://ui-avatars.com/api/?name=' + req.params.username.replace('@', '') + '&background=random&color=fff&size=128';
-    return res.redirect(302, fallbackImage);
+    try {
+      const fallbackResponse = await axios.get(fallbackImage, { responseType: 'stream' });
+      res.set('Content-Type', fallbackResponse.headers['content-type']);
+      res.set('Cache-Control', 'public, max-age=86400');
+      return fallbackResponse.data.pipe(res);
+    } catch (innerError) {
+      return res.status(404).send('Avatar not found');
+    }
   }
 });
 
@@ -51,18 +71,18 @@ router.use(authenticate);
  * @desc Verify bot token and get info before registration
  */
 router.post(
-  '/verify-token',
+  "/verify-token",
   validate([
-    body('token').isString().notEmpty().withMessage('Bot token is required'),
+    body("token").isString().notEmpty().withMessage("Bot token is required"),
   ]),
   async (req, res, next) => {
     try {
       const info = await botService.verifyTokenWithAvatar(req.body.token);
-      response.success(res, info, 'Bot verified successfully');
+      response.success(res, info, "Bot verified successfully");
     } catch (error) {
       next(error);
     }
-  }
+  },
 );
 
 /**
@@ -71,25 +91,29 @@ router.post(
  * ✅ Returns bot + apiKey
  */
 router.post(
-  '/',
+  "/",
   requireBotOwner,
   validate([
-    body('token').isString().notEmpty(),
-    body('shortDescription').optional().isString().isLength({ max: 500 }),
-    body('category').isString().notEmpty(),
-    body('language').optional().isIn(['uz', 'ru', 'en']),
-    body('monetized').optional().isBoolean(),
+    body("token").isString().notEmpty(),
+    body("shortDescription").optional().isString().isLength({ max: 500 }),
+    body("category").isString().notEmpty(),
+    body("language").optional().isIn(["uz", "ru", "en"]),
+    body("monetized").optional().isBoolean(),
   ]),
   async (req, res, next) => {
     try {
       const bot = await botService.registerBot(req.userId, req.body);
-      
+
       // ✅ Return both bot and apiKey
-      response.created(res, { bot, apiKey: bot.apiKey }, 'Bot registered successfully');
+      response.created(
+        res,
+        { bot, apiKey: bot.apiKey },
+        "Bot registered successfully",
+      );
     } catch (error) {
       next(error);
     }
-  }
+  },
 );
 
 /**
@@ -97,10 +121,10 @@ router.post(
  * Get user's bots WITH stats
  * ✅ Enhanced with impressions, CTR, spent data
  */
-router.get('/', requireBotOwner, async (req, res, next) => {
+router.get("/", requireBotOwner, async (req, res, next) => {
   try {
     const bots = await botService.getUserBots(req.userId);
-    
+
     // ✅ Enrich each bot with stats
     const botsWithStats = await Promise.all(
       bots.map(async (bot) => {
@@ -115,9 +139,10 @@ router.get('/', requireBotOwner, async (req, res, next) => {
         });
 
         // Calculate CTR
-        const ctr = impressionsCount > 0 
-          ? ((clicksCount / impressionsCount) * 100).toFixed(2)
-          : '0.00';
+        const ctr =
+          impressionsCount > 0
+            ? ((clicksCount / impressionsCount) * 100).toFixed(2)
+            : "0.00";
 
         // Get total spent (ads delivered through this bot)
         const totalSpent = await prisma.impression.aggregate({
@@ -133,7 +158,7 @@ router.get('/', requireBotOwner, async (req, res, next) => {
           ctr: parseFloat(ctr),
           spent: parseFloat(totalSpent._sum.revenue || 0),
         };
-      })
+      }),
     );
 
     response.success(res, { bots: botsWithStats });
@@ -147,22 +172,25 @@ router.get('/', requireBotOwner, async (req, res, next) => {
  * Get bot details
  */
 router.get(
-  '/:id',
-  validate([param('id').isString()]),
+  "/:id",
+  validate([param("id").isString()]),
   async (req, res, next) => {
     try {
       const bot = await botService.getBotById(req.params.id);
 
       // Check ownership
-      if (bot.ownerId !== req.userId && !['ADMIN', 'SUPER_ADMIN'].includes(req.userRole)) {
-        return response.forbidden(res, 'Access denied');
+      if (
+        bot.ownerId !== req.userId &&
+        !["ADMIN", "SUPER_ADMIN"].includes(req.userRole)
+      ) {
+        return response.forbidden(res, "Access denied");
       }
 
       response.success(res, { bot });
     } catch (error) {
       next(error);
     }
-  }
+  },
 );
 
 /**
@@ -170,27 +198,31 @@ router.get(
  * Update bot settings
  */
 router.put(
-  '/:id',
+  "/:id",
   validate([
-    param('id').isString(),
-    body('shortDescription').optional().isString().isLength({ max: 500 }),
-    body('category').optional().isString(),
-    body('language').optional().isIn(['uz', 'ru', 'en']),
-    body('postFilter').optional().isIn(['all', 'not_mine', 'only_mine']),
-    body('allowedCategories').optional().isArray(),
-    body('blockedCategories').optional().isArray(),
-    body('frequencyMinutes').optional().isInt({ min: 1, max: 1440 }),
-    body('monetized').optional().isBoolean(),
+    param("id").isString(),
+    body("shortDescription").optional().isString().isLength({ max: 500 }),
+    body("category").optional().isString(),
+    body("language").optional().isIn(["uz", "ru", "en"]),
+    body("postFilter").optional().isIn(["all", "not_mine", "only_mine"]),
+    body("allowedCategories").optional().isArray(),
+    body("blockedCategories").optional().isArray(),
+    body("frequencyMinutes").optional().isInt({ min: 1, max: 1440 }),
+    body("monetized").optional().isBoolean(),
   ]),
   async (req, res, next) => {
     try {
-      const bot = await botService.updateBot(req.params.id, req.userId, req.body);
+      const bot = await botService.updateBot(
+        req.params.id,
+        req.userId,
+        req.body,
+      );
 
-      response.success(res, { bot }, 'Bot updated');
+      response.success(res, { bot }, "Bot updated");
     } catch (error) {
       next(error);
     }
-  }
+  },
 );
 
 /**
@@ -199,20 +231,25 @@ router.put(
  * ✅ POST (not PATCH)
  */
 router.post(
-  '/:id/pause',
-  validate([
-    param('id').isString(),
-    body('isPaused').isBoolean(),
-  ]),
+  "/:id/pause",
+  validate([param("id").isString(), body("isPaused").isBoolean()]),
   async (req, res, next) => {
     try {
-      const bot = await botService.togglePause(req.params.id, req.userId, req.body.isPaused);
+      const bot = await botService.togglePause(
+        req.params.id,
+        req.userId,
+        req.body.isPaused,
+      );
 
-      response.success(res, { bot }, `Bot ${req.body.isPaused ? 'paused' : 'resumed'}`);
+      response.success(
+        res,
+        { bot },
+        `Bot ${req.body.isPaused ? "paused" : "resumed"}`,
+      );
     } catch (error) {
       next(error);
     }
-  }
+  },
 );
 
 /**
@@ -220,17 +257,24 @@ router.post(
  * Regenerate API key
  */
 router.post(
-  '/:id/regenerate-api-key',
-  validate([param('id').isString()]),
+  "/:id/regenerate-api-key",
+  validate([param("id").isString()]),
   async (req, res, next) => {
     try {
-      const result = await botService.regenerateApiKey(req.params.id, req.userId);
+      const result = await botService.regenerateApiKey(
+        req.params.id,
+        req.userId,
+      );
 
-      response.success(res, { apiKey: result.newApiKey }, 'API key regenerated');
+      response.success(
+        res,
+        { apiKey: result.newApiKey },
+        "API key regenerated",
+      );
     } catch (error) {
       next(error);
     }
-  }
+  },
 );
 
 /**
@@ -238,20 +282,21 @@ router.post(
  * Update bot token
  */
 router.put(
-  '/:id/token',
-  validate([
-    param('id').isString(),
-    body('newToken').isString().notEmpty(),
-  ]),
+  "/:id/token",
+  validate([param("id").isString(), body("newToken").isString().notEmpty()]),
   async (req, res, next) => {
     try {
-      const bot = await botService.updateBotToken(req.params.id, req.userId, req.body.newToken);
+      const bot = await botService.updateBotToken(
+        req.params.id,
+        req.userId,
+        req.body.newToken,
+      );
 
-      response.success(res, { bot }, 'Bot token updated');
+      response.success(res, { bot }, "Bot token updated");
     } catch (error) {
       next(error);
     }
-  }
+  },
 );
 
 /**
@@ -259,8 +304,8 @@ router.put(
  * Delete bot
  */
 router.delete(
-  '/:id',
-  validate([param('id').isString()]),
+  "/:id",
+  validate([param("id").isString()]),
   async (req, res, next) => {
     try {
       await botService.deleteBot(req.params.id, req.userId);
@@ -269,7 +314,7 @@ router.delete(
     } catch (error) {
       next(error);
     }
-  }
+  },
 );
 
 /**
@@ -277,14 +322,14 @@ router.delete(
  * Get bot statistics
  */
 router.get(
-  '/:id/stats',
+  "/:id/stats",
   validate([
-    param('id').isString(),
-    query('period').optional().isIn(['7d', '30d', '90d']),
+    param("id").isString(),
+    query("period").optional().isIn(["7d", "30d", "90d"]),
   ]),
   async (req, res, next) => {
     try {
-      const { period = '7d' } = req.query;
+      const { period = "7d" } = req.query;
 
       const stats = await botService.getBotStats(req.params.id, period);
 
@@ -292,7 +337,7 @@ router.get(
     } catch (error) {
       next(error);
     }
-  }
+  },
 );
 
 /**
@@ -300,29 +345,34 @@ router.get(
  * Get integration code
  */
 router.get(
-  '/:id/integration',
+  "/:id/integration",
   validate([
-    param('id').isString(),
-    query('language').optional().isIn(['python', 'javascript', 'typescript', 'php', 'csharp']),
+    param("id").isString(),
+    query("language")
+      .optional()
+      .isIn(["python", "javascript", "typescript", "php", "csharp"]),
   ]),
   async (req, res, next) => {
     try {
       const bot = await botService.getBotById(req.params.id);
 
       if (bot.ownerId !== req.userId) {
-        return response.forbidden(res, 'Access denied');
+        return response.forbidden(res, "Access denied");
       }
 
-      const { language = 'python' } = req.query;
+      const { language = "python" } = req.query;
 
-      const code = botIntegrationService.getIntegrationCode(bot.apiKey, language);
+      const code = botIntegrationService.getIntegrationCode(
+        bot.apiKey,
+        language,
+      );
       const docs = botIntegrationService.getDocumentation();
 
       response.success(res, { code, docs });
     } catch (error) {
       next(error);
     }
-  }
+  },
 );
 
 export default router;
