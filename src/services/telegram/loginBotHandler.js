@@ -249,18 +249,10 @@ class LoginBotHandler {
       keyboard.url(i18n.t(locale, 'auth_web'), authUrl);
     }
     keyboard.row()
+    keyboard.row()
       .text(i18n.t(locale, 'channel'), 'channel')
       .text(i18n.t(locale, 'chat'), 'chat')
-      .row();
-
-    // ✅ Mini App requires HTTPS
-    if (frontendUrl.startsWith('https://')) {
-      keyboard.webApp(i18n.t(locale, 'open_mini_app'), frontendUrl);
-    } else {
-      keyboard.url(i18n.t(locale, 'open_mini_app'), frontendUrl);
-    }
-
-    keyboard.row()
+      .row()
       .text('🌐 Tilni o\'zgartirish / Change Language', 'change_lang');
 
     const __dirname = dirname(fileURLToPath(import.meta.url));
@@ -271,14 +263,12 @@ class LoginBotHandler {
         await ctx.editMessageCaption(welcomeText, {
           reply_markup: keyboard,
           caption_entities: messageEntities,
-          parse_mode: 'HTML'
         });
       } else {
         await ctx.replyWithAnimation(new InputFile(createReadStream(gifPath)), {
           caption: welcomeText,
           caption_entities: messageEntities,
           reply_markup: keyboard,
-          parse_mode: 'HTML'
         });
       }
     } catch (error) {
@@ -287,13 +277,11 @@ class LoginBotHandler {
         await ctx.editMessageText(welcomeText, {
           entities: messageEntities,
           reply_markup: keyboard,
-          parse_mode: 'HTML'
         });
       } else {
         await ctx.reply(welcomeText, {
           entities: messageEntities,
           reply_markup: keyboard,
-          parse_mode: 'HTML'
         });
       }
     }
@@ -458,19 +446,10 @@ class LoginBotHandler {
         }
       );
 
-      const frontendUrl = this.getFrontendUrl();
-      const keyboard = new InlineKeyboard();
-      
-      if (frontendUrl.startsWith('https://')) {
-        keyboard.webApp(i18n.t(locale, 'open_mini_app'), frontendUrl);
-      } else {
-        keyboard.url(i18n.t(locale, 'open_mini_app'), frontendUrl);
-      }
-
       const successText = i18n.t(locale, 'auth_success');
 
       await ctx.answerCallbackQuery('✅');
-      await ctx.editMessageText(successText, { reply_markup: keyboard });
+      await ctx.editMessageText(successText);
 
       this.sessions.delete(telegramId);
 
