@@ -65,14 +65,35 @@ router.get("/avatar/:username", async (req, res, next) => {
       }
     }
 
-    // 3. Stream the target image pipeline directly back to the client
-    const sourceResponse = await axios.get(targetUrl, {
-      responseType: "stream",
-      timeout: 5000,
-    });
-    res.set("Content-Type", sourceResponse.headers["content-type"]);
-    res.set("Cache-Control", "public, max-age=86400"); // Let the browser cache the stream binary
-    return sourceResponse.data.pipe(res);
+    // 3. Optimized: If the target url is our own local storage, fetch it internally
+    // to avoid potential loopback/firewall issues with the public IP
+    let fetchUrl = targetUrl;
+    if (fetchUrl.includes(process.env.CDN_URL || '176.222.52.47')) {
+       fetchUrl = fetchUrl.replace(/http:\/\/176.222.52.47\/storage/i, 'http://localhost:9000');
+       // Minio internal use often needs to strip bucket from path if using path-style
+       // but here it seems it might be Nginx proxied. 
+       // Let's just try to fallback to a smarter fetch if public fails.
+    }
+
+    // 4. Stream the target image pipeline directly back to the client
+    try {
+      const sourceResponse = await axios.get(fetchUrl, {
+        responseType: "stream",
+        timeout: 5000,
+      });
+      res.set("Content-Type", sourceResponse.headers["content-type"]);
+      res.set("Cache-Control", "public, max-age=86400");
+      return sourceResponse.data.pipe(res);
+    } catch (fetchErr) {
+       // If internal/proxy fetch failed, try the original public target one last time
+       if (fetchUrl !== targetUrl) {
+          const retryResponse = await axios.get(targetUrl, { responseType: "stream", timeout: 3000 });
+          res.set("Content-Type", retryResponse.headers["content-type"]);
+          res.set("Cache-Control", "public, max-age=86400");
+          return retryResponse.data.pipe(res);
+       }
+       throw fetchErr;
+    }
 
   } catch (error) {
     // Ultimate fallback if the eventual target stream link is dead or blocks us
