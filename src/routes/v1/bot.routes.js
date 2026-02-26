@@ -42,6 +42,25 @@ router.post(
 );
 
 /**
+ * POST /api/v1/bots/verify-token
+ * Verify bot token and preview its basic info and avatar
+ */
+router.post(
+  '/verify-token',
+  validate([
+    body('token').isString().notEmpty(),
+  ]),
+  async (req, res, next) => {
+    try {
+      const info = await botService.verifyTokenWithAvatar(req.body.token);
+      response.success(res, info, 'Bot verified successfully');
+    } catch (error) {
+      next(error);
+    }
+  }
+);
+
+/**
  * GET /api/v1/bots
  * Get user's bots WITH stats
  * ✅ Enhanced with impressions, CTR, spent data
