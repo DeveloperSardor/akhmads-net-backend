@@ -8,6 +8,7 @@ import prisma from '../../config/database.js';
 import hash from '../../utils/hash.js';
 import redis from '../../config/redis.js';
 import logger from '../../utils/logger.js';
+import i18n from '../../utils/i18n.js';
 
 /**
  * Login Bot Handler - GramAds Style
@@ -24,24 +25,61 @@ class LoginBotHandler {
     // /start command
     bot.command('start', async (ctx) => {
       try {
+        const from = ctx.from;
+        const telegramId = from.id.toString();
         const args = ctx.match?.trim();
 
-        if (!args) {
-          await this.showMainMenu(ctx);
+        // 1. Check/Register User
+        let user = await prisma.user.findUnique({
+          where: { telegramId },
+          include: { wallet: true },
+        });
+
+        if (!user) {
+          user = await prisma.user.create({
+            data: {
+              telegramId,
+              firstName: from.first_name,
+              lastName: from.last_name,
+              username: from.username,
+              role: 'ADVERTISER',
+              isActive: true,
+              locale: 'uz', // Default, will prompt to change
+            },
+          });
+          await prisma.wallet.create({ data: { userId: user.id } });
+          
+          // New user -> Always show language selection
+          await this.showLanguageSelection(ctx);
           return;
         }
 
-        if (args.startsWith('login_')) {
+        // 2. Handle Login Token if present
+        if (args && args.startsWith('login_')) {
           await this.handleLoginStart(ctx, args);
+          return;
         }
+
+        // 3. Regular Start -> Show Main Menu (or language selection if not set)
+        await this.showMainMenu(ctx, user);
       } catch (error) {
         logger.error('Start command error:', error);
-        await ctx.reply('❌ Xatolik yuz berdi.');
+        await ctx.reply('❌ Error occurred.');
       }
+    });
+
+    // Language change command
+    bot.command('lang', async (ctx) => {
+      await this.showLanguageSelection(ctx);
     });
 
     // Callback query handler
     bot.on('callback_query:data', async (ctx) => {
+      const data = ctx.callbackQuery.data;
+      if (data.startsWith('set_lang:')) {
+        await this.handleLanguageSet(ctx);
+        return;
+      }
       await this.handleCallbackQuery(ctx);
     });
 
@@ -84,34 +122,71 @@ class LoginBotHandler {
    * Show main menu — Professional Telegram Auth
    * Generates a signed Telegram Login Widget URL → URL button directly
    */
-  async showMainMenu(ctx) {
+  /**
+   * Show Language Selection Menu
+   */
+  async showLanguageSelection(ctx) {
+    const keyboard = new InlineKeyboard()
+      .text('🇺🇿 O\'zbekcha', 'set_lang:uz')
+      .text('🇷🇺 Русский', 'set_lang:ru')
+      .row()
+      .text('🇺🇸 English', 'set_lang:en');
+
+    await ctx.reply('<b>Choose your language / Tilni tanlang / Выберите язык:</b>', {
+      parse_mode: 'HTML',
+      reply_markup: keyboard
+    });
+  }
+
+  /**
+   * Handle Language Selection
+   */
+  async handleLanguageSet(ctx) {
+    try {
+      const lang = ctx.callbackQuery.data.split(':')[1];
+      const telegramId = ctx.from.id.toString();
+
+      const user = await prisma.user.update({
+        where: { telegramId },
+        data: { locale: lang },
+        include: { wallet: true }
+      });
+
+      await ctx.answerCallbackQuery();
+      await ctx.deleteMessage();
+      await this.showMainMenu(ctx, user);
+    } catch (error) {
+      logger.error('Set language error:', error);
+      await ctx.answerCallbackQuery('❌ Error');
+    }
+  }
+
+  /**
+   * Show main menu — Professional Telegram Auth
+   */
+  async showMainMenu(ctx, user = null) {
     const from = ctx.from;
     const telegramId = from.id.toString();
 
-    let user = await prisma.user.findUnique({
-      where: { telegramId },
-      include: { wallet: true },
-    });
-
     if (!user) {
-      user = await prisma.user.create({
-        data: {
-          telegramId,
-          firstName: from.first_name,
-          lastName: from.last_name,
-          username: from.username,
-          role: 'ADVERTISER',
-          isActive: true,
-        },
+      user = await prisma.user.findUnique({
+        where: { telegramId },
+        include: { wallet: true },
       });
-      await prisma.wallet.create({ data: { userId: user.id } });
     }
 
+    if (!user) {
+      // Should not happen with current /start logic, but for safety
+      await ctx.reply('❌ User not found. Please /start');
+      return;
+    }
+
+    const locale = user.locale || 'uz';
     const balance = user.wallet?.available || 0;
     const name = user.firstName || 'User';
     const frontendUrl = this.getFrontendUrl();
 
-    // ── Generate signed Telegram auth URL ──────────────────────────────────
+    // Generate signed Telegram auth URL
     const photoUrl = await this.getUserPhotoUrl(from.id);
     const authDate = Math.floor(Date.now() / 1000);
 
@@ -124,7 +199,6 @@ class LoginBotHandler {
       auth_date: authDate,
     };
 
-    // HMAC-SHA256 hash (Telegram Login Widget spec)
     const botToken = process.env.TELEGRAM_BOT_TOKEN;
     const secretKey = crypto.createHash('sha256').update(botToken).digest();
     const checkString = Object.keys(authData).sort().map(k => `${k}=${authData[k]}`).join('\n');
@@ -135,11 +209,15 @@ class LoginBotHandler {
       hash: authHash,
     });
     const authUrl = `${frontendUrl}/?${params.toString()}`;
-    // ──────────────────────────────────────────────────────────────────────
 
-    const welcomeText = `✨ AKHMADS.NET\nTelegram Ad Network\n\n👤 ${name}\n💰 Balance: $${(parseFloat(balance) / 100).toFixed(2)}\n\n🌐 Blog · 💬 Support · 📱 Telegram Mini App`;
+    const welcomeText = i18n.t(locale, 'welcome', {
+      name,
+      balance: (parseFloat(balance) / 100).toFixed(2)
+    });
 
-    // Helper: UTF-16 offset + length hisoblash
+    // Premium Emoji IDs from locale
+    const emojiIds = i18n.emojis(locale);
+
     const getEmojiEntity = (str, searchEmoji, customEmojiId) => {
       const idx = str.indexOf(searchEmoji);
       if (idx === -1) return null;
@@ -154,35 +232,46 @@ class LoginBotHandler {
     };
 
     const messageEntities = [
-      getEmojiEntity(welcomeText, '✨', '5890925363067886150'),
-      getEmojiEntity(welcomeText, '👤', '5260399854500191689'),
-      getEmojiEntity(welcomeText, '💰', '5904462880941545555'),
-      getEmojiEntity(welcomeText, '🌐', '5776233299424843260'),
-      getEmojiEntity(welcomeText, '💬', '5904248647972820334'),
-      getEmojiEntity(welcomeText, '📱', '6033070647213560346'),
+      getEmojiEntity(welcomeText, '✨', emojiIds.sparkles),
+      getEmojiEntity(welcomeText, '👤', emojiIds.user),
+      getEmojiEntity(welcomeText, '💰', emojiIds.money),
+      getEmojiEntity(welcomeText, '🌐', emojiIds.web),
+      getEmojiEntity(welcomeText, '💬', emojiIds.chat),
+      getEmojiEntity(welcomeText, '📱', emojiIds.phone),
     ].filter(Boolean);
 
-    // Telegram faqat https:// URL larni qabul qiladi
-    // Localhost (http://) uchun callback button ishlatamiz
     const isHttp = authUrl.startsWith('http://');
     const keyboard = new InlineKeyboard();
     if (isHttp) {
-      // localhost: authUrl ni sessions'ga saqlaymiz, callback orqali beramiz
       this.sessions.set(`auth_url:${telegramId}`, authUrl);
-      keyboard.text('🌐 Авторизоваться', 'authorize_web');
+      keyboard.text(i18n.t(locale, 'auth_web'), 'authorize_web');
     } else {
-      keyboard.url('🌐 Авторизоваться', authUrl);
+      keyboard.url(i18n.t(locale, 'auth_web'), authUrl);
     }
-    keyboard.row().text('📁 Channel', 'channel').text('💬 Chat', 'chat');
+    keyboard.row()
+      .text(i18n.t(locale, 'channel'), 'channel')
+      .text(i18n.t(locale, 'chat'), 'chat')
+      .row()
+      .text('🌐 Tilni o\'zgartirish / Change Language', 'change_lang');
 
-    // GIF + caption + keyboard — bitta xabarda
     const __dirname = dirname(fileURLToPath(import.meta.url));
     const gifPath = join(__dirname, '../../../main-gif.mov');
-    await ctx.replyWithAnimation(new InputFile(createReadStream(gifPath)), {
-      caption: welcomeText,
-      caption_entities: messageEntities,
-      reply_markup: keyboard,
-    });
+    
+    try {
+      await ctx.replyWithAnimation(new InputFile(createReadStream(gifPath)), {
+        caption: welcomeText,
+        caption_entities: messageEntities,
+        reply_markup: keyboard,
+        parse_mode: 'HTML'
+      });
+    } catch (error) {
+      // Fallback if animation fails
+      await ctx.reply(welcomeText, {
+        entities: messageEntities,
+        reply_markup: keyboard,
+        parse_mode: 'HTML'
+      });
+    }
   }
 
   /**
@@ -193,23 +282,27 @@ class LoginBotHandler {
       const token = loginToken.substring(6);
       const telegramId = ctx.from.id.toString();
 
+      // Get user for locale
+      const user = await prisma.user.findUnique({ where: { telegramId } });
+      const locale = user?.locale || 'uz';
+
       // Get login session
       const session = await prisma.loginSession.findUnique({
         where: { token },
       });
 
       if (!session) {
-        await ctx.reply('❌ Login sessiyasi topilmadi yoki muddati o\'tgan.');
+        await ctx.reply(i18n.t(locale, 'login_session_not_found'));
         return;
       }
 
       if (new Date() > session.expiresAt) {
-        await ctx.reply('❌ Login sessiyasi muddati tugagan.');
+        await ctx.reply(i18n.t(locale, 'login_session_expired'));
         return;
       }
 
       if (session.authorized) {
-        await ctx.reply('✅ Siz allaqachon login qilgansiz.');
+        await ctx.reply(i18n.t(locale, 'already_logged_in'));
         return;
       }
 
@@ -217,7 +310,7 @@ class LoginBotHandler {
       const codesJson = await redis.get(`login_codes:${token}`);
 
       if (!codesJson) {
-        await ctx.reply('❌ Kodlar topilmadi. Qaytadan login qiling.');
+        await ctx.reply(i18n.t(locale, 'codes_not_found'));
         return;
       }
 
@@ -241,17 +334,14 @@ class LoginBotHandler {
         if (idx % 2 === 1) keyboard.row();
       });
 
-      const loginText = `
-This is a backup login method
-What code do you currently see in the browser?
-`;
+      const loginText = i18n.t(locale, 'backup_login_method');
 
       await ctx.reply(loginText, { reply_markup: keyboard });
 
       logger.info(`Login initiated for user ${telegramId}`);
     } catch (error) {
       logger.error('Handle login start error:', error);
-      await ctx.reply('❌ Xatolik yuz berdi.');
+      await ctx.reply('❌ Error occurred.');
     }
   }
 
@@ -267,17 +357,26 @@ What code do you currently see in the browser?
 
       if (data === 'authorize_web') {
         const authUrl = this.sessions.get(`auth_url:${telegramId}`);
-        await ctx.answerCallbackQuery(); // spinner'ni o'chiramiz
+        await ctx.answerCallbackQuery();
         if (authUrl) {
-          await ctx.reply('🔐 Login qilish uchun:', {
-            reply_markup: new InlineKeyboard().url('🌐 Kirish', authUrl),
+          const user = await prisma.user.findUnique({ where: { telegramId } });
+          const locale = user?.locale || 'uz';
+          await ctx.reply(`🔐 ${i18n.t(locale, 'auth_web')}:`, {
+            reply_markup: new InlineKeyboard().url('🌐 Enter', authUrl),
           });
         }
         return;
       }
 
+      if (data === 'change_lang') {
+        await ctx.answerCallbackQuery();
+        await this.showLanguageSelection(ctx);
+        return;
+      }
+
       if (data === 'channel' || data === 'chat') {
-        await ctx.answerCallbackQuery('Coming soon!');
+        const user = await prisma.user.findUnique({ where: { telegramId } });
+        await ctx.answerCallbackQuery(i18n.t(user?.locale || 'uz', 'coming_soon'));
         return;
       }
 
@@ -305,15 +404,13 @@ What code do you currently see in the browser?
     try {
       const session = this.sessions.get(telegramId);
 
-      if (!session) {
-        await ctx.answerCallbackQuery('❌ Sessiya topilmadi');
-        return;
-      }
-
       const { correctCode } = session;
 
+      const user = await prisma.user.findUnique({ where: { telegramId } });
+      const locale = user?.locale || 'uz';
+
       if (selectedCode !== correctCode) {
-        await ctx.answerCallbackQuery('❌ Noto\'g\'ri kod');
+        await ctx.answerCallbackQuery(i18n.t(locale, 'wrong_code'));
         return;
       }
 
@@ -337,15 +434,11 @@ What code do you currently see in the browser?
       );
 
       const keyboard = new InlineKeyboard()
-        .text('🌐 Open Mini App', 'mini_app');
+        .text(i18n.t(locale, 'open_mini_app'), 'mini_app');
 
-      const successText = `
-✅ Вы авторизовались в браузере
+      const successText = i18n.t(locale, 'auth_success');
 
-You have logged in on your browser
-`;
-
-      await ctx.answerCallbackQuery('✅ Muvaffaqiyatli!');
+      await ctx.answerCallbackQuery('✅');
       await ctx.editMessageText(successText, { reply_markup: keyboard });
 
       this.sessions.delete(telegramId);

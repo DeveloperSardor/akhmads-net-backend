@@ -22,20 +22,21 @@ router.get('/profile', async (req, res, next) => {
 
     // ✅ Format roles for display
     const roles = user.roles || [user.role];
-    const displayRole = roles.length > 1 
+    const displayRole = roles.length > 1
       ? roles.map(r => {
-          if (r === 'ADVERTISER') return 'Advertiser';
-          if (r === 'BOT_OWNER') return 'Bot Owner';
-          if (r === 'MODERATOR') return 'Moderator';
-          if (r === 'ADMIN') return 'Admin';
-          return r;
-        }).join(' & ')
-      : (user.role === 'ADVERTISER' ? 'Advertiser' : 
-         user.role === 'BOT_OWNER' ? 'Bot Owner' : user.role);
+        if (r === 'ADVERTISER') return 'Advertiser';
+        if (r === 'BOT_OWNER') return 'Bot Owner';
+        if (r === 'MODERATOR') return 'Moderator';
+        if (r === 'ADMIN') return 'Admin';
+        return r;
+      }).join(' & ')
+      : (user.role === 'ADVERTISER' ? 'Advertiser' :
+        user.role === 'BOT_OWNER' ? 'Bot Owner' : user.role);
 
-    response.success(res, { 
+    response.success(res, {
       user: {
         ...user,
+        roles: user.roles || [], // Explicitly include the roles array 
         displayRole, // ✅ Frontend uchun tayyor format
       },
       wallet: user.wallet,
@@ -86,7 +87,7 @@ router.get('/stats', async (req, res, next) => {
     const stats = await userService.getUserStats(req.userId);
 
     response.success(res, { stats });
-  } catch (error) { 
+  } catch (error) {
     next(error);
   }
 });
