@@ -31,6 +31,28 @@ class BotService {
   }
 
   /**
+   * Verify bot token and get bot info including avatar URL
+   * Useful for previewing bots before registration.
+   */
+  async verifyTokenWithAvatar(token) {
+    try {
+      const botInfo = await telegramAPI.getMe(token);
+      const avatarUrl = await telegramAPI.getBotProfilePhotoUrl(token);
+
+      return {
+        telegramBotId: botInfo.id.toString(),
+        username: botInfo.username,
+        firstName: botInfo.first_name,
+        canJoinGroups: botInfo.can_join_groups,
+        avatarUrl,
+      };
+    } catch (error) {
+      logger.error('Token verification with avatar failed:', error);
+      throw new ExternalServiceError('Invalid bot token', 'telegram');
+    }
+  }
+
+  /**
    * Register new bot
    * ✅ Returns bot + apiKey
    */
