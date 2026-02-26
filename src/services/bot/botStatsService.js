@@ -144,7 +144,8 @@ class BotStatsService {
   }
 
   /**
-   * Sync bot member count
+   * Sync bot member count from BotStat.io
+   * ✅ Uses BOT_STAT_IO key from .env
    */
   async syncMemberCount(botId) {
     try {
@@ -154,16 +155,69 @@ class BotStatsService {
 
       if (!bot) return;
 
-      // TODO: Get actual member count from bot
-      // For now, just update timestamp
-      await prisma.bot.update({
-        where: { id: botId },
-        data: { lastStatsSync: new Date() },
-      });
+      const botstatKey = process.env.BOT_STAT_IO;
+      if (!botstatKey) {
+        logger.warn('BOT_STAT_IO key missing in .env, skipping sync');
+        return;
+      }
 
-      logger.info(`Member count synced for bot: ${botId}`);
+      // Format username for BotStat.io API
+      const usernameForApi = bot.username.startsWith('@') ? bot.username : `@${bot.username}`;
+      
+      try {
+        const response = await axios.get(`https://api.botstat.io/get/${usernameForApi}/${botstatKey}`, {
+          timeout: 10000
+        });
+
+        if (response.data && response.data.ok && response.data.result) {
+          const result = response.data.result;
+          const activeMembers = result.users_live || 0;
+          const totalMembers = (result.users_live || 0) + (result.users_die || 0);
+
+          await prisma.bot.update({
+            where: { id: botId },
+            data: {
+              totalMembers,
+              activeMembers,
+              botstatData: result,
+              lastStatsSync: new Date(),
+            },
+          });
+
+          logger.info(`Member count synced for bot @${bot.username}: ${totalMembers} total, ${activeMembers} active`);
+        } else {
+          logger.warn(`BotStat.io sync failed for @${bot.username}: ${response.data?.result || 'Unknown error'}`);
+        }
+      } catch (axiosErr) {
+        logger.error(`BotStat.io API request failed for @${bot.username}:`, axiosErr.message);
+      }
     } catch (error) {
       logger.error('Sync member count failed:', error);
+    }
+  }
+
+  /**
+   * Sync all active bots
+   */
+  async syncAllBots() {
+    try {
+      const bots = await prisma.bot.findMany({
+        where: { status: 'ACTIVE' },
+        select: { id: true }
+      });
+
+      logger.info(`Starting member count sync for ${bots.length} active bots`);
+
+      // Sync sequentially to avoid hitting rate limits or overloading
+      for (const bot of bots) {
+        await this.syncMemberCount(bot.id);
+        // Small delay between requests
+        await new Promise(resolve => setTimeout(resolve, 1000));
+      }
+
+      logger.info('Finished member count sync for all bots');
+    } catch (error) {
+      logger.error('Sync all bots failed:', error);
     }
   }
 }

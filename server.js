@@ -3,6 +3,7 @@ import prisma from './src/config/database.js';
 import { connectRedis, disconnectRedis } from './src/config/redis.js';
 import telegramBotService from './src/services/telegram/telegramBotService.js';
 import storageClient from './src/config/s3.js';
+import { initCronJobs } from './src/jobs/cronJobs.js';
 import logger from './src/utils/logger.js';
 
 const PORT = process.env.PORT || 3000;
@@ -52,7 +53,14 @@ async function startServer() {
       // Don't stop server if S3 fails
     }
 
-    // 5. Start HTTP server - THIS IS CRITICAL!
+    // 5. Initialize Cron Jobs
+    try {
+      initCronJobs();
+    } catch (error) {
+      logger.warn('⚠️ Cron jobs failed to initialize:', error.message);
+    }
+
+    // 6. Start HTTP server - THIS IS CRITICAL!
     server = app.listen(PORT, '0.0.0.0', () => {
       logger.info(`
 ╔════════════════════════════════════════╗

@@ -1,5 +1,6 @@
 import prisma from '../../config/database.js';
 import telegramAPI from '../../utils/telegram-api.js';
+import botStatsService from './botStatsService.js';
 import encryption from '../../utils/encryption.js';
 import jwtUtil from '../../utils/jwt.js';
 import logger from '../../utils/logger.js';
@@ -106,20 +107,7 @@ class BotService {
         logger.error('Failed to fetch/upload bot avatar:', err.message);
       }
 
-      try {
-        const botstatKey = process.env.BOT_STAT_IO;
-        if (botstatKey) {
-          const usernameForApi = botInfo.username.startsWith('@') ? botInfo.username : `@${botInfo.username}`;
-          const statRes = await axios.get(`https://api.botstat.io/get/${usernameForApi}/${botstatKey}`);
-          if (statRes.data && statRes.data.ok && statRes.data.result) {
-            botstatData = statRes.data.result;
-            activeMembers = botstatData.users_live || 0;
-            totalMembers = (botstatData.users_live || 0) + (botstatData.users_die || 0);
-          }
-        }
-      } catch (err) {
-        logger.error('Failed to fetch botstat data:', err.message);
-      }
+      // botstatData will be synced immediately after creation
       // ------------------------------------
 
       // ✅ Create bot with monetization flag
@@ -145,6 +133,12 @@ class BotService {
       });
 
       logger.info(`Bot registered: ${bot.id}`);
+
+      // Sync member count immediately
+      // Don't await to avoid delaying the response, but it's small enough that we could
+      botStatsService.syncMemberCount(bot.id).catch(err => {
+        logger.error(`Initial member sync failed for bot ${bot.id}:`, err);
+      });
       
       // ✅ Return both bot and apiKey
       return { ...bot, apiKey };
