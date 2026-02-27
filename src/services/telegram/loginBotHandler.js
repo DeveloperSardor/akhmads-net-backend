@@ -113,12 +113,19 @@ class LoginBotHandler {
               return;
             }
 
-            if (!session.draft.buttons) session.draft.buttons = [];
-            session.draft.buttons.push({ text: session.temp.buttonText, url: url });
-            session.temp = null;
-            session.step = 'DRAFT_MENU';
+            session.temp.buttonUrl = url;
+            session.step = 'AWAITING_BUTTON_COLOR';
             await redis.set(sessionKey, JSON.stringify(session), 3600);
-            await this.renderDraftMenu(ctx, telegramId, session.draft, true);
+
+            const colorKb = new InlineKeyboard()
+              .add({ text: '🔵 Ko\'k', callback_data: 'draft_btn_color_blue' })
+              .add({ text: '🟢 Yashil', callback_data: 'draft_btn_color_green' }).row()
+              .add({ text: '🔴 Qizil', callback_data: 'draft_btn_color_red' })
+              .add({ text: '🟣 Binafsha', callback_data: 'draft_btn_color_violet' }).row()
+              .add({ text: '🟠 To\'q sariq', callback_data: 'draft_btn_color_orange' })
+              .add({ text: '⚪ Oddiy (standart)', callback_data: 'draft_btn_color_default' });
+
+            await ctx.reply("<b>🎨 Tugma rangini tanlang:</b>", { parse_mode: 'HTML', reply_markup: colorKb });
             return;
           }
 
@@ -247,9 +254,16 @@ class LoginBotHandler {
       .add({ text: `✅ Xarid qilish va Saqlash ($${cost.toFixed(2)})`, callback_data: "draft_submit", style: "success" }).row()
       .add({ text: "❌ Bekor qilish", callback_data: "draft_cancel", style: "danger" });
 
+    const colorEmojis = { blue: '🔵', green: '🟢', red: '🔴', violet: '🟣', orange: '🟠', default: '⚪' };
+    const btnList = (draft.buttons || []).map((b, i) => {
+      const ce = colorEmojis[b.color] || '⚪';
+      return `  ${i + 1}. ${ce} ${b.text}`;
+    }).join('\n');
+
     const messageText = `<b>📝 Reklama loyihasi (Umumiy Xulosa)</b>\n\n` +
       `${draft.mediaType !== 'NONE' ? `📎 <b>Media:</b> ${draft.mediaType}\n` : ''}` +
       `<b>Tugmalar:</b> ${draft.buttons?.length || 0} ta\n` +
+      `${btnList ? btnList + '\n' : ''}` +
       `<b>Tanlangan auditoriya:</b> ${cats.length > 0 ? cats.join(', ') : 'Barcha foydalanuvchilar'}\n` +
       `<b>Taassurotlar (Ko'rishlar):</b> ${draft.targetImpressions} ta\n` +
       `<b>Umumiy Narx:</b> $${cost.toFixed(2)}\n\n` +
@@ -320,6 +334,23 @@ class LoginBotHandler {
         }
         const previewMsg = `<b>[Prevyu]</b>\n\n${session.draft.htmlContent}`;
         await ctx.reply(previewMsg, { parse_mode: 'HTML', reply_markup: keyboard });
+        return;
+      }
+
+      if (data.startsWith('draft_btn_color_')) {
+        const color = data.replace('draft_btn_color_', '');
+        if (!session.draft.buttons) session.draft.buttons = [];
+        session.draft.buttons.push({
+          text: session.temp.buttonText,
+          url: session.temp.buttonUrl,
+          color: color
+        });
+        session.temp = null;
+        session.step = 'DRAFT_MENU';
+        await redis.set(sessionKey, JSON.stringify(session), 3600);
+        const colorNames = { blue: '🔵 Ko\'k', green: '🟢 Yashil', red: '🔴 Qizil', violet: '🟣 Binafsha', orange: '🟠 To\'q sariq', default: '⚪ Oddiy' };
+        await ctx.editMessageText(`✅ Tugma qo'shildi!\nRang: ${colorNames[color] || color}`, { parse_mode: 'HTML' });
+        await this.renderDraftMenu(ctx, telegramId, session.draft, true);
         return;
       }
 
