@@ -4,6 +4,7 @@ import { connectRedis, disconnectRedis } from './src/config/redis.js';
 import telegramBotService from './src/services/telegram/telegramBotService.js';
 import storageClient from './src/config/s3.js';
 import { initCronJobs } from './src/jobs/cronJobs.js';
+import { seedInitialData } from './src/jobs/seedData.js';
 import logger from './src/utils/logger.js';
 
 const PORT = process.env.PORT || 3000;
