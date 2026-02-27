@@ -33,4 +33,14 @@ export const initCronJobs = () => {
   });
 
   logger.info('✅ Maintenance jobs scheduled successfully');
+
+  // Trigger an immediate sync on startup after a small delay
+  setTimeout(async () => {
+    logger.info('🚀 Triggering initial startup bot member count sync...');
+    try {
+      await botStatsService.syncAllBots();
+    } catch (error) {
+      logger.error('❌ Startup bot sync failed:', error);
+    }
+  }, 5000); 
 };

@@ -39,47 +39,39 @@ class TelegramPreviewService {
       }
 
       const { text, mediaUrl, buttons } = adData;
+      const botToken = process.env.TELEGRAM_BOT_TOKEN;
+      if (!botToken) throw new Error('TELEGRAM_BOT_TOKEN missing in .env');
+      
+      const bot = new Bot(botToken);
 
       // Inline keyboard
-      let buttons_markup = undefined;
+      let replyMarkup = undefined;
       if (buttons && buttons.length > 0) {
-        buttons_markup = buttons.map(btn => [{ text: btn.text, url: btn.url }]);
+        replyMarkup = {
+          inline_keyboard: buttons.map(btn => [{ text: btn.text, url: btn.url }])
+        };
       }
-
-      const client = await getUserbotClient();
 
       let sentMessage;
 
       if (mediaUrl) {
-        // Fetch image as buffer
-        const response = await fetch(mediaUrl);
-        if (!response.ok) throw new Error(`Failed to fetch image: ${response.status}`);
-        const arrayBuffer = await response.arrayBuffer();
-        const buffer = Buffer.from(arrayBuffer);
-
-        sentMessage = await client.sendFile(user.telegramId.toString(), {
-          file: buffer,
+        sentMessage = await bot.api.sendPhoto(user.telegramId, mediaUrl, {
           caption: `🧪 PREVIEW\n\n${text}`,
-          parseMode: 'html',
-          buttons: buttons_markup ? buttons_markup.map(row =>
-            row.map(btn => client.buildReplyMarkup?.({}) || { text: btn.text, url: btn.url })
-          ) : undefined,
-          forceDocument: false,
-          attributes: [],
+          parse_mode: 'HTML',
+          reply_markup: replyMarkup,
         });
       } else {
-        const { Api } = await import('telegram');
-        sentMessage = await client.sendMessage(user.telegramId.toString(), {
-          message: `🧪 PREVIEW\n\n${text}`,
-          parseMode: 'html',
+        sentMessage = await bot.api.sendMessage(user.telegramId, `🧪 PREVIEW\n\n${text}`, {
+          parse_mode: 'HTML',
+          reply_markup: replyMarkup,
         });
       }
 
-      logger.info(`✅ Preview sent to ${user.telegramId}`);
+      logger.info(`✅ Preview sent to ${user.telegramId} via system bot`);
 
       return {
         success: true,
-        messageId: sentMessage.id,
+        messageId: sentMessage.message_id,
         chatId: user.telegramId,
       };
     } catch (error) {
