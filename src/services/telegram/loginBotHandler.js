@@ -201,11 +201,14 @@ class LoginBotHandler {
   }
 
   async renderCategoryMenu(ctx, telegramId, draft, isNew = false) {
+    const user = await prisma.user.findUnique({ where: { telegramId } });
+    const locale = user?.locale || 'uz';
+
     const cats = [
-      { id: 'tech', label: 'Tech Enthusiasts' },
-      { id: 'shoppers', label: 'Active Shoppers' },
-      { id: 'gamers', label: 'Gamers' },
-      { id: 'crypto', label: 'Crypto Traders' }
+      { id: 'tech', label: i18n.t(locale, 'tech_enthusiasts') || 'Tech Enthusiasts' },
+      { id: 'shoppers', label: i18n.t(locale, 'active_shoppers') || 'Active Shoppers' },
+      { id: 'gamers', label: i18n.t(locale, 'gamers') || 'Gamers' },
+      { id: 'crypto', label: i18n.t(locale, 'crypto_traders') || 'Crypto Traders' }
     ];
     
     const kb = new InlineKeyboard();
@@ -216,9 +219,9 @@ class LoginBotHandler {
       kb.add({ text: `${isSelected ? '✅' : '⬜️'} ${cat.label}`, callback_data: `draft_toggle_cat_${cat.id}` }).row();
     });
     
-    kb.add({ text: "➡️ Keyingi qadam (Impressionlar)", callback_data: "draft_next_impressions", style: "primary" });
+    kb.add({ text: i18n.t(locale, 'next_impressions'), callback_data: "draft_next_impressions", style: "primary" });
     
-    const text = "<b>🎯 Auditoriyani tanlang (Smart Targeting)</b>\n<i>Qaysi turdagi foydalanuvchilar reklamangizni ko'rishini xohlaysiz? (Bir nechtasini tanlashingiz mumkin):</i>";
+    const text = i18n.t(locale, 'choose_audience');
     
     if (isNew) {
       await ctx.reply(text, { parse_mode: 'HTML', reply_markup: kb });
@@ -228,13 +231,16 @@ class LoginBotHandler {
   }
 
   async renderImpressionsMenu(ctx, telegramId, draft, isNew = false) {
+    const user = await prisma.user.findUnique({ where: { telegramId } });
+    const locale = user?.locale || 'uz';
+
     const kb = new InlineKeyboard()
-      .add({ text: "1,000 ta", callback_data: "draft_set_imp_1000" })
-      .add({ text: "5,000 ta", callback_data: "draft_set_imp_5000" }).row()
-      .add({ text: "10,000 ta", callback_data: "draft_set_imp_10000" })
-      .add({ text: "50,000 ta", callback_data: "draft_set_imp_50000" });
+      .add({ text: "1,000", callback_data: "draft_set_imp_1000" })
+      .add({ text: "5,000", callback_data: "draft_set_imp_5000" }).row()
+      .add({ text: "10,000", callback_data: "draft_set_imp_10000" })
+      .add({ text: "50,000", callback_data: "draft_set_imp_50000" });
       
-    const text = "<b>👁‍🗨 Necha kishi ko'rishini xohlaysiz?</b>\n<i>Variantlardan birini tanlang yoki chatga raqam yozib yuboring (kamida 100 ta bo'lishi kerak):</i>";
+    const text = i18n.t(locale, 'choose_impressions');
     
     if (isNew) {
       await ctx.reply(text, { parse_mode: 'HTML', reply_markup: kb });
@@ -244,16 +250,19 @@ class LoginBotHandler {
   }
 
   async renderDraftMenu(ctx, telegramId, draft, isNew = false) {
+    const user = await prisma.user.findUnique({ where: { telegramId } });
+    const locale = user?.locale || 'uz';
+
     const cost = ((draft.targetImpressions || 1000) / 1000) * 10.0;
     const cats = draft.targeting?.aiSegments || [];
     
     const keyboard = new InlineKeyboard()
-      .add({ text: "👁 Qanday ko'rinadi? (Prevyu)", callback_data: "draft_preview", style: "primary" }).row()
-      .add({ text: "➕ Tugma qo'shish", callback_data: "draft_add_button" })
-      .add({ text: `🎯 Auditoriyani o'zgartirish`, callback_data: "draft_back_categories" }).row()
-      .add({ text: `👁‍🗨 Soni: ${draft.targetImpressions} ta`, callback_data: "draft_next_impressions" }).row()
-      .add({ text: `✅ Xarid qilish va Saqlash ($${cost.toFixed(2)})`, callback_data: "draft_submit", style: "success" }).row()
-      .add({ text: "❌ Bekor qilish", callback_data: "draft_cancel", style: "danger" });
+      .add({ text: i18n.t(locale, 'preview_btn'), callback_data: "draft_preview", style: "primary" }).row()
+      .add({ text: i18n.t(locale, 'add_btn'), callback_data: "draft_add_button" })
+      .add({ text: i18n.t(locale, 'change_audience'), callback_data: "draft_back_categories" }).row()
+      .add({ text: i18n.t(locale, 'count_impressions', { n: draft.targetImpressions }), callback_data: "draft_next_impressions" }).row()
+      .add({ text: i18n.t(locale, 'buy_and_save', { cost: cost.toFixed(2) }), callback_data: "draft_submit", style: "success" }).row()
+      .add({ text: i18n.t(locale, 'cancel_btn'), callback_data: "draft_cancel", style: "danger" });
 
     const colorEmojis = { blue: '🔵', green: '🟢', red: '🔴', violet: '🟣', orange: '🟠', default: '⚪' };
     const btnList = (draft.buttons || []).map((b, i) => {
@@ -261,14 +270,16 @@ class LoginBotHandler {
       return `  ${i + 1}. ${ce} ${b.text}`;
     }).join('\n');
 
-    const messageText = `<b>📝 Reklama loyihasi (Umumiy Xulosa)</b>\n\n` +
-      `${draft.mediaType !== 'NONE' ? `📎 <b>Media:</b> ${draft.mediaType}\n` : ''}` +
-      `<b>Tugmalar:</b> ${draft.buttons?.length || 0} ta\n` +
+    const audienceDisplay = cats.length > 0 ? cats.map(c => i18n.t(locale, c === 'tech' ? 'tech_enthusiasts' : c === 'shoppers' ? 'active_shoppers' : c === 'gamers' ? 'gamers' : 'crypto_traders')).join(', ') : i18n.t(locale, 'draft_all_users');
+
+    const messageText = `${i18n.t(locale, 'draft_summary_title')}\n\n` +
+      `${draft.mediaType !== 'NONE' ? `${i18n.t(locale, 'draft_media', { type: draft.mediaType })}\n` : ''}` +
+      `${i18n.t(locale, 'draft_buttons', { n: draft.buttons?.length || 0 })}\n` +
       `${btnList ? btnList + '\n' : ''}` +
-      `<b>Tanlangan auditoriya:</b> ${cats.length > 0 ? cats.join(', ') : 'Barcha foydalanuvchilar'}\n` +
-      `<b>Taassurotlar (Ko'rishlar):</b> ${draft.targetImpressions} ta\n` +
-      `<b>Umumiy Narx:</b> $${cost.toFixed(2)}\n\n` +
-      `<i>Matn:</i>\n${draft.htmlContent.substring(0, 200)}${draft.htmlContent.length > 200 ? '...' : ''}`;
+      `${i18n.t(locale, 'draft_audience', { cats: audienceDisplay })}\n` +
+      `${i18n.t(locale, 'draft_impressions_total', { n: draft.targetImpressions })}\n` +
+      `${i18n.t(locale, 'draft_total_cost', { cost: cost.toFixed(2) })}\n\n` +
+      `${i18n.t(locale, 'draft_text')}\n${draft.htmlContent.substring(0, 200)}${draft.htmlContent.length > 200 ? '...' : ''}`;
 
     if (isNew) {
       await ctx.reply(messageText, { parse_mode: 'HTML', reply_markup: keyboard });
@@ -280,11 +291,14 @@ class LoginBotHandler {
   async handleDraftInteractions(ctx, data) {
     try {
       const telegramId = ctx.from.id.toString();
+      const user = await prisma.user.findUnique({ where: { telegramId } });
+      const locale = user?.locale || 'uz';
+      
       const sessionKey = `ad_session:${telegramId}`;
       const sessionJson = await redis.get(sessionKey);
 
       if (!sessionJson) {
-        await ctx.answerCallbackQuery("❌ Sessiya eskirgan. Qaytadan boshlang.");
+        await ctx.answerCallbackQuery(i18n.t(locale, 'session_expired'));
         return;
       }
 
@@ -327,23 +341,18 @@ class LoginBotHandler {
       }
 
       if (data === 'draft_preview') {
-        const colorStyles = { blue: 'primary', green: 'positive', red: 'destructive', violet: 'primary', orange: 'destructive', default: undefined };
         const colorEmojis = { blue: '🔵', green: '🟢', red: '🔴', violet: '🟣', orange: '🟠', default: '' };
         const keyboard = new InlineKeyboard();
         if (session.draft.buttons && session.draft.buttons.length > 0) {
           session.draft.buttons.forEach(btn => {
             const emoji = colorEmojis[btn.color] || '';
             const label = emoji ? `${emoji} ${btn.text}` : btn.text;
-            const style = colorStyles[btn.color];
-            const buttonObj = { text: label, url: btn.url };
-            if (style) buttonObj.style = style;
-            keyboard.add(buttonObj).row();
+            keyboard.url(label, btn.url).row();
           });
         }
 
         const previewText = session.draft.htmlContent;
 
-        // Send media preview if available
         if (session.draft.media_file_id && session.draft.mediaType === 'IMAGE') {
           await ctx.replyWithPhoto(session.draft.media_file_id, {
             caption: previewText,
@@ -374,8 +383,15 @@ class LoginBotHandler {
         session.temp = null;
         session.step = 'DRAFT_MENU';
         await redis.set(sessionKey, JSON.stringify(session), 3600);
-        const colorNames = { blue: '🔵 Ko\'k', green: '🟢 Yashil', red: '🔴 Qizil', violet: '🟣 Binafsha', orange: '🟠 To\'q sariq', default: '⚪ Oddiy' };
-        await ctx.editMessageText(`✅ Tugma qo'shildi!\nRang: ${colorNames[color] || color}`, { parse_mode: 'HTML' });
+        const colorNames = { 
+          blue: i18n.t(locale, 'color_blue'), 
+          green: i18n.t(locale, 'color_green'), 
+          red: i18n.t(locale, 'color_red'), 
+          violet: i18n.t(locale, 'color_violet'), 
+          orange: i18n.t(locale, 'color_orange'), 
+          default: i18n.t(locale, 'color_default') 
+        };
+        await ctx.editMessageText(`${i18n.t(locale, 'btn_added')} ${colorNames[color] || color}`, { parse_mode: 'HTML' });
         await this.renderDraftMenu(ctx, telegramId, session.draft, true);
         return;
       }
@@ -383,7 +399,7 @@ class LoginBotHandler {
       if (data === 'draft_add_button') {
         session.step = 'AWAITING_BUTTON_TEXT';
         await redis.set(sessionKey, JSON.stringify(session), 3600);
-        await ctx.reply("<b>Tugma yozuvini yuboring:</b>\n<i>(Masalan: 🌐 Saytga o'tish)</i>", { parse_mode: 'HTML' });
+        await ctx.reply(i18n.t(locale, 'send_btn_text'), { parse_mode: 'HTML' });
         return;
       }
 
@@ -394,7 +410,7 @@ class LoginBotHandler {
 
       if (data === 'draft_cancel') {
         await redis.del(sessionKey);
-        await ctx.editMessageText("❌ Reklama loyihasi bekor qilindi.", { parse_mode: 'HTML' });
+        await ctx.editMessageText(i18n.t(locale, 'draft_cancelled'), { parse_mode: 'HTML' });
         return;
       }
 
@@ -829,11 +845,15 @@ class LoginBotHandler {
    * Handle ad creation from draft
    */
   async handleAdCreationFromDraft(ctx, draft, sessionKey) {
+    let locale = 'uz'; // Default locale
     try {
       if (!draft) {
-        await ctx.answerCallbackQuery("❌ Draft topilmadi yoki muddati o'tgan.");
+        await ctx.answerCallbackQuery(i18n.t(locale, 'draft_not_found'));
         return;
       }
+      
+      const user = await prisma.user.findUnique({ where: { id: draft.userId } });
+      locale = user?.locale || 'uz';
       
       // Calculate basic pricing (70/30 split)
       const targetImpressions = draft.targetImpressions || 1000;
@@ -848,14 +868,14 @@ class LoginBotHandler {
         const available = parseFloat(wallet.available || 0);
         if (available < totalCost) {
           await ctx.editMessageText(
-            `❌ <b>Balans yetarli emas!</b>\n\nKerakli summa: <b>$${totalCost.toFixed(2)}</b>\nMavjud balans: <b>$${available.toFixed(2)}</b>\n\n<i>Iltimos, avval hisobingizni to'ldiring.</i>`,
+            i18n.t(locale, 'insufficient_balance', { cost: totalCost.toFixed(2), available: available.toFixed(2) }),
             { parse_mode: 'HTML' }
           );
           return;
         }
       } catch (walletErr) {
         logger.error('Wallet check failed:', walletErr);
-        await ctx.editMessageText("❌ Balansni tekshirishda xatolik. Qaytadan urinib ko'ring.", { parse_mode: 'HTML' });
+        await ctx.editMessageText(i18n.t(locale, 'balance_check_error'), { parse_mode: 'HTML' });
         return;
       }
 
@@ -889,18 +909,13 @@ class LoginBotHandler {
       } catch (reserveErr) {
         logger.error('Wallet reserve failed, deleting ad:', reserveErr);
         await prisma.ad.delete({ where: { id: ad.id } });
-        await ctx.editMessageText("❌ Pul yechishda xatolik. Qaytadan urinib ko'ring.", { parse_mode: 'HTML' });
+        await ctx.editMessageText(i18n.t(locale, 'charge_error'), { parse_mode: 'HTML' });
         return;
       }
 
       await ctx.answerCallbackQuery("✅");
       await ctx.editMessageText(
-        `✅ <b>Reklama muvaffaqiyatli saqlandi!</b>\n\n` +
-        `ID: <code>${ad.id}</code>\n` +
-        `Taassurotlar: <b>${targetImpressions}</b>\n` +
-        `Narx: <b>$${totalCost.toFixed(2)}</b> (hisobdan yechildi)\n` +
-        `Status: <b>Moderatsiyada (PENDING_REVIEW)</b>\n\n` +
-        `<i>Moderatsiyadan so'ng tarqatish boshlanadi.</i>`,
+        i18n.t(locale, 'ad_saved_success', { id: ad.id, n: targetImpressions, cost: totalCost.toFixed(2) }),
         { parse_mode: 'HTML' }
       );
 
@@ -912,7 +927,7 @@ class LoginBotHandler {
       logger.info(`Ad created from bot draft: ${ad.id}, cost=$${totalCost}`);
     } catch (error) {
       logger.error('Handle ad creation from draft error:', error);
-      await ctx.answerCallbackQuery('❌ Xatolik yuz berdi');
+      await ctx.answerCallbackQuery(i18n.t(locale, 'error_occurred'));
     }
   }
 

@@ -147,21 +147,26 @@ class WalletService {
     if (amount <= 0) throw new Error('Miqdor 0 dan katta bo\'lishi kerak');
 
     const wallet = await this.getWallet(userId);
+    let reservedToDeduct = amount;
+    let availableToDeduct = 0;
 
     if (parseFloat(wallet.reserved) < amount) {
       logger.warn(`⚠️ Reserved (${wallet.reserved}) < amount (${amount}) for user ${userId}, ad ${adId}`);
+      reservedToDeduct = Math.max(0, parseFloat(wallet.reserved));
+      availableToDeduct = amount - reservedToDeduct;
     }
 
     const updated = await prisma.wallet.update({
       where: { userId },
       data: {
-        reserved: { decrement: amount },
+        reserved: reservedToDeduct > 0 ? { decrement: reservedToDeduct } : undefined,
+        available: availableToDeduct > 0 ? { decrement: availableToDeduct } : undefined,
         totalSpent: { increment: amount },
       },
     });
 
     await this.addLedgerEntry(userId, 'AD_SPEND', -amount, adId,
-      `Ad approved: reserved -$${amount}, totalSpent +$${amount} (adId: ${adId})`
+      `Ad approved: reserved -$${reservedToDeduct}, available -$${availableToDeduct}, totalSpent +$${amount} (adId: ${adId})`
     );
 
     logger.info(`✅ Ad confirmed: user=${userId}, ad=${adId}, amount=$${amount}`);
@@ -176,24 +181,31 @@ class WalletService {
     if (amount <= 0) throw new Error('Miqdor 0 dan katta bo\'lishi kerak');
 
     const wallet = await this.getWallet(userId);
+    let actualRefund = amount;
 
     if (parseFloat(wallet.reserved) < amount) {
       logger.warn(`⚠️ Reserved (${wallet.reserved}) < amount (${amount}) for user ${userId}, ad ${adId}`);
+      actualRefund = Math.max(0, parseFloat(wallet.reserved));
+    }
+
+    if (actualRefund <= 0) {
+      logger.info(`🔄 Ad refunded skipped (reserved=0): user=${userId}, ad=${adId}`);
+      return wallet;
     }
 
     const updated = await prisma.wallet.update({
       where: { userId },
       data: {
-        reserved: { decrement: amount },
-        available: { increment: amount },
+        reserved: { decrement: actualRefund },
+        available: { increment: actualRefund },
       },
     });
 
-    await this.addLedgerEntry(userId, 'AD_REFUND', amount, adId,
-      `Ad rejected: reserved -$${amount}, available +$${amount} (adId: ${adId})`
+    await this.addLedgerEntry(userId, 'AD_REFUND', actualRefund, adId,
+      `Ad rejected: reserved -$${actualRefund}, available +$${actualRefund} (adId: ${adId})`
     );
 
-    logger.info(`🔄 Ad refunded: user=${userId}, ad=${adId}, amount=$${amount}`);
+    logger.info(`🔄 Ad refunded: user=${userId}, ad=${adId}, amount=$${actualRefund} (requested=$${amount})`);
     return updated;
   }
 
