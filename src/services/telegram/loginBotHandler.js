@@ -89,7 +89,9 @@ class LoginBotHandler {
         const telegramId = from.id.toString();
         const user = await prisma.user.findUnique({ where: { telegramId } });
         
-        if (!user || user.role !== 'ADVERTISER') return;
+        if (!user) return;
+        const isAdvertiser = user.role === 'ADVERTISER' || (user.roles && user.roles.includes('ADVERTISER'));
+        if (!isAdvertiser) return;
 
         // Check for active ad creation session
         const sessionKey = `ad_session:${telegramId}`;
@@ -427,7 +429,7 @@ class LoginBotHandler {
       name,
       balance: (parseFloat(balance) / 100).toFixed(2),
       miniAppUrl: `https://t.me/akhmadsnetbot/app`
-    }) + (user.role === 'ADVERTISER' ? `\n\n📢 <b>Reklama berish:</b> Shunchaki botga matn yoki rasm/video yuboring!` : '');
+    }) + (user.role === 'ADVERTISER' || (user.roles && user.roles.includes('ADVERTISER')) ? `\n\n📢 <b>Reklama berish:</b> Shunchaki botga matn yoki rasm/video yuboring!` : '');
 
     const isHttp = authUrl.startsWith('http://');
     const emojiIds = i18n.emojis(locale);
@@ -447,7 +449,7 @@ class LoginBotHandler {
       .row();
 
     // 1.5. Add Ad via Bot (For Advertisers)
-    if (user.role === 'ADVERTISER') {
+    if (user.role === 'ADVERTISER' || (user.roles && user.roles.includes('ADVERTISER'))) {
       keyboard.add({
         text: "📢 Reklama qo'shish (Bot)",
         callback_data: 'how_to_add_ad'
