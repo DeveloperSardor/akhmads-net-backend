@@ -24,81 +24,92 @@ class DistributionService {
         return null;
       }
 
-      // Parse bot settings
+      // Bot sozlamalari (Json? fieldlar Prisma tomonidan avtomatik parse qilinadi)
       const allowedCategories = bot.allowedCategories || [];
       const blockedCategories = bot.blockedCategories || [];
 
-      // Build query
-      const where = {
-        status: 'RUNNING',
-        remainingBudget: { gt: 0 },
-        deliveredImpressions: { lt: prisma.ad.fields.targetImpressions },
-      };
-
-      // Category filter
-      if (allowedCategories.length > 0) {
-        where.targeting = {
-          path: ['categories'],
-          array_contains: allowedCategories,
-        };
-      }
-
-      // Post filter
-      if (bot.postFilter === 'not_mine') {
-        where.advertiserId = { not: bot.ownerId };
-      } else if (bot.postFilter === 'only_mine') {
-        where.advertiserId = bot.ownerId;
-      }
-
-      // Check frequency cap
+      // Frequency cap: bu bot orqali bu userga oxirgi reklama qachon ko'rsatilgan
       const lastImpression = await prisma.impression.findFirst({
-        where: {
-          adId: where.id,
-          botId,
-          telegramUserId,
-        },
+        where: { botId, telegramUserId },
         orderBy: { createdAt: 'desc' },
       });
 
       if (lastImpression) {
         const timeSince = Date.now() - lastImpression.createdAt.getTime();
         const minInterval = bot.frequencyMinutes * 60 * 1000;
-
         if (timeSince < minInterval) {
-          return null; // Too soon
+          return null; // Hali erta
         }
       }
 
-      // Get eligible ads
+      // Asosiy query — deliveredImpressions < targetImpressions ni Prisma field
+      // comparison qilib bo'lmaydi, shuning uchun loop ichida tekshiramiz
+      const where = {
+        status: 'RUNNING',
+        remainingBudget: { gt: 0 },
+      };
+
+      // postFilter sozlamasi
+      if (bot.postFilter === 'not_mine') {
+        where.advertiserId = { not: bot.ownerId };
+      } else if (bot.postFilter === 'only_mine') {
+        where.advertiserId = bot.ownerId;
+      }
+
+      // Reklamalarni olish (yuqori cpmBid = ustunlik)
       const ads = await prisma.ad.findMany({
         where,
         orderBy: [
-          { cpmBid: 'desc' }, // Higher bid = higher priority
-          { createdAt: 'asc' }, // FIFO for same bid
+          { cpmBid: 'desc' },
+          { createdAt: 'asc' },
         ],
-        take: 10,
+        take: 50,
       });
 
-      // Filter by excluded users
       for (const ad of ads) {
+        // deliveredImpressions < targetImpressions tekshiruvi
+        if (ad.deliveredImpressions >= ad.targetImpressions) {
+          continue;
+        }
+
+        // Excluded userlar
         const excludedUsers = ad.excludedUserIds || [];
         if (excludedUsers.includes(telegramUserId)) {
           continue;
         }
 
-        // Check if already shown (unique frequency)
+        // Kategoriya filtri
         const targeting = ad.targeting || {};
+        const adCategories = targeting.categories || [];
+
+        // Bot faqat muayyan kategoriyalarga ruxsat bergan bo'lsa
+        if (allowedCategories.length > 0) {
+          const hasAllowedCategory = adCategories.some(cat =>
+            allowedCategories.includes(cat)
+          );
+          if (!hasAllowedCategory) continue;
+        }
+
+        // Bot ba'zi kategoriyalarni bloklagan bo'lsa
+        if (blockedCategories.length > 0) {
+          const hasBlockedCategory = adCategories.some(cat =>
+            blockedCategories.includes(cat)
+          );
+          if (hasBlockedCategory) continue;
+        }
+
+        // Muayyan botlarga mo'ljallangan reklama tekshiruvi
+        const specificBotIds = ad.specificBotIds || [];
+        if (specificBotIds.length > 0 && !specificBotIds.includes(botId)) {
+          continue;
+        }
+
+        // Unique frequency: bu userga bu reklama ilgari ko'rsatilganmi
         if (targeting.frequency === 'unique') {
           const alreadyShown = await prisma.impression.findFirst({
-            where: {
-              adId: ad.id,
-              telegramUserId,
-            },
+            where: { adId: ad.id, telegramUserId },
           });
-
-          if (alreadyShown) {
-            continue;
-          }
+          if (alreadyShown) continue;
         }
 
         return ad;
