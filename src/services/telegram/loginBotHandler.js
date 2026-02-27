@@ -282,13 +282,12 @@ class LoginBotHandler {
       name,
       balance: (parseFloat(balance) / 100).toFixed(2),
       miniAppUrl: `https://t.me/akhmadsnetbot/app`
-    });
+    }) + (user.role === 'ADVERTISER' ? `\n\n📢 <b>Reklama berish:</b> Shunchaki botga matn yoki rasm/video yuboring!` : '');
 
     const isHttp = authUrl.startsWith('http://');
     const emojiIds = i18n.emojis(locale);
     const keyboard = new InlineKeyboard();
 
-    // 1. Channel & Chat (↗️ style)
     keyboard
       .add({ 
         text: i18n.t(locale, 'channel') + " ↗️", 
@@ -301,6 +300,14 @@ class LoginBotHandler {
         icon_custom_emoji_id: emojiIds.chat 
       })
       .row();
+
+    // 1.5. Add Ad via Bot (For Advertisers)
+    if (user.role === 'ADVERTISER') {
+      keyboard.add({
+        text: "📢 Reklama qo'shish (Bot)",
+        callback_data: 'how_to_add_ad'
+      }).row();
+    }
 
     // 2. Authorize (PRIMARY BLUE)
     if (isHttp) {
@@ -466,6 +473,16 @@ class LoginBotHandler {
       if (data === 'channel' || data === 'chat') {
         const user = await prisma.user.findUnique({ where: { telegramId } });
         await ctx.answerCallbackQuery(i18n.t(user?.locale || 'uz', 'coming_soon'));
+        return;
+      }
+
+      if (data === 'how_to_add_ad') {
+        const user = await prisma.user.findUnique({ where: { telegramId } });
+        const locale = user?.locale || 'uz';
+        await ctx.answerCallbackQuery();
+        await ctx.reply("<b>Bot orqali reklama qo'shish juda oson!</b>\n\nShunchaki botga matnli xabar yoki rasm/video (caption bilan) yuboring. Bot uni avtomatik ravishda qoralama sifatida saqlaydi va sizga tasdiqlash uchun yuboradi.", {
+          parse_mode: 'HTML'
+        });
         return;
       }
 
