@@ -56,11 +56,14 @@ class DistributionService {
         where.advertiserId = bot.ownerId;
       }
 
-      // Reklamalarni olish (yuqori cpmBid = ustunlik)
+      // Reklamalarni olish:
+      // - finalCpm bo'yicha (cpmBid emas, chunki default 0 bo'lishi mumkin)
+      // - Teng CPM'larda deliveredImpressions ASC: kamroq ko'rsatilgan reklama avval chiqadi (fair rotation)
       const ads = await prisma.ad.findMany({
         where,
         orderBy: [
-          { cpmBid: 'desc' },
+          { finalCpm: 'desc' },
+          { deliveredImpressions: 'asc' },
           { createdAt: 'asc' },
         ],
         take: 50,
