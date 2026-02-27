@@ -24,6 +24,7 @@ router.use('/wallet', walletRoutes);
 router.use('/payments', paymentsRoutes);
 router.use('/bots', botRoutes);
 router.use('/ads', adRoutes);
+router.use('/ad', adRoutes);
 router.use('/analytics', analyticsRoutes);
 router.use('/admin', adminRoutes);
 router.use('/webhooks', webhookRoutes);
