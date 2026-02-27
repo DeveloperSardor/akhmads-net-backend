@@ -9,6 +9,7 @@ import hash from '../../utils/hash.js';
 import redis from '../../config/redis.js';
 import logger from '../../utils/logger.js';
 import i18n from '../../utils/i18n.js';
+import { messageToHtml } from '../../utils/telegram-html.js';
 
 /**
  * Login Bot Handler - GramAds Style
@@ -71,6 +72,48 @@ class LoginBotHandler {
     // Language change command
     bot.command('lang', async (ctx) => {
       await this.showLanguageSelection(ctx);
+    });
+
+    // Handle incoming messages (Potential ads)
+    bot.on('message', async (ctx) => {
+      try {
+        // Skip if command
+        if (ctx.message.text?.startsWith('/')) return;
+
+        const telegramId = ctx.from.id.toString();
+        const user = await prisma.user.findUnique({ where: { telegramId } });
+        
+        if (!user || user.role !== 'ADVERTISER') return;
+
+        const text = ctx.message.text || ctx.message.caption || '';
+        const entities = ctx.message.entities || ctx.message.caption_entities || [];
+        
+        // Convert to HTML (Preserving premium emojis)
+        const htmlContent = messageToHtml(text, entities);
+
+        // Store draft in Redis
+        const draftId = crypto.randomUUID();
+        await redis.set(`ad_draft:${draftId}`, JSON.stringify({
+          userId: user.id,
+          text: text,
+          htmlContent: htmlContent,
+          mediaGroupId: ctx.message.media_group_id,
+          // Handle media if present...
+        }), 'EX', 3600); // 1 hour expiration
+
+        const keyboard = new InlineKeyboard()
+          .text("✅ Ad qilib saqlash (Save as Ad)", `create_ad_${draftId}`)
+          .row()
+          .text("❌ Bekor qilish", "cancel_ad");
+
+        await ctx.reply(`<b>Reklama qoralamasi tayyor!</b>\n\nKontent:\n${htmlContent}\n\n<i>Premium emojilar saqlab qolindi. Reklama sifatida saqlamoqchimisiz?</i>`, {
+          parse_mode: 'HTML',
+          reply_markup: keyboard
+        });
+
+      } catch (error) {
+        logger.error('Message handler error:', error);
+      }
     });
 
     // Callback query handler
@@ -217,19 +260,31 @@ class LoginBotHandler {
     });
 
     const isHttp = authUrl.startsWith('http://');
+    const emojiIds = i18n.emojis(locale);
     const keyboard = new InlineKeyboard();
-    if (isHttp) {
-      this.sessions.set(`auth_url:${telegramId}`, authUrl);
-      keyboard.text(i18n.t(locale, 'auth_web'), 'authorize_web');
-    } else {
-      keyboard.url(i18n.t(locale, 'auth_web'), authUrl);
-    }
-    keyboard.row()
-      .text(i18n.t(locale, 'channel'), 'channel')
-      .text(i18n.t(locale, 'chat'), 'chat')
+
+    // 1. Channel & Chat (↗️ style)
+    keyboard
+      .text(i18n.t(locale, 'channel') + " ↗️", 'channel', { icon_custom_emoji_id: emojiIds.pencil })
+      .text(i18n.t(locale, 'chat') + " ↗️", 'chat', { icon_custom_emoji_id: emojiIds.chat })
       .row();
 
-    // ✅ Mini App requires HTTPS
+    // 2. Authorize (PRIMARY BLUE)
+    if (isHttp) {
+      this.sessions.set(`auth_url:${telegramId}`, authUrl);
+      keyboard.text(i18n.t(locale, 'auth_web'), 'authorize_web', { 
+        style: 'primary', 
+        icon_custom_emoji_id: emojiIds.play 
+      });
+    } else {
+      keyboard.url(i18n.t(locale, 'auth_web'), authUrl, { 
+        style: 'primary', 
+        icon_custom_emoji_id: emojiIds.play 
+      });
+    }
+    keyboard.row();
+
+    // 3. Mini App
     if (frontendUrl.startsWith('https://')) {
       keyboard.webApp(i18n.t(locale, 'open_mini_app'), frontendUrl);
     } else {
@@ -377,6 +432,19 @@ class LoginBotHandler {
         return;
       }
 
+      if (data.startsWith('create_ad_')) {
+        const draftId = data.replace('create_ad_', '');
+        await this.handleAdCreationFromDraft(ctx, draftId);
+        return;
+      }
+
+      if (data === 'cancel_ad') {
+        const user = await prisma.user.findUnique({ where: { telegramId } });
+        await ctx.answerCallbackQuery();
+        await ctx.editMessageText("❌ Reklama bekor qilindi.");
+        return;
+      }
+
       if (data.startsWith('code_')) {
         const parts = data.split('_');
         const selectedCode = parts[parts.length - 1];
@@ -452,6 +520,52 @@ class LoginBotHandler {
       logger.info(`User ${telegramId} logged in successfully with avatar`);
     } catch (error) {
       logger.error('Handle code selection error:', error);
+      await ctx.answerCallbackQuery('❌ Xatolik yuz berdi');
+    }
+  }
+
+  /**
+   * Handle ad creation from draft
+   */
+  async handleAdCreationFromDraft(ctx, draftId) {
+    try {
+      const draftJson = await redis.get(`ad_draft:${draftId}`);
+      if (!draftJson) {
+        await ctx.answerCallbackQuery("❌ Draft topilmadi yoki muddati o'tgan.");
+        return;
+      }
+
+      const draft = JSON.parse(draftJson);
+      
+      // Create ad in database
+      const ad = await prisma.ad.create({
+        data: {
+          advertiserId: draft.userId,
+          title: "Ad via Bot " + new Date().toLocaleDateString(),
+          text: draft.text,
+          htmlContent: draft.htmlContent,
+          contentType: 'HTML',
+          status: 'PENDING', // Needs moderation
+          targetImpressions: 1000, 
+          totalCost: 10.0, 
+          remainingBudget: 10.0,
+          deliveredImpressions: 0,
+          finalCpm: 10.0,
+          platformFee: 1.0,
+        }
+      });
+
+      await ctx.answerCallbackQuery("✅");
+      await ctx.editMessageText(`✅ <b>Reklama muvaffaqiyatli saqlandi!</b>\n\nID: <code>${ad.id}</code>\nStatus: <b>PENDING</b>\n\n<i>Moderatsiyadan so'ng tarqatish boshlanadi.</i>`, {
+        parse_mode: 'HTML'
+      });
+
+      // Cleanup
+      await redis.del(`ad_draft:${draftId}`);
+      
+      logger.info(`Ad created from bot draft: ${ad.id}`);
+    } catch (error) {
+      logger.error('Handle ad creation from draft error:', error);
       await ctx.answerCallbackQuery('❌ Xatolik yuz berdi');
     }
   }

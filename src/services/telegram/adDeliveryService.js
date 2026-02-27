@@ -24,25 +24,19 @@ class AdDeliveryService {
 
     // Prepare buttons with tracking
     let replyMarkup = null;
-    if (ad.buttons && ad.trackingEnabled) {
+    if (ad.buttons) {
       const buttons = JSON.parse(ad.buttons);
-      const trackedButtons = tracking.wrapButtonsWithTracking(buttons, ad.id, botId);
+      const processedButtons = ad.trackingEnabled 
+        ? tracking.wrapButtonsWithTracking(buttons, ad.id, botId)
+        : buttons;
 
       replyMarkup = {
         inline_keyboard: [
-          trackedButtons.map(btn => ({
+          processedButtons.map(btn => ({
             text: btn.text,
             url: btn.url,
-          })),
-        ],
-      };
-    } else if (ad.buttons) {
-      const buttons = JSON.parse(ad.buttons);
-      replyMarkup = {
-        inline_keyboard: [
-          buttons.map(btn => ({
-            text: btn.text,
-            url: btn.url,
+            style: btn.style, // ✅ Added style support
+            icon_custom_emoji_id: btn.icon_custom_emoji_id, // ✅ Added custom emoji support
           })),
         ],
       };
