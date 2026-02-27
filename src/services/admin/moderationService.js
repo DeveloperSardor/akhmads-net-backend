@@ -59,9 +59,29 @@ class ModerationService {
         skip: offset,
       });
 
+      // Enrich with real-time stats
+      const enrichedBots = await Promise.all(
+        bots.map(async (bot) => {
+          const impressionsCount = await prisma.impression.count({
+            where: { botId: bot.id },
+          });
+
+          const earningsAggregate = await prisma.impression.aggregate({
+            where: { botId: bot.id },
+            _sum: { botOwnerEarns: true },
+          });
+
+          return {
+            ...bot,
+            adsReceived: impressionsCount,
+            earnings: parseFloat(earningsAggregate._sum.botOwnerEarns || 0),
+          };
+        })
+      );
+
       const total = await prisma.bot.count({ where });
 
-      return { bots, total };
+      return { bots: enrichedBots, total };
     } catch (error) {
       logger.error('Get all bots failed:', error);
       throw error;
