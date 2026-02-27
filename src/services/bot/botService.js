@@ -7,6 +7,7 @@ import logger from '../../utils/logger.js';
 import { NotFoundError, ConflictError, ExternalServiceError } from '../../utils/errors.js';
 import axios from 'axios';
 import storageService from '../storage/storageService.js';
+import { nanoid } from 'nanoid';
 
 /**
  * Bot Service
@@ -74,14 +75,6 @@ class BotService {
       // Encrypt token
       const tokenEncrypted = encryption.encrypt(data.token);
 
-      // Generate API key
-      const apiKey = jwtUtil.generateBotApiKey({
-        id: 'temp',
-        ownerId,
-        telegramBotId: botInfo.telegramBotId,
-        username: botInfo.username,
-      });
-
       // --- Fetch Avatar and BotStat data ---
       let avatarUrl = null;
       let botstatData = null;
@@ -107,10 +100,7 @@ class BotService {
         logger.error('Failed to fetch/upload bot avatar:', err.message);
       }
 
-      // botstatData will be synced immediately after creation
-      // ------------------------------------
-
-      // ✅ Create bot with monetization flag
+      // 1. Create bot with temporary apiKey details first to get the persistent ID
       const bot = await prisma.bot.create({
         data: {
           ownerId,
@@ -118,8 +108,8 @@ class BotService {
           username: botInfo.username,
           firstName: botInfo.firstName,
           tokenEncrypted,
-          apiKey,
-          apiKeyHash: encryption.hash(apiKey),
+          apiKey: 'temp_' + nanoid(), // Placeholder
+          apiKeyHash: 'temp_' + nanoid(), // Placeholder
           shortDescription: data.shortDescription || null,
           category: data.category,
           language: data.language || 'uz',
@@ -132,16 +122,31 @@ class BotService {
         },
       });
 
-      logger.info(`Bot registered: ${bot.id}`);
+      // 2. Now generate the real API key using the actual bot.id
+      const apiKey = jwtUtil.generateBotApiKey({
+        id: bot.id,
+        ownerId,
+        telegramBotId: bot.telegramBotId,
+        username: bot.username,
+      });
+
+      // 3. Update the bot record with the real apiKey and its hash
+      const updatedBot = await prisma.bot.update({
+        where: { id: bot.id },
+        data: {
+          apiKey,
+          apiKeyHash: encryption.hash(apiKey),
+        },
+      });
+
+      logger.info(`Bot registered and token generated: ${bot.id}`);
 
       // Sync member count immediately
-      // Don't await to avoid delaying the response, but it's small enough that we could
       botStatsService.syncMemberCount(bot.id).catch(err => {
         logger.error(`Initial member sync failed for bot ${bot.id}:`, err);
       });
       
-      // ✅ Return both bot and apiKey
-      return { ...bot, apiKey };
+      return { ...updatedBot, apiKey };
     } catch (error) {
       logger.error('Register bot failed:', error);
       throw error;
