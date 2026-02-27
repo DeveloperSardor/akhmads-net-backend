@@ -218,12 +218,22 @@ class DistributionService {
 
         replyMarkup = {
           inline_keyboard: [
-            processedButtons.map(btn => ({
-              text: btn.text,
-              url: btn.url,
-              style: btn.style, // ✅ Added style support
-              icon_custom_emoji_id: btn.icon_custom_emoji_id, // ✅ Added custom emoji support
-            })),
+            processedButtons.map(btn => {
+              // Map color names to Telegram styles
+              let style = btn.style;
+              if (btn.color === 'green') style = 'success';
+              if (btn.color === 'red') style = 'danger';
+              if (btn.color === 'blue') style = 'primary';
+              // Default to primary for other colors since TG only supports 3 styles + default
+              if (!style && (btn.color === 'purple' || btn.color === 'orange')) style = 'primary';
+
+              return {
+                text: btn.text,
+                url: btn.url,
+                style: style,
+                icon_custom_emoji_id: btn.icon_custom_emoji_id,
+              };
+            }),
           ],
         };
       }

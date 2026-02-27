@@ -80,16 +80,32 @@ class LoginBotHandler {
         // Skip if command
         if (ctx.message.text?.startsWith('/')) return;
 
-        const telegramId = ctx.from.id.toString();
+        const from = ctx.from;
+        const telegramId = from.id.toString();
         const user = await prisma.user.findUnique({ where: { telegramId } });
         
         if (!user || user.role !== 'ADVERTISER') return;
 
+        // Capture text and media
         const text = ctx.message.text || ctx.message.caption || '';
         const entities = ctx.message.entities || ctx.message.caption_entities || [];
         
         // Convert to HTML (Preserving premium emojis)
         const htmlContent = messageToHtml(text, entities);
+
+        let mediaUrl = null;
+        let mediaType = 'NONE';
+
+        if (ctx.message.photo) {
+          // Get largest photo
+          const photo = ctx.message.photo[ctx.message.photo.length - 1];
+          const file = await ctx.api.getFile(photo.file_id);
+          mediaUrl = file.file_path; // We'll handle full URL later or store file_id
+          mediaType = 'IMAGE';
+        } else if (ctx.message.video) {
+          mediaUrl = ctx.message.video.file_id;
+          mediaType = 'VIDEO';
+        }
 
         // Store draft in Redis
         const draftId = crypto.randomUUID();
@@ -97,16 +113,25 @@ class LoginBotHandler {
           userId: user.id,
           text: text,
           htmlContent: htmlContent,
-          mediaGroupId: ctx.message.media_group_id,
-          // Handle media if present...
-        }), 'EX', 3600); // 1 hour expiration
+          mediaUrl: mediaUrl,
+          mediaType: mediaType,
+          media_file_id: mediaUrl // Storing file_id for later download
+        }), 'EX', 3600);
 
         const keyboard = new InlineKeyboard()
-          .text("✅ Ad qilib saqlash (Save as Ad)", `create_ad_${draftId}`)
+          .add({ 
+            text: "✅ Reklama sifatida saqlash", 
+            callback_data: `create_ad_${draftId}`,
+            style: 'success'
+          })
           .row()
-          .text("❌ Bekor qilish", "cancel_ad");
+          .add({ 
+            text: "❌ Bekor qilish", 
+            callback_data: "cancel_ad",
+            style: 'danger'
+          });
 
-        await ctx.reply(`<b>Reklama qoralamasi tayyor!</b>\n\nKontent:\n${htmlContent}\n\n<i>Premium emojilar saqlab qolindi. Reklama sifatida saqlamoqchimisiz?</i>`, {
+        await ctx.reply(`<b>Reklama qoralamasi tayyor!</b>\n\n${mediaType !== 'NONE' ? `<i>[Media: ${mediaType}]</i>\n` : ''}Kontent:\n${htmlContent}\n\n<i>Davom etamizmi?</i>`, {
           parse_mode: 'HTML',
           reply_markup: keyboard
         });
@@ -265,19 +290,31 @@ class LoginBotHandler {
 
     // 1. Channel & Chat (↗️ style)
     keyboard
-      .text(i18n.t(locale, 'channel') + " ↗️", 'channel', { icon_custom_emoji_id: emojiIds.pencil })
-      .text(i18n.t(locale, 'chat') + " ↗️", 'chat', { icon_custom_emoji_id: emojiIds.chat })
+      .add({ 
+        text: i18n.t(locale, 'channel') + " ↗️", 
+        callback_data: 'channel', 
+        icon_custom_emoji_id: emojiIds.pencil 
+      })
+      .add({ 
+        text: i18n.t(locale, 'chat') + " ↗️", 
+        callback_data: 'chat', 
+        icon_custom_emoji_id: emojiIds.chat 
+      })
       .row();
 
     // 2. Authorize (PRIMARY BLUE)
     if (isHttp) {
       this.sessions.set(`auth_url:${telegramId}`, authUrl);
-      keyboard.text(i18n.t(locale, 'auth_web'), 'authorize_web', { 
+      keyboard.add({ 
+        text: i18n.t(locale, 'auth_web'), 
+        callback_data: 'authorize_web',
         style: 'primary', 
         icon_custom_emoji_id: emojiIds.play 
       });
     } else {
-      keyboard.url(i18n.t(locale, 'auth_web'), authUrl, { 
+      keyboard.add({ 
+        text: i18n.t(locale, 'auth_web'), 
+        url: authUrl,
         style: 'primary', 
         icon_custom_emoji_id: emojiIds.play 
       });
@@ -544,6 +581,8 @@ class LoginBotHandler {
           title: "Ad via Bot " + new Date().toLocaleDateString(),
           text: draft.text,
           htmlContent: draft.htmlContent,
+          mediaUrl: draft.mediaUrl,
+          mediaType: draft.mediaType,
           contentType: 'HTML',
           status: 'PENDING', // Needs moderation
           targetImpressions: 1000, 
