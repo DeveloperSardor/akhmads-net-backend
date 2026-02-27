@@ -25,8 +25,8 @@ class DistributionService {
       }
 
       // Parse bot settings
-      const allowedCategories = JSON.parse(bot.allowedCategories || '[]');
-      const blockedCategories = JSON.parse(bot.blockedCategories || '[]');
+      const allowedCategories = bot.allowedCategories || [];
+      const blockedCategories = bot.blockedCategories || [];
 
       // Build query
       const where = {
@@ -81,13 +81,13 @@ class DistributionService {
 
       // Filter by excluded users
       for (const ad of ads) {
-        const excludedUsers = JSON.parse(ad.excludedUserIds || '[]');
+        const excludedUsers = ad.excludedUserIds || [];
         if (excludedUsers.includes(telegramUserId)) {
           continue;
         }
 
         // Check if already shown (unique frequency)
-        const targeting = JSON.parse(ad.targeting || '{}');
+        const targeting = ad.targeting || {};
         if (targeting.frequency === 'unique') {
           const alreadyShown = await prisma.impression.findFirst({
             where: {
@@ -214,7 +214,7 @@ class DistributionService {
       // Prepare buttons with tracking
       let replyMarkup = null;
       if (ad.buttons) {
-        const buttons = JSON.parse(ad.buttons);
+        const buttons = ad.buttons;
         const processedButtons = ad.trackingEnabled 
           ? tracking.wrapButtonsWithTracking(buttons, ad.id, botId)
           : buttons;
