@@ -55,9 +55,14 @@ class LoginBotHandler {
           return;
         }
 
-        // 2. Handle Login Token if present
+        // 2. Handle Deep Linking
         if (args && args.startsWith('login_')) {
           await this.handleLoginStart(ctx, args);
+          return;
+        }
+
+        if (args === 'add_ad') {
+          await this.showHowToAddAd(ctx, user);
           return;
         }
 
@@ -478,11 +483,8 @@ class LoginBotHandler {
 
       if (data === 'how_to_add_ad') {
         const user = await prisma.user.findUnique({ where: { telegramId } });
-        const locale = user?.locale || 'uz';
         await ctx.answerCallbackQuery();
-        await ctx.reply("<b>Bot orqali reklama qo'shish juda oson!</b>\n\nShunchaki botga matnli xabar yoki rasm/video (caption bilan) yuboring. Bot uni avtomatik ravishda qoralama sifatida saqlaydi va sizga tasdiqlash uchun yuboradi.", {
-          parse_mode: 'HTML'
-        });
+        await this.showHowToAddAd(ctx, user);
         return;
       }
 
@@ -624,6 +626,19 @@ class LoginBotHandler {
       logger.error('Handle ad creation from draft error:', error);
       await ctx.answerCallbackQuery('❌ Xatolik yuz berdi');
     }
+  }
+
+  /**
+   * Show how to add ad instructions
+   */
+  async showHowToAddAd(ctx, user) {
+    const locale = user?.locale || 'uz';
+    const text = i18n.t(locale, 'how_to_add_ad_desc') || 
+      "<b>Bot orqali reklama qo'shish juda oson!</b>\n\nShunchaki botga matnli xabar yoki rasm/video (caption bilan) yuboring. Bot uni avtomatik ravishda qoralama sifatida saqlaydi va sizga tasdiqlash uchun yuboradi.";
+    
+    await ctx.reply(text, {
+      parse_mode: 'HTML'
+    });
   }
 }
 

@@ -15,6 +15,7 @@ export default {
   session_not_found: "❌ Sessiya topilmadi",
   wrong_code: "❌ Noto'g'ri kod",
   coming_soon: "Tez orada!",
+  how_to_add_ad_desc: "<b>Bot orqali reklama qo'shish juda oson!</b>\n\nShunchaki botga matnli xabar yoki rasm/video (caption bilan) yuboring. Bot uni avtomatik ravishda qoralama sifatida saqlaydi va sizga tasdiqlash uchun yuboradi.",
   emojis: {
     sparkles: "5890925363067886150",
     user: "5260399854500191689",
