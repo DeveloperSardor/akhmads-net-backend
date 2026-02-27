@@ -323,7 +323,7 @@ class DistributionService {
       try {
         const bot = await prisma.bot.findUnique({ where: { id: botId } });
         if (bot && bot.ownerId) {
-          await walletService.credit(bot.ownerId, botOwnerEarns, 'AD_REVENUE', adId);
+          await walletService.credit(bot.ownerId, botOwnerEarns, 'EARNINGS', adId);
         }
       } catch (creditErr) {
         logger.error('Failed to credit bot owner wallet:', creditErr);
