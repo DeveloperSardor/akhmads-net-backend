@@ -326,13 +326,17 @@ class LoginBotHandler {
       }
 
       if (data === 'draft_preview') {
+        const colorStyles = { blue: 'primary', green: 'positive', red: 'destructive', violet: 'primary', orange: 'destructive', default: undefined };
         const colorEmojis = { blue: '🔵', green: '🟢', red: '🔴', violet: '🟣', orange: '🟠', default: '' };
         const keyboard = new InlineKeyboard();
         if (session.draft.buttons && session.draft.buttons.length > 0) {
           session.draft.buttons.forEach(btn => {
             const emoji = colorEmojis[btn.color] || '';
             const label = emoji ? `${emoji} ${btn.text}` : btn.text;
-            keyboard.url(label, btn.url).row();
+            const style = colorStyles[btn.color];
+            const buttonObj = { text: label, url: btn.url };
+            if (style) buttonObj.style = style;
+            keyboard.add(buttonObj).row();
           });
         }
         const previewMsg = `<b>[Prevyu]</b>\n\n${session.draft.htmlContent}`;
