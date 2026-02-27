@@ -82,7 +82,6 @@ class LoginBotHandler {
     // Handle incoming messages (Potential ads)
     bot.on('message', async (ctx) => {
       try {
-        // Skip if command
         if (ctx.message.text?.startsWith('/')) return;
 
         const from = ctx.from;
@@ -93,7 +92,6 @@ class LoginBotHandler {
         const isAdvertiser = user.role === 'ADVERTISER' || (user.roles && user.roles.includes('ADVERTISER'));
         if (!isAdvertiser) return;
 
-        // Check for active ad creation session
         const sessionKey = `ad_session:${telegramId}`;
         const sessionJson = await redis.get(sessionKey);
 
@@ -103,11 +101,8 @@ class LoginBotHandler {
           if (session.step === 'AWAITING_BUTTON_TEXT') {
             session.temp = { buttonText: ctx.message.text };
             session.step = 'AWAITING_BUTTON_URL';
-            await redis.set(sessionKey, JSON.stringify(session), 'EX', 3600);
-            
-            await ctx.reply("<b>Zo'r! Endi bu tugma qaysi manzilga (URL) olib borishini yuboring:</b>\n<i>(Masalan: https://t.me/kanal_nomi)</i>", {
-              parse_mode: 'HTML'
-            });
+            await redis.set(sessionKey, JSON.stringify(session), { EX: 3600 });
+            await ctx.reply("<b>Zo'r! Endi bu tugma qaysi manzilga (URL) olib borishini yuboring:</b>\n<i>(Masalan: https://t.me/kanal_nomi)</i>", { parse_mode: 'HTML' });
             return;
           }
 
@@ -119,36 +114,29 @@ class LoginBotHandler {
             }
 
             if (!session.draft.buttons) session.draft.buttons = [];
-            session.draft.buttons.push({
-              text: session.temp.buttonText,
-              url: url
-            });
-            
+            session.draft.buttons.push({ text: session.temp.buttonText, url: url });
             session.temp = null;
             session.step = 'DRAFT_MENU';
-            await redis.set(sessionKey, JSON.stringify(session), 'EX', 3600);
-            
-            await this.renderDraftMenu(ctx, telegramId, session.draft);
+            await redis.set(sessionKey, JSON.stringify(session), { EX: 3600 });
+            await this.renderDraftMenu(ctx, telegramId, session.draft, true);
             return;
           }
 
           if (session.step === 'AWAITING_IMPRESSIONS') {
             const impressions = parseInt(ctx.message.text);
             if (isNaN(impressions) || impressions < 100) {
-              await ctx.reply("❌ Iltimos, 100 dan katta butun son kiriting:");
+              await ctx.reply("❌ Iltimos, 100 dan katta butun son (kamida 100) kiriting:");
               return;
             }
-
             session.draft.targetImpressions = impressions;
             session.step = 'DRAFT_MENU';
-            await redis.set(sessionKey, JSON.stringify(session), 'EX', 3600);
-            
-            await this.renderDraftMenu(ctx, telegramId, session.draft);
+            await redis.set(sessionKey, JSON.stringify(session), { EX: 3600 });
+            await this.renderDraftMenu(ctx, telegramId, session.draft, true);
             return;
           }
         }
 
-        // If no active session or they just sent media/text directly, start a new draft
+        // Initialize Draft Session
         const text = ctx.message.text || ctx.message.caption || '';
         const entities = ctx.message.entities || ctx.message.caption_entities || [];
         const htmlContent = messageToHtml(text, entities);
@@ -166,7 +154,6 @@ class LoginBotHandler {
           mediaType = 'VIDEO';
         }
 
-        // Initialize Draft Session
         const draft = {
           userId: user.id,
           text: text,
@@ -176,16 +163,12 @@ class LoginBotHandler {
           media_file_id: mediaUrl,
           buttons: [],
           targetImpressions: 1000,
-          targeting: { languages: ['uz', 'ru', 'en'] }
+          targeting: { aiSegments: [] }
         };
 
-        const session = {
-          step: 'DRAFT_MENU',
-          draft: draft
-        };
-
-        await redis.set(sessionKey, JSON.stringify(session), 'EX', 3600);
-        await this.renderDraftMenu(ctx, telegramId, draft, true);
+        const session = { step: 'AWAITING_CATEGORIES', draft: draft };
+        await redis.set(sessionKey, JSON.stringify(session), { EX: 3600 });
+        await this.renderCategoryMenu(ctx, telegramId, draft, true);
 
       } catch (error) {
         logger.error('Message handler error:', error);
@@ -199,48 +182,86 @@ class LoginBotHandler {
         await this.handleLanguageSet(ctx);
         return;
       }
-      
-      // Check for Draft Menu Interactions
       if (data.startsWith('draft_')) {
         await this.handleDraftInteractions(ctx, data);
         return;
       }
-
       await this.handleCallbackQuery(ctx);
     });
 
     logger.info('Login bot handlers setup complete');
   }
 
-  /**
-   * Render the interactive Draft Menu
-   */
+  async renderCategoryMenu(ctx, telegramId, draft, isNew = false) {
+    const cats = [
+      { id: 'tech', label: 'Tech Enthusiasts' },
+      { id: 'shoppers', label: 'Active Shoppers' },
+      { id: 'gamers', label: 'Gamers' },
+      { id: 'crypto', label: 'Crypto Traders' }
+    ];
+    
+    const kb = new InlineKeyboard();
+    const curr = draft.targeting?.aiSegments || [];
+    
+    cats.forEach(cat => {
+      const isSelected = curr.includes(cat.id);
+      kb.add({ text: `${isSelected ? '✅' : '⬜️'} ${cat.label}`, callback_data: `draft_toggle_cat_${cat.id}` }).row();
+    });
+    
+    kb.add({ text: "➡️ Keyingi qadam (Impressionlar)", callback_data: "draft_next_impressions", style: "primary" });
+    
+    const text = "<b>🎯 Auditoriyani tanlang (Smart Targeting)</b>\n<i>Qaysi turdagi foydalanuvchilar reklamangizni ko'rishini xohlaysiz? (Bir nechtasini tanlashingiz mumkin):</i>";
+    
+    if (isNew) {
+      await ctx.reply(text, { parse_mode: 'HTML', reply_markup: kb });
+    } else {
+      await ctx.editMessageText(text, { parse_mode: 'HTML', reply_markup: kb });
+    }
+  }
+
+  async renderImpressionsMenu(ctx, telegramId, draft, isNew = false) {
+    const kb = new InlineKeyboard()
+      .add({ text: "1,000 ta", callback_data: "draft_set_imp_1000" })
+      .add({ text: "5,000 ta", callback_data: "draft_set_imp_5000" }).row()
+      .add({ text: "10,000 ta", callback_data: "draft_set_imp_10000" })
+      .add({ text: "50,000 ta", callback_data: "draft_set_imp_50000" });
+      
+    const text = "<b>👁‍🗨 Necha kishi ko'rishini xohlaysiz?</b>\n<i>Variantlardan birini tanlang yoki chatga raqam yozib yuboring (kamida 100 ta bo'lishi kerak):</i>";
+    
+    if (isNew) {
+      await ctx.reply(text, { parse_mode: 'HTML', reply_markup: kb });
+    } else {
+      await ctx.editMessageText(text, { parse_mode: 'HTML', reply_markup: kb });
+    }
+  }
+
   async renderDraftMenu(ctx, telegramId, draft, isNew = false) {
+    const cost = ((draft.targetImpressions || 1000) / 1000) * 10.0;
+    const cats = draft.targeting?.aiSegments || [];
+    
     const keyboard = new InlineKeyboard()
-      .add({ text: "👁 Qanday ko'rinadi?", callback_data: "draft_preview", style: "primary" }).row()
+      .add({ text: "👁 Qanday ko'rinadi? (Prevyu)", callback_data: "draft_preview", style: "primary" }).row()
       .add({ text: "➕ Tugma qo'shish", callback_data: "draft_add_button" })
-      .add({ text: `👁‍🗨 Ko'rishlar: ${draft.targetImpressions || 1000}`, callback_data: "draft_set_impressions" }).row()
-      .add({ text: "✅ Tasdiqlash va Saqlash", callback_data: "draft_submit", style: "success" }).row()
+      .add({ text: `🎯 Auditoriyani o'zgartirish`, callback_data: "draft_back_categories" }).row()
+      .add({ text: `👁‍🗨 Soni: ${draft.targetImpressions} ta`, callback_data: "draft_next_impressions" }).row()
+      .add({ text: `✅ Xarid qilish va Saqlash ($${cost.toFixed(2)})`, callback_data: "draft_submit", style: "success" }).row()
       .add({ text: "❌ Bekor qilish", callback_data: "draft_cancel", style: "danger" });
 
-    const messageText = `<b>📝 Reklama loyihasi</b>\n\n` +
+    const messageText = `<b>📝 Reklama loyihasi (Umumiy Xulosa)</b>\n\n` +
       `${draft.mediaType !== 'NONE' ? `📎 <b>Media:</b> ${draft.mediaType}\n` : ''}` +
       `<b>Tugmalar:</b> ${draft.buttons?.length || 0} ta\n` +
-      `<b>Targeting tillar:</b> ${draft.targeting?.languages?.join(', ') || 'Barchasi'}\n\n` +
+      `<b>Tanlangan auditoriya:</b> ${cats.length > 0 ? cats.join(', ') : 'Barcha foydalanuvchilar'}\n` +
+      `<b>Taassurotlar (Ko'rishlar):</b> ${draft.targetImpressions} ta\n` +
+      `<b>Umumiy Narx:</b> $${cost.toFixed(2)}\n\n` +
       `<i>Matn:</i>\n${draft.htmlContent.substring(0, 200)}${draft.htmlContent.length > 200 ? '...' : ''}`;
 
     if (isNew) {
       await ctx.reply(messageText, { parse_mode: 'HTML', reply_markup: keyboard });
     } else {
-      await ctx.reply(messageText, { parse_mode: 'HTML', reply_markup: keyboard });
-      // Note: In a robust bot, we'd edit the previous message instead of replying anew,
-      // but reply is safer for mixed media/text transitions without complex message tracking.
+      await ctx.editMessageText(messageText, { parse_mode: 'HTML', reply_markup: keyboard });
     }
   }
 
-  /**
-   * Handle interactive draft menu button clicks
-   */
   async handleDraftInteractions(ctx, data) {
     try {
       const telegramId = ctx.from.id.toString();
@@ -255,6 +276,41 @@ class LoginBotHandler {
       const session = JSON.parse(sessionJson);
       await ctx.answerCallbackQuery();
 
+      if (data.startsWith('draft_toggle_cat_')) {
+        const catId = data.replace('draft_toggle_cat_', '');
+        if (!session.draft.targeting.aiSegments) session.draft.targeting.aiSegments = [];
+        const index = session.draft.targeting.aiSegments.indexOf(catId);
+        if (index > -1) session.draft.targeting.aiSegments.splice(index, 1);
+        else session.draft.targeting.aiSegments.push(catId);
+        
+        await redis.set(sessionKey, JSON.stringify(session), { EX: 3600 });
+        await this.renderCategoryMenu(ctx, telegramId, session.draft, false);
+        return;
+      }
+      
+      if (data === 'draft_next_impressions') {
+        session.step = 'AWAITING_IMPRESSIONS';
+        await redis.set(sessionKey, JSON.stringify(session), { EX: 3600 });
+        await this.renderImpressionsMenu(ctx, telegramId, session.draft, false);
+        return;
+      }
+      
+      if (data === 'draft_back_categories') {
+        session.step = 'AWAITING_CATEGORIES';
+        await redis.set(sessionKey, JSON.stringify(session), { EX: 3600 });
+        await this.renderCategoryMenu(ctx, telegramId, session.draft, false);
+        return;
+      }
+      
+      if (data.startsWith('draft_set_imp_')) {
+        const imp = parseInt(data.replace('draft_set_imp_', ''));
+        session.draft.targetImpressions = imp;
+        session.step = 'DRAFT_MENU';
+        await redis.set(sessionKey, JSON.stringify(session), { EX: 3600 });
+        await this.renderDraftMenu(ctx, telegramId, session.draft, false);
+        return;
+      }
+
       if (data === 'draft_preview') {
         const keyboard = new InlineKeyboard();
         if (session.draft.buttons && session.draft.buttons.length > 0) {
@@ -262,25 +318,15 @@ class LoginBotHandler {
             keyboard.url(btn.text, btn.url).row();
           });
         }
-        
-        const previewMsg = `<b>[Prevyu Oqimi]</b>\n\n${session.draft.htmlContent}`;
-        // Note: For actual media previews, we would sendPhoto / sendVideo here 
-        // using session.draft.media_file_id. Keeping simple for this step.
+        const previewMsg = `<b>[Prevyu]</b>\n\n${session.draft.htmlContent}`;
         await ctx.reply(previewMsg, { parse_mode: 'HTML', reply_markup: keyboard });
         return;
       }
 
       if (data === 'draft_add_button') {
         session.step = 'AWAITING_BUTTON_TEXT';
-        await redis.set(sessionKey, JSON.stringify(session), 'EX', 3600);
+        await redis.set(sessionKey, JSON.stringify(session), { EX: 3600 });
         await ctx.reply("<b>Tugma yozuvini yuboring:</b>\n<i>(Masalan: 🌐 Saytga o'tish)</i>", { parse_mode: 'HTML' });
-        return;
-      }
-
-      if (data === 'draft_set_impressions') {
-        session.step = 'AWAITING_IMPRESSIONS';
-        await redis.set(sessionKey, JSON.stringify(session), 'EX', 3600);
-        await ctx.reply("<b>Qancha ko'rishlar (impression) sotib olmoqchisiz?</b>\n<i>(Kamida 100 ta bo'lishi kerak. Raqam yuboring)</i>", { parse_mode: 'HTML' });
         return;
       }
 
