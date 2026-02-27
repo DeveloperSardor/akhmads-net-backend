@@ -33,6 +33,42 @@ class ModerationService {
   }
 
   /**
+   * Get all bots with filters
+   */
+  async getAllBots(filters = {}, limit = 20, offset = 0) {
+    try {
+      const { status } = filters;
+
+      const where = {};
+      if (status) where.status = status;
+
+      const bots = await prisma.bot.findMany({
+        where,
+        include: {
+          owner: {
+            select: {
+              id: true,
+              firstName: true,
+              lastName: true,
+              username: true,
+            },
+          },
+        },
+        orderBy: { createdAt: 'desc' },
+        take: limit,
+        skip: offset,
+      });
+
+      const total = await prisma.bot.count({ where });
+
+      return { bots, total };
+    } catch (error) {
+      logger.error('Get all bots failed:', error);
+      throw error;
+    }
+  }
+
+  /**
    * Get pending bots
    */
   async getPendingBots(limit = 20, offset = 0) {

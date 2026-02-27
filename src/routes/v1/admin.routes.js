@@ -254,6 +254,38 @@ router.post(
 
 // ==================== MODERATION - BOTS ====================
 
+/**
+ * GET /api/v1/admin/moderation/bots/all
+ * All bots with status filtering
+ */
+router.get(
+  '/moderation/bots/all',
+  requireModerator,
+  validate([
+    query('status').optional().isString(),
+    query('limit').optional().isInt({ min: 1, max: 100 }),
+    query('offset').optional().isInt({ min: 0 }),
+  ]),
+  async (req, res, next) => {
+    try {
+      const { status, limit = 20, offset = 0 } = req.query;
+      const result = await moderationService.getAllBots(
+        { status },
+        parseInt(limit),
+        parseInt(offset)
+      );
+
+      response.paginated(res, result.bots, {
+        page: Math.floor(offset / limit) + 1,
+        limit: parseInt(limit),
+        total: result.total,
+      });
+    } catch (error) {
+      next(error);
+    }
+  }
+);
+
 router.get(
   '/moderation/bots',
   requireModerator,
