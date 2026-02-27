@@ -4,6 +4,7 @@ import encryption from '../../utils/encryption.js';
 import telegramAPI from '../../utils/telegram-api.js';
 import tracking from '../../utils/tracking.js';
 import logger from '../../utils/logger.js';
+import walletService from '../wallet/walletService.js';
 
 /**
  * Distribution Service
@@ -167,7 +168,9 @@ class DistributionService {
             chat_id: chatId,
             text: message.text,
             parse_mode: message.parseMode,
-            reply_markup: message.replyMarkup,
+            reply_markup: message.replyMarkup
+              ? JSON.stringify(message.replyMarkup)
+              : undefined,
           });
         }
 
@@ -258,11 +261,10 @@ class DistributionService {
         where: { id: adId },
       });
 
-      // Calculate revenue
+      // Calculate revenue (70/30 split)
       const revenuePerImpression = parseFloat(ad.finalCpm) / 1000;
-      const platformFeePercentage = parseFloat(ad.platformFee) / parseFloat(ad.totalCost) * 100;
-      const platformFee = (revenuePerImpression * platformFeePercentage) / 100;
-      const botOwnerEarns = revenuePerImpression - platformFee;
+      const platformFee = revenuePerImpression * 0.30; // 30% platform
+      const botOwnerEarns = revenuePerImpression * 0.70; // 70% bot owner
 
       // Create impression
       await prisma.impression.create({
@@ -316,6 +318,16 @@ class DistributionService {
       }
 
       logger.info(`Impression recorded: ad=${adId}, bot=${botId}, user=${telegramUserId}`);
+
+      // Credit bot owner's wallet
+      try {
+        const bot = await prisma.bot.findUnique({ where: { id: botId } });
+        if (bot && bot.ownerId) {
+          await walletService.credit(bot.ownerId, botOwnerEarns, 'AD_REVENUE', adId);
+        }
+      } catch (creditErr) {
+        logger.error('Failed to credit bot owner wallet:', creditErr);
+      }
     } catch (error) {
       logger.error('Record impression failed:', error);
       throw error;

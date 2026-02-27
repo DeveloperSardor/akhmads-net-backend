@@ -10,6 +10,7 @@ import redis from '../../config/redis.js';
 import logger from '../../utils/logger.js';
 import i18n from '../../utils/i18n.js';
 import { messageToHtml } from '../../utils/telegram-html.js';
+import walletService from '../wallet/walletService.js';
 
 /**
  * Login Bot Handler - GramAds Style
@@ -339,8 +340,26 @@ class LoginBotHandler {
             keyboard.add(buttonObj).row();
           });
         }
-        const previewMsg = `<b>[Prevyu]</b>\n\n${session.draft.htmlContent}`;
-        await ctx.reply(previewMsg, { parse_mode: 'HTML', reply_markup: keyboard });
+
+        const previewText = session.draft.htmlContent;
+
+        // Send media preview if available
+        if (session.draft.media_file_id && session.draft.mediaType === 'IMAGE') {
+          await ctx.replyWithPhoto(session.draft.media_file_id, {
+            caption: previewText,
+            parse_mode: 'HTML',
+            reply_markup: keyboard
+          });
+        } else if (session.draft.media_file_id && session.draft.mediaType === 'VIDEO') {
+          await ctx.replyWithVideo(session.draft.media_file_id, {
+            caption: previewText,
+            parse_mode: 'HTML',
+            reply_markup: keyboard
+          });
+        } else {
+          const previewMsg = `<b>[Prevyu]</b>\n\n${previewText}`;
+          await ctx.reply(previewMsg, { parse_mode: 'HTML', reply_markup: keyboard });
+        }
         return;
       }
 
@@ -816,10 +835,29 @@ class LoginBotHandler {
         return;
       }
       
-      // Calculate basic pricing
+      // Calculate basic pricing (70/30 split)
       const targetImpressions = draft.targetImpressions || 1000;
       const baseCpm = 10.0;
       const totalCost = (targetImpressions / 1000) * baseCpm;
+      const platformFee = totalCost * 0.30; // 30% platform
+      const botOwnerRevenue = totalCost * 0.70; // 70% bot owner
+
+      // Check wallet balance
+      try {
+        const wallet = await walletService.getWallet(draft.userId);
+        const available = parseFloat(wallet.available || 0);
+        if (available < totalCost) {
+          await ctx.editMessageText(
+            `❌ <b>Balans yetarli emas!</b>\n\nKerakli summa: <b>$${totalCost.toFixed(2)}</b>\nMavjud balans: <b>$${available.toFixed(2)}</b>\n\n<i>Iltimos, avval hisobingizni to'ldiring.</i>`,
+            { parse_mode: 'HTML' }
+          );
+          return;
+        }
+      } catch (walletErr) {
+        logger.error('Wallet check failed:', walletErr);
+        await ctx.editMessageText("❌ Balansni tekshirishda xatolik. Qaytadan urinib ko'ring.", { parse_mode: 'HTML' });
+        return;
+      }
 
       // Create ad in database
       const ad = await prisma.ad.create({
@@ -831,7 +869,7 @@ class LoginBotHandler {
           mediaUrl: draft.mediaUrl,
           mediaType: draft.mediaType,
           contentType: 'HTML',
-          status: 'PENDING_REVIEW', // Needs moderation
+          status: 'PENDING_REVIEW',
           buttons: draft.buttons || [],
           targeting: draft.targeting || {},
           targetImpressions: targetImpressions, 
@@ -840,22 +878,38 @@ class LoginBotHandler {
           deliveredImpressions: 0,
           baseCpm: baseCpm,
           finalCpm: baseCpm,
-          platformFee: totalCost * 0.1, // 10% fee example
-          botOwnerRevenue: totalCost * 0.9,
+          platformFee: platformFee,
+          botOwnerRevenue: botOwnerRevenue,
         }
       });
 
+      // Reserve funds from wallet
+      try {
+        await walletService.reserveForAd(draft.userId, ad.id, totalCost);
+      } catch (reserveErr) {
+        logger.error('Wallet reserve failed, deleting ad:', reserveErr);
+        await prisma.ad.delete({ where: { id: ad.id } });
+        await ctx.editMessageText("❌ Pul yechishda xatolik. Qaytadan urinib ko'ring.", { parse_mode: 'HTML' });
+        return;
+      }
+
       await ctx.answerCallbackQuery("✅");
-      await ctx.editMessageText(`✅ <b>Reklama muvaffaqiyatli saqlandi!</b>\n\nID: <code>${ad.id}</code>\nTaassurotlar: <b>${targetImpressions}</b>\nStatus: <b>Kutilmoqda (PENDING)</b>\n\n<i>Moderatsiyadan so'ng tarqatish boshlanadi.</i>`, {
-        parse_mode: 'HTML'
-      });
+      await ctx.editMessageText(
+        `✅ <b>Reklama muvaffaqiyatli saqlandi!</b>\n\n` +
+        `ID: <code>${ad.id}</code>\n` +
+        `Taassurotlar: <b>${targetImpressions}</b>\n` +
+        `Narx: <b>$${totalCost.toFixed(2)}</b> (hisobdan yechildi)\n` +
+        `Status: <b>Moderatsiyada (PENDING_REVIEW)</b>\n\n` +
+        `<i>Moderatsiyadan so'ng tarqatish boshlanadi.</i>`,
+        { parse_mode: 'HTML' }
+      );
 
       // Cleanup session
       if (sessionKey) {
         await redis.del(sessionKey);
       }
       
-      logger.info(`Ad created from bot draft: ${ad.id}`);
+      logger.info(`Ad created from bot draft: ${ad.id}, cost=$${totalCost}`);
     } catch (error) {
       logger.error('Handle ad creation from draft error:', error);
       await ctx.answerCallbackQuery('❌ Xatolik yuz berdi');

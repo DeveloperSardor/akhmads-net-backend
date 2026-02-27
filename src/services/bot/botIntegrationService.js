@@ -32,7 +32,7 @@ logger = logging.getLogger(__name__)
 class AkhmadsAdClient:
     def __init__(self, api_key: str):
         self.api_key = api_key
-        self.base_url = "https://api.akhmads.net"
+        self.base_url = "https://akhmads.net/api/v1"
     
     async def show_ad(self, chat_id: int) -> dict:
         """
@@ -82,7 +82,7 @@ class AkhmadsAdClient:
 class AkhmadsAdClient {
   constructor(apiKey) {
     this.apiKey = apiKey;
-    this.baseUrl = 'https://api.akhmads.net';
+    this.baseUrl = 'https://akhmads.net/api/v1';
   }
 
   async showAd(chatId) {
@@ -132,7 +132,7 @@ interface AdResponse {
 
 class AkhmadsAdClient {
   private apiKey: string;
-  private baseUrl: string = 'https://api.akhmads.net';
+  private baseUrl: string = 'https://akhmads.net/api/v1';
 
   constructor(apiKey: string) {
     this.apiKey = apiKey;
@@ -177,7 +177,7 @@ export default AkhmadsAdClient;
 
 class AkhmadsAdClient {
     private $apiKey;
-    private $baseUrl = 'https://api.akhmads.net';
+    private $baseUrl = 'https://akhmads.net/api/v1';
 
     public function __construct($apiKey) {
         $this->apiKey = $apiKey;
@@ -236,7 +236,7 @@ public class AkhmadsAdClient
 {
     private readonly string _apiKey;
     private readonly HttpClient _httpClient;
-    private const string BaseUrl = "https://api.akhmads.net";
+    private const string BaseUrl = "https://akhmads.net/api/v1";
 
     public AkhmadsAdClient(string apiKey)
     {
@@ -298,7 +298,7 @@ public class AkhmadsAdClient
    */
   getDocumentation() {
     return {
-      endpoint: 'POST https://api.akhmads.net/ad/SendPost',
+      endpoint: 'POST https://akhmads.net/api/v1/ad/SendPost',
       authentication: 'Bearer token in Authorization header',
       requestBody: {
         SendToChatId: 'number - Telegram chat ID',

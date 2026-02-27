@@ -14,7 +14,7 @@ class AdModerationService {
   async getPendingAds(limit = 20, offset = 0) {
     try {
       const ads = await prisma.ad.findMany({
-        where: { status: 'SUBMITTED' },
+        where: { status: { in: ['SUBMITTED', 'PENDING_REVIEW'] } },
         include: {
           advertiser: {
             select: {
@@ -32,7 +32,7 @@ class AdModerationService {
       });
 
       const total = await prisma.ad.count({
-        where: { status: 'SUBMITTED' },
+        where: { status: { in: ['SUBMITTED', 'PENDING_REVIEW'] } },
       });
 
       return { ads, total };
@@ -55,8 +55,8 @@ class AdModerationService {
         throw new NotFoundError('Ad not found');
       }
 
-      if (ad.status !== 'SUBMITTED') {
-        throw new ValidationError('Only submitted ads can be approved');
+      if (ad.status !== 'SUBMITTED' && ad.status !== 'PENDING_REVIEW') {
+        throw new ValidationError('Only submitted/pending ads can be approved');
       }
 
       // Run AI safety check if enabled
@@ -130,8 +130,8 @@ class AdModerationService {
         throw new NotFoundError('Ad not found');
       }
 
-      if (ad.status !== 'SUBMITTED') {
-        throw new ValidationError('Only submitted ads can be rejected');
+      if (ad.status !== 'SUBMITTED' && ad.status !== 'PENDING_REVIEW') {
+        throw new ValidationError('Only submitted/pending ads can be rejected');
       }
 
       // Refund reserved funds (reserved → available)
