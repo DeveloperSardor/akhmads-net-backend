@@ -424,4 +424,32 @@ router.get(
   },
 );
 
+/**
+ * GET /api/v1/bots/:id/history
+ * Get bot ad serving history
+ */
+router.get(
+  "/:id/history",
+  validate([param("id").isString()]),
+  async (req, res, next) => {
+    try {
+      const bot = await botService.getBotById(req.params.id);
+
+      // Check ownership
+      if (
+        bot.ownerId !== req.userId &&
+        !["ADMIN", "SUPER_ADMIN"].includes(req.userRole)
+      ) {
+        return response.forbidden(res, "Access denied");
+      }
+
+      const history = await botService.getBotAdHistory(req.params.id);
+
+      response.success(res, { history });
+    } catch (error) {
+      next(error);
+    }
+  },
+);
+
 export default router;

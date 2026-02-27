@@ -401,6 +401,33 @@ class BotService {
       throw error;
     }
   }
+
+  /**
+   * Get bot ad serving history
+   */
+  async getBotAdHistory(botId) {
+    try {
+      const impressions = await prisma.impression.findMany({
+        where: { botId },
+        take: 20,
+        orderBy: { createdAt: 'desc' },
+        include: {
+          ad: {
+            select: {
+              title: true,
+              text: true,
+              mediaUrl: true,
+            },
+          },
+        },
+      });
+
+      return impressions;
+    } catch (error) {
+      logger.error('Get bot ad history failed:', error);
+      throw error;
+    }
+  }
 }
 
 const botService = new BotService();
