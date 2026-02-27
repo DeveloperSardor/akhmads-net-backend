@@ -831,7 +831,7 @@ class LoginBotHandler {
           mediaUrl: draft.mediaUrl,
           mediaType: draft.mediaType,
           contentType: 'HTML',
-          status: 'PENDING', // Needs moderation
+          status: 'PENDING_REVIEW', // Needs moderation
           buttons: draft.buttons || [],
           targeting: draft.targeting || {},
           targetImpressions: targetImpressions, 
