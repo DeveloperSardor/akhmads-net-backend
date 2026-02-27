@@ -23,6 +23,62 @@ router.use(authenticate);
 // ==================== MODERATION - ADS ====================
 
 /**
+ * GET /api/v1/admin/moderation/ads/all
+ * All ads with filters (for history/search)
+ */
+router.get(
+  '/moderation/ads/all',
+  requireModerator,
+  validate([
+    query('status').optional().isString(),
+    query('limit').optional().isInt({ min: 1, max: 100 }),
+    query('offset').optional().isInt({ min: 0 }),
+  ]),
+  async (req, res, next) => {
+    try {
+      const { status, limit = 20, offset = 0 } = req.query;
+
+      const where = {};
+      if (status) where.status = status;
+
+      const ads = await prisma.ad.findMany({
+        where,
+        include: {
+          advertiser: {
+            select: {
+              id: true,
+              firstName: true,
+              lastName: true,
+              username: true,
+            },
+          },
+          moderator: {
+            select: {
+              id: true,
+              firstName: true,
+              lastName: true,
+            },
+          },
+        },
+        orderBy: { createdAt: 'desc' },
+        take: parseInt(limit),
+        skip: parseInt(offset),
+      });
+
+      const total = await prisma.ad.count({ where });
+
+      response.paginated(res, ads, {
+        page: Math.floor(offset / limit) + 1,
+        limit: parseInt(limit),
+        total,
+      });
+    } catch (error) {
+      next(error);
+    }
+  }
+);
+
+/**
  * GET /api/v1/admin/moderation/ads/pending
  * Pending review ads (PENDING_REVIEW status)
  */
@@ -140,62 +196,6 @@ router.post(
       );
 
       response.success(res, { ad }, 'Ad rejected successfully');
-    } catch (error) {
-      next(error);
-    }
-  }
-);
-
-/**
- * GET /api/v1/admin/moderation/ads/all
- * All ads with filters (for history/search)
- */
-router.get(
-  '/moderation/ads/all',
-  requireModerator,
-  validate([
-    query('status').optional().isString(),
-    query('limit').optional().isInt({ min: 1, max: 100 }),
-    query('offset').optional().isInt({ min: 0 }),
-  ]),
-  async (req, res, next) => {
-    try {
-      const { status, limit = 20, offset = 0 } = req.query;
-
-      const where = {};
-      if (status) where.status = status;
-
-      const ads = await prisma.ad.findMany({
-        where,
-        include: {
-          advertiser: {
-            select: {
-              id: true,
-              firstName: true,
-              lastName: true,
-              username: true,
-            },
-          },
-          moderator: {
-            select: {
-              id: true,
-              firstName: true,
-              lastName: true,
-            },
-          },
-        },
-        orderBy: { createdAt: 'desc' },
-        take: parseInt(limit),
-        skip: parseInt(offset),
-      });
-
-      const total = await prisma.ad.count({ where });
-
-      response.paginated(res, ads, {
-        page: Math.floor(offset / limit) + 1,
-        limit: parseInt(limit),
-        total,
-      });
     } catch (error) {
       next(error);
     }
