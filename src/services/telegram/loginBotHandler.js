@@ -883,7 +883,7 @@ class LoginBotHandler {
       const ad = await prisma.ad.create({
         data: {
           advertiserId: draft.userId,
-          title: draft.text ? (draft.text.substring(0, 50) + (draft.text.length > 50 ? '...' : '')) : ("Ad via Bot " + new Date().toLocaleDateString()),
+          title: draft.text ? draft.text : ("Ad via Bot " + new Date().toLocaleDateString()),
           text: draft.text,
           htmlContent: draft.htmlContent,
           mediaUrl: draft.mediaUrl,
