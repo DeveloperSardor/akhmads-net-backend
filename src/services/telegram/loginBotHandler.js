@@ -326,10 +326,13 @@ class LoginBotHandler {
       }
 
       if (data === 'draft_preview') {
+        const colorEmojis = { blue: '🔵', green: '🟢', red: '🔴', violet: '🟣', orange: '🟠', default: '' };
         const keyboard = new InlineKeyboard();
         if (session.draft.buttons && session.draft.buttons.length > 0) {
           session.draft.buttons.forEach(btn => {
-            keyboard.url(btn.text, btn.url).row();
+            const emoji = colorEmojis[btn.color] || '';
+            const label = emoji ? `${emoji} ${btn.text}` : btn.text;
+            keyboard.url(label, btn.url).row();
           });
         }
         const previewMsg = `<b>[Prevyu]</b>\n\n${session.draft.htmlContent}`;
