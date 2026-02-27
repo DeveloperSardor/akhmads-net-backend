@@ -14,7 +14,7 @@ class DistributionService {
   /**
    * Select best ad for bot/user combination
    */
-  async selectAdForUser(botId, telegramUserId) {
+  async selectAdForUser(botId, telegramUserId, userLanguageCode = null) {
     try {
       const bot = await prisma.bot.findUnique({
         where: { id: botId },
@@ -27,7 +27,6 @@ class DistributionService {
       // Bot sozlamalari (Json? fieldlar Prisma tomonidan avtomatik parse qilinadi)
       const allowedCategories = bot.allowedCategories || [];
       const blockedCategories = bot.blockedCategories || [];
-      const botLanguage = bot.language || 'uz';
 
       // Frequency cap: bu bot orqali bu userga oxirgi reklama qachon ko'rsatilgan
       const lastImpression = await prisma.impression.findFirst({
@@ -102,10 +101,14 @@ class DistributionService {
           if (hasBlockedCategory) continue;
         }
 
-        // Language filtri: reklama muayyan tillarga mo'ljallangan bo'lsa
+        // Language filtri: reklama muayyan tillarga mo'ljallangan bo'lsa,
+        // faqat shu tildagi userlarga ko'rsatiladi.
+        // LanguageCode yuborilmagan bo'lsa (eski botlar) — o'tkazib yuboriladi.
         const adLanguages = targeting.languages || [];
-        if (adLanguages.length > 0 && !adLanguages.includes(botLanguage)) {
-          continue;
+        if (adLanguages.length > 0 && userLanguageCode) {
+          if (!adLanguages.includes(userLanguageCode)) {
+            continue;
+          }
         }
 
         // Muayyan botlarga mo'ljallangan reklama tekshiruvi
@@ -135,10 +138,10 @@ class DistributionService {
   /**
    * Deliver ad to user
    */
-  async deliverAd(botId, telegramUserId, chatId) {
+  async deliverAd(botId, telegramUserId, chatId, userLanguageCode = null) {
     try {
       // Select ad
-      const ad = await this.selectAdForUser(botId, telegramUserId);
+      const ad = await this.selectAdForUser(botId, telegramUserId, userLanguageCode);
 
       if (!ad) {
         return { success: false, code: 0 }; // No ads available

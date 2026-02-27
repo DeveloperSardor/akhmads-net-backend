@@ -24,19 +24,25 @@ router.post(
   body('SendToChatId')
     .isInt()
     .withMessage('SendToChatId must be an integer'),
+  body('LanguageCode')
+    .optional()
+    .isString()
+    .isIn(['uz', 'ru', 'en'])
+    .withMessage('LanguageCode must be uz, ru or en'),
   validate,  // ✅ Just reference it, don't call it
   async (req, res) => {
     try {
-      const { SendToChatId } = req.body;
+      const { SendToChatId, LanguageCode } = req.body;
       const botId = req.botId;
 
-      logger.info(`SendPost request: botId=${botId}, chatId=${SendToChatId}`);
+      logger.info(`SendPost request: botId=${botId}, chatId=${SendToChatId}, lang=${LanguageCode}`);
 
       // Deliver ad to user
       const result = await distributionService.deliverAd(
         botId,
         SendToChatId.toString(),
-        SendToChatId
+        SendToChatId,
+        LanguageCode || null
       );
 
       // Return result code
