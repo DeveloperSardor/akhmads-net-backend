@@ -11,9 +11,13 @@ class PricingCalculator {
    * Find pricing tier for given impressions
    */
   findTier(tiers, impressions) {
+    if (!tiers || tiers.length === 0) return null;
+
     const sortedTiers = tiers
       .filter((t) => t.isActive)
       .sort((a, b) => a.impressions - b.impressions);
+
+    if (sortedTiers.length === 0) return null;
 
     let matchedTier = sortedTiers[0];
     
@@ -112,10 +116,6 @@ class PricingCalculator {
       // ✅ VALIDATION
       if (!impressions || impressions < 100) {
         throw new Error('Invalid impressions count');
-      }
-
-      if (!tier) {
-        throw new Error('No pricing tier found');
       }
 
       // 1. Base CPM

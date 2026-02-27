@@ -21,6 +21,9 @@ async function startServer() {
     try {
       await prisma.$connect();
       logger.info('✅ Database connected');
+      
+      // Seed initial data
+      await seedInitialData();
     } catch (error) {
       logger.error('❌ Database connection failed:', error.message);
       logger.warn('⚠️ Continuing without database...');
