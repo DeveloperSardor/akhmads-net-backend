@@ -101,7 +101,7 @@ class LoginBotHandler {
           if (session.step === 'AWAITING_BUTTON_TEXT') {
             session.temp = { buttonText: ctx.message.text };
             session.step = 'AWAITING_BUTTON_URL';
-            await redis.set(sessionKey, JSON.stringify(session), { EX: 3600 });
+            await redis.set(sessionKey, JSON.stringify(session), 3600);
             await ctx.reply("<b>Zo'r! Endi bu tugma qaysi manzilga (URL) olib borishini yuboring:</b>\n<i>(Masalan: https://t.me/kanal_nomi)</i>", { parse_mode: 'HTML' });
             return;
           }
@@ -117,7 +117,7 @@ class LoginBotHandler {
             session.draft.buttons.push({ text: session.temp.buttonText, url: url });
             session.temp = null;
             session.step = 'DRAFT_MENU';
-            await redis.set(sessionKey, JSON.stringify(session), { EX: 3600 });
+            await redis.set(sessionKey, JSON.stringify(session), 3600);
             await this.renderDraftMenu(ctx, telegramId, session.draft, true);
             return;
           }
@@ -130,7 +130,7 @@ class LoginBotHandler {
             }
             session.draft.targetImpressions = impressions;
             session.step = 'DRAFT_MENU';
-            await redis.set(sessionKey, JSON.stringify(session), { EX: 3600 });
+            await redis.set(sessionKey, JSON.stringify(session), 3600);
             await this.renderDraftMenu(ctx, telegramId, session.draft, true);
             return;
           }
@@ -167,7 +167,7 @@ class LoginBotHandler {
         };
 
         const session = { step: 'AWAITING_CATEGORIES', draft: draft };
-        await redis.set(sessionKey, JSON.stringify(session), { EX: 3600 });
+        await redis.set(sessionKey, JSON.stringify(session), 3600);
         await this.renderCategoryMenu(ctx, telegramId, draft, true);
 
       } catch (error) {
@@ -283,21 +283,21 @@ class LoginBotHandler {
         if (index > -1) session.draft.targeting.aiSegments.splice(index, 1);
         else session.draft.targeting.aiSegments.push(catId);
         
-        await redis.set(sessionKey, JSON.stringify(session), { EX: 3600 });
+        await redis.set(sessionKey, JSON.stringify(session), 3600);
         await this.renderCategoryMenu(ctx, telegramId, session.draft, false);
         return;
       }
       
       if (data === 'draft_next_impressions') {
         session.step = 'AWAITING_IMPRESSIONS';
-        await redis.set(sessionKey, JSON.stringify(session), { EX: 3600 });
+        await redis.set(sessionKey, JSON.stringify(session), 3600);
         await this.renderImpressionsMenu(ctx, telegramId, session.draft, false);
         return;
       }
       
       if (data === 'draft_back_categories') {
         session.step = 'AWAITING_CATEGORIES';
-        await redis.set(sessionKey, JSON.stringify(session), { EX: 3600 });
+        await redis.set(sessionKey, JSON.stringify(session), 3600);
         await this.renderCategoryMenu(ctx, telegramId, session.draft, false);
         return;
       }
@@ -306,7 +306,7 @@ class LoginBotHandler {
         const imp = parseInt(data.replace('draft_set_imp_', ''));
         session.draft.targetImpressions = imp;
         session.step = 'DRAFT_MENU';
-        await redis.set(sessionKey, JSON.stringify(session), { EX: 3600 });
+        await redis.set(sessionKey, JSON.stringify(session), 3600);
         await this.renderDraftMenu(ctx, telegramId, session.draft, false);
         return;
       }
@@ -325,7 +325,7 @@ class LoginBotHandler {
 
       if (data === 'draft_add_button') {
         session.step = 'AWAITING_BUTTON_TEXT';
-        await redis.set(sessionKey, JSON.stringify(session), { EX: 3600 });
+        await redis.set(sessionKey, JSON.stringify(session), 3600);
         await ctx.reply("<b>Tugma yozuvini yuboring:</b>\n<i>(Masalan: 🌐 Saytga o'tish)</i>", { parse_mode: 'HTML' });
         return;
       }
