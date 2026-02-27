@@ -79,35 +79,74 @@ class DailyStatsService {
       const startDate = new Date();
       startDate.setDate(startDate.getDate() - days);
 
-      const stats = await prisma.$queryRaw`
+      // Get impressions and spending by day
+      const impressionsData = await prisma.$queryRaw`
         SELECT 
-          DATE(i.created_at) as date,
-          COUNT(DISTINCT i.ad_id) as active_ads,
-          COUNT(i.id) as total_impressions,
-          COUNT(DISTINCT c.id) as total_clicks,
-          SUM(i.revenue) as total_spent
-        FROM impressions i
-        LEFT JOIN click_events c ON c.ad_id = i.ad_id 
-          AND DATE(c.clicked_at) = DATE(i.created_at)
-          AND c.clicked = true
-        WHERE i.ad_id IN (
+          CAST(created_at AS DATE) as date,
+          COUNT(DISTINCT ad_id) as active_ads,
+          COUNT(*) as impressions,
+          SUM(revenue) as spent
+        FROM impressions
+        WHERE ad_id IN (
           SELECT id FROM ads WHERE advertiser_id = ${userId}
         )
-          AND i.created_at >= ${startDate}
-        GROUP BY DATE(i.created_at)
+          AND created_at >= ${startDate}
+        GROUP BY CAST(created_at AS DATE)
         ORDER BY date ASC
       `;
 
-      return stats.map(row => ({
-        date: row.date,
-        activeAds: parseInt(row.active_ads),
-        impressions: parseInt(row.total_impressions),
-        clicks: parseInt(row.total_clicks || 0),
-        spent: parseFloat(row.total_spent || 0),
-        ctr: row.total_impressions > 0 
-          ? ((row.total_clicks / row.total_impressions) * 100).toFixed(2)
-          : 0,
-      }));
+      // Get clicks by day
+      const clicksData = await prisma.$queryRaw`
+        SELECT 
+          CAST(clicked_at AS DATE) as date,
+          COUNT(*) as clicks
+        FROM click_events
+        WHERE ad_id IN (
+          SELECT id FROM ads WHERE advertiser_id = ${userId}
+        )
+          AND clicked = true
+          AND clicked_at >= ${startDate}
+        GROUP BY CAST(clicked_at AS DATE)
+        ORDER BY date ASC
+      `;
+
+      // Merge data
+      const statsMap = new Map();
+
+      impressionsData.forEach(row => {
+        const dateKey = row.date.toISOString().split('T')[0];
+        statsMap.set(dateKey, {
+          date: row.date,
+          activeAds: Number(row.active_ads),
+          impressions: Number(row.impressions),
+          clicks: 0,
+          spent: parseFloat(row.spent || 0),
+          ctr: 0,
+        });
+      });
+
+      clicksData.forEach(row => {
+        const dateKey = row.date.toISOString().split('T')[0];
+        const existing = statsMap.get(dateKey);
+        
+        if (existing) {
+          existing.clicks = Number(row.clicks);
+          existing.ctr = existing.impressions > 0 
+            ? ((existing.clicks / existing.impressions) * 100).toFixed(2)
+            : 0;
+        } else {
+          statsMap.set(dateKey, {
+            date: row.date,
+            activeAds: 0,
+            impressions: 0,
+            clicks: Number(row.clicks),
+            spent: 0,
+            ctr: 0
+          });
+        }
+      });
+
+      return Array.from(statsMap.values()).sort((a, b) => a.date - b.date);
     } catch (error) {
       logger.error('Get advertiser daily stats failed:', error);
       throw error;
