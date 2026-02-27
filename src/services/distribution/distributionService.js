@@ -27,6 +27,7 @@ class DistributionService {
       // Bot sozlamalari (Json? fieldlar Prisma tomonidan avtomatik parse qilinadi)
       const allowedCategories = bot.allowedCategories || [];
       const blockedCategories = bot.blockedCategories || [];
+      const botLanguage = bot.language || 'uz';
 
       // Frequency cap: bu bot orqali bu userga oxirgi reklama qachon ko'rsatilgan
       const lastImpression = await prisma.impression.findFirst({
@@ -99,6 +100,12 @@ class DistributionService {
             blockedCategories.includes(cat)
           );
           if (hasBlockedCategory) continue;
+        }
+
+        // Language filtri: reklama muayyan tillarga mo'ljallangan bo'lsa
+        const adLanguages = targeting.languages || [];
+        if (adLanguages.length > 0 && !adLanguages.includes(botLanguage)) {
+          continue;
         }
 
         // Muayyan botlarga mo'ljallangan reklama tekshiruvi
