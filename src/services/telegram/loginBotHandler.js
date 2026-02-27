@@ -91,55 +91,99 @@ class LoginBotHandler {
         
         if (!user || user.role !== 'ADVERTISER') return;
 
-        // Capture text and media
+        // Check for active ad creation session
+        const sessionKey = `ad_session:${telegramId}`;
+        const sessionJson = await redis.get(sessionKey);
+
+        if (sessionJson) {
+          const session = JSON.parse(sessionJson);
+          
+          if (session.step === 'AWAITING_BUTTON_TEXT') {
+            session.temp = { buttonText: ctx.message.text };
+            session.step = 'AWAITING_BUTTON_URL';
+            await redis.set(sessionKey, JSON.stringify(session), 'EX', 3600);
+            
+            await ctx.reply("<b>Zo'r! Endi bu tugma qaysi manzilga (URL) olib borishini yuboring:</b>\n<i>(Masalan: https://t.me/kanal_nomi)</i>", {
+              parse_mode: 'HTML'
+            });
+            return;
+          }
+
+          if (session.step === 'AWAITING_BUTTON_URL') {
+            const url = ctx.message.text;
+            if (!url.startsWith('http://') && !url.startsWith('https://')) {
+              await ctx.reply("❌ Iltimos, to'g'ri URL manzil kiriting (http:// yoki https:// bilan boshlanishi kerak):");
+              return;
+            }
+
+            if (!session.draft.buttons) session.draft.buttons = [];
+            session.draft.buttons.push({
+              text: session.temp.buttonText,
+              url: url
+            });
+            
+            session.temp = null;
+            session.step = 'DRAFT_MENU';
+            await redis.set(sessionKey, JSON.stringify(session), 'EX', 3600);
+            
+            await this.renderDraftMenu(ctx, telegramId, session.draft);
+            return;
+          }
+
+          if (session.step === 'AWAITING_IMPRESSIONS') {
+            const impressions = parseInt(ctx.message.text);
+            if (isNaN(impressions) || impressions < 100) {
+              await ctx.reply("❌ Iltimos, 100 dan katta butun son kiriting:");
+              return;
+            }
+
+            session.draft.targetImpressions = impressions;
+            session.step = 'DRAFT_MENU';
+            await redis.set(sessionKey, JSON.stringify(session), 'EX', 3600);
+            
+            await this.renderDraftMenu(ctx, telegramId, session.draft);
+            return;
+          }
+        }
+
+        // If no active session or they just sent media/text directly, start a new draft
         const text = ctx.message.text || ctx.message.caption || '';
         const entities = ctx.message.entities || ctx.message.caption_entities || [];
-        
-        // Convert to HTML (Preserving premium emojis)
         const htmlContent = messageToHtml(text, entities);
 
         let mediaUrl = null;
         let mediaType = 'NONE';
 
         if (ctx.message.photo) {
-          // Get largest photo
           const photo = ctx.message.photo[ctx.message.photo.length - 1];
           const file = await ctx.api.getFile(photo.file_id);
-          mediaUrl = file.file_path; // We'll handle full URL later or store file_id
+          mediaUrl = file.file_path; 
           mediaType = 'IMAGE';
         } else if (ctx.message.video) {
           mediaUrl = ctx.message.video.file_id;
           mediaType = 'VIDEO';
         }
 
-        // Store draft in Redis
-        const draftId = crypto.randomUUID();
-        await redis.set(`ad_draft:${draftId}`, JSON.stringify({
+        // Initialize Draft Session
+        const draft = {
           userId: user.id,
           text: text,
           htmlContent: htmlContent,
           mediaUrl: mediaUrl,
           mediaType: mediaType,
-          media_file_id: mediaUrl // Storing file_id for later download
-        }), 'EX', 3600);
+          media_file_id: mediaUrl,
+          buttons: [],
+          targetImpressions: 1000,
+          targeting: { languages: ['uz', 'ru', 'en'] }
+        };
 
-        const keyboard = new InlineKeyboard()
-          .add({ 
-            text: "✅ Reklama sifatida saqlash", 
-            callback_data: `create_ad_${draftId}`,
-            style: 'success'
-          })
-          .row()
-          .add({ 
-            text: "❌ Bekor qilish", 
-            callback_data: "cancel_ad",
-            style: 'danger'
-          });
+        const session = {
+          step: 'DRAFT_MENU',
+          draft: draft
+        };
 
-        await ctx.reply(`<b>Reklama qoralamasi tayyor!</b>\n\n${mediaType !== 'NONE' ? `<i>[Media: ${mediaType}]</i>\n` : ''}Kontent:\n${htmlContent}\n\n<i>Davom etamizmi?</i>`, {
-          parse_mode: 'HTML',
-          reply_markup: keyboard
-        });
+        await redis.set(sessionKey, JSON.stringify(session), 'EX', 3600);
+        await this.renderDraftMenu(ctx, telegramId, draft, true);
 
       } catch (error) {
         logger.error('Message handler error:', error);
@@ -153,10 +197,106 @@ class LoginBotHandler {
         await this.handleLanguageSet(ctx);
         return;
       }
+      
+      // Check for Draft Menu Interactions
+      if (data.startsWith('draft_')) {
+        await this.handleDraftInteractions(ctx, data);
+        return;
+      }
+
       await this.handleCallbackQuery(ctx);
     });
 
     logger.info('Login bot handlers setup complete');
+  }
+
+  /**
+   * Render the interactive Draft Menu
+   */
+  async renderDraftMenu(ctx, telegramId, draft, isNew = false) {
+    const keyboard = new InlineKeyboard()
+      .add({ text: "👁 Qanday ko'rinadi?", callback_data: "draft_preview", style: "primary" }).row()
+      .add({ text: "➕ Tugma qo'shish", callback_data: "draft_add_button" })
+      .add({ text: `👁‍🗨 Ko'rishlar: ${draft.targetImpressions || 1000}`, callback_data: "draft_set_impressions" }).row()
+      .add({ text: "✅ Tasdiqlash va Saqlash", callback_data: "draft_submit", style: "success" }).row()
+      .add({ text: "❌ Bekor qilish", callback_data: "draft_cancel", style: "danger" });
+
+    const messageText = `<b>📝 Reklama loyihasi</b>\n\n` +
+      `${draft.mediaType !== 'NONE' ? `📎 <b>Media:</b> ${draft.mediaType}\n` : ''}` +
+      `<b>Tugmalar:</b> ${draft.buttons?.length || 0} ta\n` +
+      `<b>Targeting tillar:</b> ${draft.targeting?.languages?.join(', ') || 'Barchasi'}\n\n` +
+      `<i>Matn:</i>\n${draft.htmlContent.substring(0, 200)}${draft.htmlContent.length > 200 ? '...' : ''}`;
+
+    if (isNew) {
+      await ctx.reply(messageText, { parse_mode: 'HTML', reply_markup: keyboard });
+    } else {
+      await ctx.reply(messageText, { parse_mode: 'HTML', reply_markup: keyboard });
+      // Note: In a robust bot, we'd edit the previous message instead of replying anew,
+      // but reply is safer for mixed media/text transitions without complex message tracking.
+    }
+  }
+
+  /**
+   * Handle interactive draft menu button clicks
+   */
+  async handleDraftInteractions(ctx, data) {
+    try {
+      const telegramId = ctx.from.id.toString();
+      const sessionKey = `ad_session:${telegramId}`;
+      const sessionJson = await redis.get(sessionKey);
+
+      if (!sessionJson) {
+        await ctx.answerCallbackQuery("❌ Sessiya eskirgan. Qaytadan boshlang.");
+        return;
+      }
+
+      const session = JSON.parse(sessionJson);
+      await ctx.answerCallbackQuery();
+
+      if (data === 'draft_preview') {
+        const keyboard = new InlineKeyboard();
+        if (session.draft.buttons && session.draft.buttons.length > 0) {
+          session.draft.buttons.forEach(btn => {
+            keyboard.url(btn.text, btn.url).row();
+          });
+        }
+        
+        const previewMsg = `<b>[Prevyu Oqimi]</b>\n\n${session.draft.htmlContent}`;
+        // Note: For actual media previews, we would sendPhoto / sendVideo here 
+        // using session.draft.media_file_id. Keeping simple for this step.
+        await ctx.reply(previewMsg, { parse_mode: 'HTML', reply_markup: keyboard });
+        return;
+      }
+
+      if (data === 'draft_add_button') {
+        session.step = 'AWAITING_BUTTON_TEXT';
+        await redis.set(sessionKey, JSON.stringify(session), 'EX', 3600);
+        await ctx.reply("<b>Tugma yozuvini yuboring:</b>\n<i>(Masalan: 🌐 Saytga o'tish)</i>", { parse_mode: 'HTML' });
+        return;
+      }
+
+      if (data === 'draft_set_impressions') {
+        session.step = 'AWAITING_IMPRESSIONS';
+        await redis.set(sessionKey, JSON.stringify(session), 'EX', 3600);
+        await ctx.reply("<b>Qancha ko'rishlar (impression) sotib olmoqchisiz?</b>\n<i>(Kamida 100 ta bo'lishi kerak. Raqam yuboring)</i>", { parse_mode: 'HTML' });
+        return;
+      }
+
+      if (data === 'draft_submit') {
+        await this.handleAdCreationFromDraft(ctx, session.draft, sessionKey);
+        return;
+      }
+
+      if (data === 'draft_cancel') {
+        await redis.del(sessionKey);
+        await ctx.editMessageText("❌ Reklama loyihasi bekor qilindi.", { parse_mode: 'HTML' });
+        return;
+      }
+
+    } catch (error) {
+      logger.error('Draft interaction error:', error);
+      await ctx.answerCallbackQuery('❌ Xatolik yuz berdi');
+    }
   }
 
   /**
@@ -583,16 +723,18 @@ class LoginBotHandler {
   /**
    * Handle ad creation from draft
    */
-  async handleAdCreationFromDraft(ctx, draftId) {
+  async handleAdCreationFromDraft(ctx, draft, sessionKey) {
     try {
-      const draftJson = await redis.get(`ad_draft:${draftId}`);
-      if (!draftJson) {
+      if (!draft) {
         await ctx.answerCallbackQuery("❌ Draft topilmadi yoki muddati o'tgan.");
         return;
       }
-
-      const draft = JSON.parse(draftJson);
       
+      // Calculate basic pricing
+      const targetImpressions = draft.targetImpressions || 1000;
+      const baseCpm = 10.0;
+      const totalCost = (targetImpressions / 1000) * baseCpm;
+
       // Create ad in database
       const ad = await prisma.ad.create({
         data: {
@@ -604,22 +746,28 @@ class LoginBotHandler {
           mediaType: draft.mediaType,
           contentType: 'HTML',
           status: 'PENDING', // Needs moderation
-          targetImpressions: 1000, 
-          totalCost: 10.0, 
-          remainingBudget: 10.0,
+          buttons: draft.buttons || [],
+          targeting: draft.targeting || {},
+          targetImpressions: targetImpressions, 
+          totalCost: totalCost, 
+          remainingBudget: totalCost,
           deliveredImpressions: 0,
-          finalCpm: 10.0,
-          platformFee: 1.0,
+          baseCpm: baseCpm,
+          finalCpm: baseCpm,
+          platformFee: totalCost * 0.1, // 10% fee example
+          botOwnerRevenue: totalCost * 0.9,
         }
       });
 
       await ctx.answerCallbackQuery("✅");
-      await ctx.editMessageText(`✅ <b>Reklama muvaffaqiyatli saqlandi!</b>\n\nID: <code>${ad.id}</code>\nStatus: <b>PENDING</b>\n\n<i>Moderatsiyadan so'ng tarqatish boshlanadi.</i>`, {
+      await ctx.editMessageText(`✅ <b>Reklama muvaffaqiyatli saqlandi!</b>\n\nID: <code>${ad.id}</code>\nTaassurotlar: <b>${targetImpressions}</b>\nStatus: <b>Kutilmoqda (PENDING)</b>\n\n<i>Moderatsiyadan so'ng tarqatish boshlanadi.</i>`, {
         parse_mode: 'HTML'
       });
 
-      // Cleanup
-      await redis.del(`ad_draft:${draftId}`);
+      // Cleanup session
+      if (sessionKey) {
+        await redis.del(sessionKey);
+      }
       
       logger.info(`Ad created from bot draft: ${ad.id}`);
     } catch (error) {
