@@ -1,5 +1,6 @@
 import { Router } from 'express';
 import adTrackingService from '../../services/ad/adTrackingService.js';
+import tracking from '../../utils/tracking.js';
 import logger from '../../utils/logger.js';
 
 const router = Router();
@@ -9,19 +10,27 @@ const router = Router();
  * Click tracking redirect
  */
 router.get('/:token', async (req, res) => {
+  const { token } = req.params;
   try {
-    const { token } = req.params;
-    const ipAddress = req.ip;
-    const userAgent = req.get('user-agent');
-    const referer = req.get('referer');
-
-    const result = await adTrackingService.recordClick(token, ipAddress, userAgent, referer);
-
-    // Redirect to original URL
-    res.redirect(result.redirectUrl);
+    const result = await adTrackingService.recordClick(
+      token,
+      req.ip,
+      req.get('user-agent'),
+      req.get('referer')
+    );
+    return res.redirect(result.redirectUrl);
   } catch (error) {
-    logger.error('Click tracking error:', error);
-    res.status(404).send('Link not found');
+    logger.error('Click tracking error:', error.message);
+    // Even if recording fails, still redirect the user to the original URL
+    try {
+      const data = tracking.decryptToken(token);
+      if (data?.originalUrl) {
+        return res.redirect(data.originalUrl);
+      }
+    } catch (_) {
+      // ignore decrypt error
+    }
+    return res.status(404).send('Link not found');
   }
 });
 

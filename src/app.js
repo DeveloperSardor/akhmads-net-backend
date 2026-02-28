@@ -171,6 +171,35 @@ app.get('/api/docs', (req, res) => {
 // API v1 routes
 app.use('/api/v1', apiV1Routes);
 
+// ==================== CLICK TRACKING SHORT ROUTE ====================
+// Handles /t/:token — short tracking URLs embedded in ad buttons
+app.get('/t/:token', async (req, res) => {
+  const { token } = req.params;
+  try {
+    const adTrackingService = (await import('./services/ad/adTrackingService.js')).default;
+    const result = await adTrackingService.recordClick(
+      token,
+      req.ip,
+      req.get('user-agent'),
+      req.get('referer')
+    );
+    return res.redirect(result.redirectUrl);
+  } catch (err) {
+    // Try to at least redirect to the original URL even if recording fails
+    try {
+      const tracking = (await import('./utils/tracking.js')).default;
+      const data = tracking.decryptToken(token);
+      if (data?.originalUrl) {
+        return res.redirect(data.originalUrl);
+      }
+    } catch (_) {
+      // ignore
+    }
+    logger.error('Click tracking /t/ error:', err.message);
+    return res.status(404).send('Link not found');
+  }
+});
+
 // ==================== ERROR HANDLING ====================
 // 404 handler
 app.use(notFoundHandler);
