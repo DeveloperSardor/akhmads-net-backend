@@ -85,9 +85,10 @@ class Tracking {
    * @param {array} buttons - Array of button objects
    * @param {string} adId - Ad ID
    * @param {string} botId - Bot ID
+   * @param {string} telegramUserId - Telegram user ID (optional)
    * @returns {array} - Buttons with tracking URLs
    */
-  wrapButtonsWithTracking(buttons, adId, botId) {
+  wrapButtonsWithTracking(buttons, adId, botId, telegramUserId = null) {
     if (!buttons || !Array.isArray(buttons)) {
       return [];
     }
@@ -99,6 +100,7 @@ class Tracking {
         adId,
         botId,
         originalUrl: button.url,
+        telegramUserId,
       });
 
       return {

@@ -157,7 +157,7 @@ class DistributionService {
       const botToken = encryption.decrypt(bot.tokenEncrypted);
 
       // Prepare message
-      const message = await this.prepareAdMessage(ad, botId);
+      const message = await this.prepareAdMessage(ad, botId, telegramUserId);
 
       // Send via Telegram
       try {
@@ -263,7 +263,7 @@ class DistributionService {
   /**
    * Prepare ad message with tracking
    */
-  async prepareAdMessage(ad, botId) {
+  async prepareAdMessage(ad, botId, telegramUserId = null) {
     try {
       let text = ad.text;
 
@@ -280,8 +280,8 @@ class DistributionService {
       let replyMarkup = null;
       if (ad.buttons) {
         const buttons = ad.buttons;
-        const processedButtons = ad.trackingEnabled 
-          ? tracking.wrapButtonsWithTracking(buttons, ad.id, botId)
+        const processedButtons = ad.trackingEnabled
+          ? tracking.wrapButtonsWithTracking(buttons, ad.id, botId, telegramUserId)
           : buttons;
 
         replyMarkup = {
