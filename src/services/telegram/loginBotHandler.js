@@ -1018,30 +1018,30 @@ class LoginBotHandler {
         return;
       }
 
-      const withdrawal = await prisma.withdrawRequest.findUnique({ where: { id: withdrawalId } });
-      if (!withdrawal) {
-        await ctx.answerCallbackQuery('❌ So\'rov topilmadi');
-        return;
-      }
+      const withdrawal = await prisma.withdrawRequest.findUnique({
+        where: { id: withdrawalId },
+        include: { user: { select: { telegramId: true, locale: true, firstName: true } } },
+      });
+      if (!withdrawal) { await ctx.answerCallbackQuery('❌ So\'rov topilmadi'); return; }
       if (!['REQUESTED', 'PENDING_REVIEW'].includes(withdrawal.status)) {
         await ctx.answerCallbackQuery(`⚠️ Bu so'rov allaqachon: ${withdrawal.status}`);
         return;
       }
 
-      // Import withdrawService dynamically to avoid circular deps
       const { default: withdrawService } = await import('../payments/withdrawService.js');
       await withdrawService.approveWithdrawal(withdrawalId, admin.id);
 
       await ctx.answerCallbackQuery('✅ Tasdiqlandi!');
+      const originalText = ctx.callbackQuery.message?.text || ctx.callbackQuery.message?.caption || '';
       await ctx.editMessageText(
-        ctx.message?.text || ctx.callbackQuery.message?.text || '' + `\n\n✅ <b>Tasdiqlandi!</b> (Admin: ${ctx.from.first_name})`,
+        `${originalText}\n\n✅ <b>TASDIQLANDI</b> — @${ctx.from.username || ctx.from.first_name}`,
         { parse_mode: 'HTML' }
-      );
+      ).catch(() => {});
 
       logger.info(`Withdrawal ${withdrawalId} approved via bot by admin ${admin.id}`);
     } catch (error) {
       logger.error('Bot withdraw approve error:', error);
-      await ctx.answerCallbackQuery(`❌ Xatolik: ${error.message}`);
+      await ctx.answerCallbackQuery(`❌ Xatolik: ${error.message?.substring(0, 50)}`);
     }
   }
 
@@ -1058,13 +1058,13 @@ class LoginBotHandler {
         return;
       }
 
-      const withdrawal = await prisma.withdrawRequest.findUnique({ where: { id: withdrawalId } });
-      if (!withdrawal) {
-        await ctx.answerCallbackQuery('❌ So\'rov topilmadi');
-        return;
-      }
+      const withdrawal = await prisma.withdrawRequest.findUnique({
+        where: { id: withdrawalId },
+        include: { user: { select: { telegramId: true, locale: true, firstName: true } } },
+      });
+      if (!withdrawal) { await ctx.answerCallbackQuery('❌ So\'rov topilmadi'); return; }
       if (!['REQUESTED', 'PENDING_REVIEW'].includes(withdrawal.status)) {
-        await ctx.answerCallbackQuery(`⚠️ Bu so'rov allaqachon: ${withdrawal.status}`);
+        await ctx.answerCallbackQuery(`⚠️ Allaqachon: ${withdrawal.status}`);
         return;
       }
 
@@ -1072,21 +1072,31 @@ class LoginBotHandler {
       await withdrawService.rejectWithdrawal(withdrawalId, admin.id, 'Admin tomonidan rad etildi');
 
       await ctx.answerCallbackQuery('❌ Rad etildi!');
+      const originalText = ctx.callbackQuery.message?.text || ctx.callbackQuery.message?.caption || '';
       await ctx.editMessageText(
-        (ctx.callbackQuery.message?.text || '') + `\n\n❌ <b>Rad etildi!</b> (Admin: ${ctx.from.first_name})`,
+        `${originalText}\n\n❌ <b>RAD ETILDI</b> — @${ctx.from.username || ctx.from.first_name}`,
         { parse_mode: 'HTML' }
-      );
+      ).catch(() => {});
 
       logger.info(`Withdrawal ${withdrawalId} rejected via bot by admin ${admin.id}`);
     } catch (error) {
       logger.error('Bot withdraw reject error:', error);
-      await ctx.answerCallbackQuery(`❌ Xatolik: ${error.message}`);
+      await ctx.answerCallbackQuery(`❌ Xatolik: ${error.message?.substring(0, 50)}`);
     }
   }
 
   // ─────────────────────────────────────────────────────────────────
   // ADMIN ACTIONS: Ad Approve / Reject / Edit Request
   // ─────────────────────────────────────────────────────────────────
+
+  async _notifyUser(targetTelegramId, locale, message) {
+    try {
+      if (!targetTelegramId) return;
+      await this.bot.api.sendMessage(targetTelegramId, message, { parse_mode: 'HTML' });
+    } catch (e) {
+      logger.warn(`User ${targetTelegramId} notification failed: ${e.message}`);
+    }
+  }
 
   async handleAdApprove(ctx, adId) {
     try {
@@ -1098,26 +1108,42 @@ class LoginBotHandler {
         return;
       }
 
-      const ad = await prisma.ad.findUnique({ where: { id: adId } });
+      const ad = await prisma.ad.findUnique({
+        where: { id: adId },
+        include: { advertiser: { select: { telegramId: true, locale: true, firstName: true } } },
+      });
       if (!ad) { await ctx.answerCallbackQuery('❌ Reklama topilmadi'); return; }
       if (ad.status !== 'PENDING_REVIEW') {
         await ctx.answerCallbackQuery(`⚠️ Status: ${ad.status}`);
         return;
       }
 
+      // ✅ To'g'ri field nomlar: moderatedBy, moderatedAt
       await prisma.ad.update({
         where: { id: adId },
-        data: { status: 'ACTIVE', reviewedBy: admin.id, reviewedAt: new Date() },
+        data: { status: 'ACTIVE', moderatedBy: admin.id, moderatedAt: new Date() },
       });
 
       await ctx.answerCallbackQuery('✅ Reklama tasdiqlandi!');
+      const originalText = ctx.callbackQuery.message?.text || '';
       await ctx.editMessageText(
-        (ctx.callbackQuery.message?.text || '') + `\n\n✅ <b>TASDIQLANDI</b> by ${ctx.from.first_name}`,
+        `${originalText}\n\n✅ <b>TASDIQLANDI</b> — @${ctx.from.username || ctx.from.first_name}`,
         { parse_mode: 'HTML' }
-      );
+      ).catch(() => {});
+
+      // ✅ Reklamachiga uning tilida xabar
+      if (ad.advertiser?.telegramId) {
+        const locale = ad.advertiser.locale || 'uz';
+        const msgs = {
+          uz: `✅ <b>Reklamangiz tasdiqlandi!</b>\n\n🆔 Ad ID: <code>${adId}</code>\n\nReklamangiz tarqatilishni boshladi. Barakalla!`,
+          ru: `✅ <b>Ваша реклама одобрена!</b>\n\n🆔 Ad ID: <code>${adId}</code>\n\nРаспространение рекламы начато. Поздравляем!`,
+          en: `✅ <b>Your ad has been approved!</b>\n\n🆔 Ad ID: <code>${adId}</code>\n\nYour ad is now live. Congratulations!`,
+        };
+        await this._notifyUser(ad.advertiser.telegramId, locale, msgs[locale] || msgs.uz);
+      }
     } catch (error) {
       logger.error('Bot ad approve error:', error);
-      await ctx.answerCallbackQuery(`❌ Xatolik: ${error.message}`);
+      await ctx.answerCallbackQuery(`❌ Xatolik: ${error.message?.substring(0, 50)}`);
     }
   }
 
@@ -1131,22 +1157,38 @@ class LoginBotHandler {
         return;
       }
 
-      const ad = await prisma.ad.findUnique({ where: { id: adId } });
+      const ad = await prisma.ad.findUnique({
+        where: { id: adId },
+        include: { advertiser: { select: { telegramId: true, locale: true } } },
+      });
       if (!ad) { await ctx.answerCallbackQuery('❌ Reklama topilmadi'); return; }
 
+      // ✅ To'g'ri field nomlar
       await prisma.ad.update({
         where: { id: adId },
-        data: { status: 'REJECTED', reviewedBy: admin.id, reviewedAt: new Date() },
+        data: { status: 'REJECTED', moderatedBy: admin.id, moderatedAt: new Date() },
       });
 
       await ctx.answerCallbackQuery('❌ Reklama rad etildi!');
+      const originalText = ctx.callbackQuery.message?.text || '';
       await ctx.editMessageText(
-        (ctx.callbackQuery.message?.text || '') + `\n\n❌ <b>RAD ETILDI</b> by ${ctx.from.first_name}`,
+        `${originalText}\n\n❌ <b>RAD ETILDI</b> — @${ctx.from.username || ctx.from.first_name}`,
         { parse_mode: 'HTML' }
-      );
+      ).catch(() => {});
+
+      // ✅ Reklamachiga uning tilida xabar
+      if (ad.advertiser?.telegramId) {
+        const locale = ad.advertiser.locale || 'uz';
+        const msgs = {
+          uz: `❌ <b>Reklamangiz rad etildi</b>\n\n🆔 Ad ID: <code>${adId}</code>\n\nAfsuski, reklamangiz moderatsiyadan o'tmadi. Reklamani qayta ko'rib, qayta yuboring.`,
+          ru: `❌ <b>Ваша реклама отклонена</b>\n\n🆔 Ad ID: <code>${adId}</code>\n\nК сожалению, ваша реклама не прошла модерацию. Пересмотрите и отправьте снова.`,
+          en: `❌ <b>Your ad was rejected</b>\n\n🆔 Ad ID: <code>${adId}</code>\n\nUnfortunately, your ad did not pass moderation. Please review and resubmit.`,
+        };
+        await this._notifyUser(ad.advertiser.telegramId, locale, msgs[locale] || msgs.uz);
+      }
     } catch (error) {
       logger.error('Bot ad reject error:', error);
-      await ctx.answerCallbackQuery(`❌ Xatolik: ${error.message}`);
+      await ctx.answerCallbackQuery(`❌ Xatolik: ${error.message?.substring(0, 50)}`);
     }
   }
 
@@ -1162,32 +1204,36 @@ class LoginBotHandler {
 
       const ad = await prisma.ad.findUnique({
         where: { id: adId },
-        include: { advertiser: { select: { telegramId: true, firstName: true } } },
+        include: { advertiser: { select: { telegramId: true, locale: true } } },
       });
       if (!ad) { await ctx.answerCallbackQuery('❌ Reklama topilmadi'); return; }
 
+      // ✅ To'g'ri field nomlar (EDIT_REQUESTED status schema da bo'lmasligi mumkin, PENDING_REVIEW ga qaytaramiz)
       await prisma.ad.update({
         where: { id: adId },
-        data: { status: 'EDIT_REQUESTED', reviewedBy: admin.id, reviewedAt: new Date() },
+        data: { status: 'DRAFT', moderatedBy: admin.id, moderatedAt: new Date() },
       });
 
-      // Reklama beruvchiga xabar yuborish
-      if (ad.advertiser?.telegramId) {
-        await ctx.api.sendMessage(
-          ad.advertiser.telegramId,
-          `✏️ <b>Reklamangizni tahrirlash so'rovi</b>\n\nAdmin reklamangizni ko'rib chiqdi va tahrirlashni so'radi.\n🆔 Ad ID: <code>${adId}</code>\n\nIltimos, admin paneliga kirb reklamangizni tahrirlang.`,
-          { parse_mode: 'HTML' }
-        ).catch(() => {});
-      }
-
       await ctx.answerCallbackQuery('✏️ Edit so\'rovi yuborildi!');
+      const originalText = ctx.callbackQuery.message?.text || '';
       await ctx.editMessageText(
-        (ctx.callbackQuery.message?.text || '') + `\n\n✏️ <b>EDIT SO'RALDI</b> by ${ctx.from.first_name}`,
+        `${originalText}\n\n✏️ <b>EDIT SO'RALDI</b> — @${ctx.from.username || ctx.from.first_name}`,
         { parse_mode: 'HTML' }
-      );
+      ).catch(() => {});
+
+      // ✅ Reklamachiga uning tilida xabar
+      if (ad.advertiser?.telegramId) {
+        const locale = ad.advertiser.locale || 'uz';
+        const msgs = {
+          uz: `✏️ <b>Reklamangizni tahrirlash so'raldi</b>\n\n🆔 Ad ID: <code>${adId}</code>\n\nAdmin reklamangizni ko'rib chiqdi va o'zgartirishlar so'radi.\n\nIltimos, saytga kirib reklamangizni tahrirlang va qayta yuboring.`,
+          ru: `✏️ <b>Запрошено редактирование рекламы</b>\n\n🆔 Ad ID: <code>${adId}</code>\n\nАдмин запросил изменения в вашей рекламе.\n\nПожалуйста, зайдите на сайт, отредактируйте и отправьте снова.`,
+          en: `✏️ <b>Edit requested for your ad</b>\n\n🆔 Ad ID: <code>${adId}</code>\n\nAn admin has reviewed your ad and requested changes.\n\nPlease log in to the site, edit, and resubmit.`,
+        };
+        await this._notifyUser(ad.advertiser.telegramId, locale, msgs[locale] || msgs.uz);
+      }
     } catch (error) {
       logger.error('Bot ad request edit error:', error);
-      await ctx.answerCallbackQuery(`❌ Xatolik: ${error.message}`);
+      await ctx.answerCallbackQuery(`❌ Xatolik: ${error.message?.substring(0, 50)}`);
     }
   }
 
@@ -1205,22 +1251,38 @@ class LoginBotHandler {
         return;
       }
 
-      const bot = await prisma.bot.findUnique({ where: { id: botId } });
+      const bot = await prisma.bot.findUnique({
+        where: { id: botId },
+        include: { owner: { select: { telegramId: true, locale: true } } },
+      });
       if (!bot) { await ctx.answerCallbackQuery('❌ Bot topilmadi'); return; }
 
+      // ✅ BotStatus: ACTIVE (schema dagi valid value)
       await prisma.bot.update({
         where: { id: botId },
         data: { status: 'ACTIVE', verifiedAt: new Date() },
       });
 
       await ctx.answerCallbackQuery('✅ Bot tasdiqlandi!');
+      const originalText = ctx.callbackQuery.message?.text || '';
       await ctx.editMessageText(
-        (ctx.callbackQuery.message?.text || '') + `\n\n✅ <b>BOT TASDIQLANDI</b> by ${ctx.from.first_name}`,
+        `${originalText}\n\n✅ <b>BOT TASDIQLANDI</b> — @${ctx.from.username || ctx.from.first_name}`,
         { parse_mode: 'HTML' }
-      );
+      ).catch(() => {});
+
+      // ✅ Bot egasiga uning tilida xabar
+      if (bot.owner?.telegramId) {
+        const locale = bot.owner.locale || 'uz';
+        const msgs = {
+          uz: `✅ <b>Botingiz tasdiqlandi!</b>\n\n🤖 Bot: @${bot.username}\n\nBotingiz endi reklama tarqatishni boshlashi mumkin. Barakalla!`,
+          ru: `✅ <b>Ваш бот одобрен!</b>\n\n🤖 Bot: @${bot.username}\n\nТеперь ваш бот может начать распространение рекламы. Поздравляем!`,
+          en: `✅ <b>Your bot has been approved!</b>\n\n🤖 Bot: @${bot.username}\n\nYour bot can now start distributing ads. Congratulations!`,
+        };
+        await this._notifyUser(bot.owner.telegramId, locale, msgs[locale] || msgs.uz);
+      }
     } catch (error) {
       logger.error('Bot approve error:', error);
-      await ctx.answerCallbackQuery(`❌ Xatolik: ${error.message}`);
+      await ctx.answerCallbackQuery(`❌ Xatolik: ${error.message?.substring(0, 50)}`);
     }
   }
 
@@ -1234,7 +1296,10 @@ class LoginBotHandler {
         return;
       }
 
-      const bot = await prisma.bot.findUnique({ where: { id: botId } });
+      const bot = await prisma.bot.findUnique({
+        where: { id: botId },
+        include: { owner: { select: { telegramId: true, locale: true } } },
+      });
       if (!bot) { await ctx.answerCallbackQuery('❌ Bot topilmadi'); return; }
 
       await prisma.bot.update({
@@ -1243,13 +1308,25 @@ class LoginBotHandler {
       });
 
       await ctx.answerCallbackQuery('❌ Bot rad etildi!');
+      const originalText = ctx.callbackQuery.message?.text || '';
       await ctx.editMessageText(
-        (ctx.callbackQuery.message?.text || '') + `\n\n❌ <b>BOT RAD ETILDI</b> by ${ctx.from.first_name}`,
+        `${originalText}\n\n❌ <b>BOT RAD ETILDI</b> — @${ctx.from.username || ctx.from.first_name}`,
         { parse_mode: 'HTML' }
-      );
+      ).catch(() => {});
+
+      // ✅ Bot egasiga uning tilida xabar
+      if (bot.owner?.telegramId) {
+        const locale = bot.owner.locale || 'uz';
+        const msgs = {
+          uz: `❌ <b>Botingiz rad etildi</b>\n\n🤖 Bot: @${bot.username}\n\nAfsuski, botingiz moderatsiyadan o'tmadi. Botingizni tekshirib, qayta ro'yxatdan o'ting.`,
+          ru: `❌ <b>Ваш бот отклонён</b>\n\n🤖 Bot: @${bot.username}\n\nК сожалению, ваш бот не прошёл модерацию. Проверьте бота и зарегистрируйтесь снова.`,
+          en: `❌ <b>Your bot was rejected</b>\n\n🤖 Bot: @${bot.username}\n\nUnfortunately, your bot did not pass moderation. Please review and re-register.`,
+        };
+        await this._notifyUser(bot.owner.telegramId, locale, msgs[locale] || msgs.uz);
+      }
     } catch (error) {
       logger.error('Bot reject error:', error);
-      await ctx.answerCallbackQuery(`❌ Xatolik: ${error.message}`);
+      await ctx.answerCallbackQuery(`❌ Xatolik: ${error.message?.substring(0, 50)}`);
     }
   }
 }
