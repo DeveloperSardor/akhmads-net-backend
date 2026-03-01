@@ -6,6 +6,7 @@ import { publicApiCors } from '../middleware/cors.js';
 import { validate } from '../middleware/validate.js';
 import { body } from 'express-validator';
 import logger from '../utils/logger.js';
+import categoryService from '../services/category/categoryService.js';
 
 const router = Router();
 
@@ -68,6 +69,21 @@ router.get('/health', (req, res) => {
     message: 'API is healthy',
     timestamp: new Date().toISOString(),
   });
+});
+
+
+/**
+ * GET /api/categories
+ * Public - Get all active categories
+ */
+router.get('/categories', async (req, res) => {
+  try {
+    const categories = await categoryService.getAll();
+    res.json({ success: true, data: categories });
+  } catch (error) {
+    logger.error('Get categories error:', error);
+    res.status(500).json({ success: false, error: 'Failed to get categories' });
+  }
 });
 
 export default router;

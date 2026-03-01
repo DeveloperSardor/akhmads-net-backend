@@ -192,10 +192,10 @@ class PricingService {
         where: { key: 'platform_fee_percentage' },
       });
 
-      return parseFloat(setting?.value || '10');
+      return parseFloat(setting?.value || '20');
     } catch (error) {
       logger.error('Get platform fee failed:', error);
-      return 10; // Default
+      return 20; // Default
     }
   }
 
@@ -252,8 +252,16 @@ class PricingService {
         throw new ValidationError('No pricing tier found for this impression count');
       }
 
-      // Get platform fee
-      const platformFeePercentage = await this.getPlatformFee();
+      // Get platform settings
+      const platformSettings = await prisma.platformSettings.findMany({
+        where: { key: { in: ['platform_fee_percentage', 'ad_base_cpm'] } },
+      });
+
+      const feeSetting = platformSettings.find(s => s.key === 'platform_fee_percentage');
+      const cpmSetting = platformSettings.find(s => s.key === 'ad_base_cpm');
+
+      const platformFeePercentage = parseFloat(feeSetting?.value || '20');
+      const baseCpm = cpmSetting ? parseFloat(cpmSetting.value) : 1.5;
 
       // Calculate pricing
       const pricing = pricingCalculator.calculateAdCost({
@@ -263,6 +271,7 @@ class PricingService {
         targeting: targeting || {},
         cpmBid: cpmBid || 0,
         platformFeePercentage,
+        baseCpm,
       });
 
       return {

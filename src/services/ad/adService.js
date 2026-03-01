@@ -28,11 +28,15 @@ class AdService {
       const tier = pricingCalculator.findTier(tiers, data.impressions);
 
       // Get platform settings
-      const platformFeeSettings = await prisma.platformSettings.findUnique({
-        where: { key: 'platform_fee_percentage' },
+      const platformSettings = await prisma.platformSettings.findMany({
+        where: { key: { in: ['platform_fee_percentage', 'ad_base_cpm'] } },
       });
 
-      const platformFeePercentage = parseFloat(platformFeeSettings?.value || '10');
+      const feeSetting = platformSettings.find(s => s.key === 'platform_fee_percentage');
+      const cpmSetting = platformSettings.find(s => s.key === 'ad_base_cpm');
+
+      const platformFeePercentage = parseFloat(feeSetting?.value || '20');
+      const baseCpm = cpmSetting ? parseFloat(cpmSetting.value) : 1.5;
 
       // Get promo code if provided
       let promoCode = null;
@@ -58,6 +62,7 @@ class AdService {
         targeting: data.targeting || {},
         cpmBid: data.cpmBid || 0,
         platformFeePercentage,
+        baseCpm,
         promoCode,
       });
 

@@ -90,9 +90,16 @@ class SettingsService {
   async bulkUpdateSettings(settings, adminId) {
     try {
       const updates = Object.entries(settings).map(([key, value]) =>
-        prisma.platformSettings.update({
+        prisma.platformSettings.upsert({
           where: { key },
-          data: {
+          create: {
+            key,
+            value: value.toString(),
+            valueType: typeof value === 'boolean' ? 'boolean' : typeof value === 'number' ? 'number' : 'string',
+            category: 'general',
+            updatedBy: adminId,
+          },
+          update: {
             value: value.toString(),
             updatedBy: adminId,
           },

@@ -204,20 +204,33 @@ class LoginBotHandler {
     const user = await prisma.user.findUnique({ where: { telegramId } });
     const locale = user?.locale || 'uz';
 
-    const cats = [
-      { id: 'tech', label: i18n.t(locale, 'tech_enthusiasts') || 'Tech Enthusiasts' },
-      { id: 'shoppers', label: i18n.t(locale, 'active_shoppers') || 'Active Shoppers' },
-      { id: 'gamers', label: i18n.t(locale, 'gamers') || 'Gamers' },
-      { id: 'crypto', label: i18n.t(locale, 'crypto_traders') || 'Crypto Traders' }
-    ];
+    // Fetch categories from DB
+    const dbCategories = await prisma.category.findMany({
+      where: { isActive: true },
+      orderBy: { sortOrder: 'asc' }
+    });
+
+    const cats = dbCategories.map(cat => ({
+      id: cat.slug,
+      label: `${cat.icon} ${locale === 'ru' ? cat.nameRu : locale === 'en' ? cat.nameEn : cat.nameUz}`
+    }));
     
     const kb = new InlineKeyboard();
     const curr = draft.targeting?.aiSegments || [];
     
-    cats.forEach(cat => {
-      const isSelected = curr.includes(cat.id);
-      kb.add({ text: `${isSelected ? '✅' : '⬜️'} ${cat.label}`, callback_data: `draft_toggle_cat_${cat.id}` }).row();
-    });
+    // Show categories in 2 columns for better layout
+    for (let i = 0; i < cats.length; i += 2) {
+      const cat1 = cats[i];
+      const isSelected1 = curr.includes(cat1.id);
+      kb.add({ text: `${isSelected1 ? '✅' : '⬜️'} ${cat1.label}`, callback_data: `draft_toggle_cat_${cat1.id}` });
+      
+      if (i + 1 < cats.length) {
+        const cat2 = cats[i + 1];
+        const isSelected2 = curr.includes(cat2.id);
+        kb.add({ text: `${isSelected2 ? '✅' : '⬜️'} ${cat2.label}`, callback_data: `draft_toggle_cat_${cat2.id}` });
+      }
+      kb.row();
+    }
     
     kb.add({ text: i18n.t(locale, 'next_impressions'), callback_data: "draft_next_impressions", style: "primary" });
     
@@ -270,7 +283,16 @@ class LoginBotHandler {
       return `  ${i + 1}. ${ce} ${b.text}`;
     }).join('\n');
 
-    const audienceDisplay = cats.length > 0 ? cats.map(c => i18n.t(locale, c === 'tech' ? 'tech_enthusiasts' : c === 'shoppers' ? 'active_shoppers' : c === 'gamers' ? 'gamers' : 'crypto_traders')).join(', ') : i18n.t(locale, 'draft_all_users');
+    // Fetch categories from DB for audience display
+    const dbCategories = await prisma.category.findMany({
+      where: { isActive: true },
+      orderBy: { sortOrder: 'asc' }
+    });
+    const catMap = {};
+    dbCategories.forEach(c => {
+      catMap[c.slug] = `${c.icon} ${locale === 'ru' ? c.nameRu : locale === 'en' ? c.nameEn : c.nameUz}`;
+    });
+    const audienceDisplay = cats.length > 0 ? cats.map(c => catMap[c] || c).join(', ') : i18n.t(locale, 'draft_all_users');
 
     const messageText = `${i18n.t(locale, 'draft_summary_title')}\n\n` +
       `${draft.mediaType !== 'NONE' ? `${i18n.t(locale, 'draft_media', { type: draft.mediaType })}\n` : ''}` +

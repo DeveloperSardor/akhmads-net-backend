@@ -33,23 +33,24 @@ class PricingCalculator {
   }
 
   /**
-   * Calculate base CPM from tier
-   * ✅ FIXED - Proper Decimal handling
+   * Calculate base CPM
    */
-  calculateBaseCPM(tier, impressions) {
+  calculateBaseCPM(params) {
+    // If baseCpm is explicitly provided (e.g. from PlatformSettings)
+    if (params.baseCpm !== undefined && params.baseCpm !== null) {
+      return parseFloat(params.baseCpm);
+    }
+    
+    // Fallback to tier-based or default
+    const tier = params.tier;
     if (!tier) {
-      logger.warn('No tier provided, using default CPM');
-      return 5.0; // Default $5 CPM
+      logger.warn('No tier or baseCpm provided, using default CPM');
+      return 1.5; // Default $1.5 CPM
     }
 
-    // ✅ Convert Decimal to float properly
-    const priceUsd = parseFloat(tier.priceUsd?.toString() || tier.priceUsd || 5.0);
-    const tierImpressions = parseInt(tier.impressions);
-
-    // Calculate CPM (Cost Per Mille - per 1000 impressions)
-    const cpm = (priceUsd / tierImpressions) * 1000;
-    
-    return cpm;
+    const priceUsd = parseFloat(tier.priceUsd?.toString() || tier.priceUsd || 1.5);
+    const tierImpressions = parseInt(tier.impressions || 1000);
+    return (priceUsd / tierImpressions) * 1000;
   }
 
   /**
@@ -108,8 +109,9 @@ class PricingCalculator {
       category,
       targeting = {},
       cpmBid = 0,
-      platformFeePercentage = 10,
+      platformFeePercentage = 20, // Default to 20%
       promoCode = null,
+      baseCpm = null,
     } = params;
 
     try {
@@ -119,7 +121,7 @@ class PricingCalculator {
       }
 
       // 1. Base CPM
-      const baseCPM = this.calculateBaseCPM(tier, impressions);
+      const baseCPM = this.calculateBaseCPM({ tier, impressions, baseCpm });
 
       // 2. Category multiplier
       const categoryMultiplier = this.getCategoryMultiplier(category);
@@ -181,7 +183,7 @@ class PricingCalculator {
   /**
    * Calculate revenue per impression
    */
-  calculateImpressionRevenue(finalCPM, platformFeePercentage = 10) {
+  calculateImpressionRevenue(finalCPM, platformFeePercentage = 20) {
     const revenuePerImpression = finalCPM / 1000;
     const platformFee = (revenuePerImpression * platformFeePercentage) / 100;
     const botOwnerEarns = revenuePerImpression - platformFee;

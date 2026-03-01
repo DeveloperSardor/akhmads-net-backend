@@ -105,7 +105,7 @@ router.post(
  */
 router.get("/targeting/options", async (req, res, next) => {
   try {
-    const options = adTargetingService.getTargetingOptions();
+    const options = await adTargetingService.getTargetingOptions();
 
     response.success(res, { options });
   } catch (error) {

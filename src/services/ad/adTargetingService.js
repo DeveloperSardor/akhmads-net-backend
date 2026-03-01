@@ -1,5 +1,5 @@
 // src/services/ad/adTargetingService.js
-import { AD_CATEGORIES, AI_SEGMENTS } from '../../config/constants.js';
+import prisma from '../../config/database.js';
 import logger from '../../utils/logger.js';
 
 /**
@@ -8,20 +8,27 @@ import logger from '../../utils/logger.js';
  */
 class AdTargetingService {
   /**
-   * Get available targeting options
+   * Get available targeting options (categories from DB)
    */
-  getTargetingOptions() {
+  async getTargetingOptions() {
+    const categories = await prisma.category.findMany({
+      where: { isActive: true },
+      orderBy: { sortOrder: 'asc' },
+    });
+
     return {
-      categories: AD_CATEGORIES.map(c => ({
-        id: c.id,
+      categories: categories.map(c => ({
+        id: c.slug,
         name: { uz: c.nameUz, ru: c.nameRu, en: c.nameEn },
-        multiplier: c.multiplier,
+        icon: c.icon,
+        multiplier: 1,
       })),
-      aiSegments: AI_SEGMENTS.map(s => ({
-        id: s.id,
-        name: { uz: s.nameUz, ru: s.nameRu, en: s.nameEn },
-        description: s.description,
-        multiplier: s.multiplier,
+      aiSegments: categories.map(c => ({
+        id: c.slug,
+        name: { uz: c.nameUz, ru: c.nameRu, en: c.nameEn },
+        icon: c.icon,
+        description: c.nameUz,
+        multiplier: 1,
       })),
       languages: ['uz', 'ru', 'en'],
       frequencies: ['unique', 'daily', 'weekly', 'monthly'],
@@ -31,28 +38,17 @@ class AdTargetingService {
   /**
    * Validate targeting configuration
    */
-  validateTargeting(targeting) {
+  async validateTargeting(targeting) {
     const errors = [];
 
-    // Validate categories
     if (targeting.categories) {
-      const validCategories = AD_CATEGORIES.map(c => c.id);
+      const dbCategories = await prisma.category.findMany({ where: { isActive: true } });
+      const validSlugs = dbCategories.map(c => c.slug);
       const invalidCategories = targeting.categories.filter(
-        c => !validCategories.includes(c)
+        c => !validSlugs.includes(c)
       );
       if (invalidCategories.length > 0) {
         errors.push(`Invalid categories: ${invalidCategories.join(', ')}`);
-      }
-    }
-
-    // Validate AI segments
-    if (targeting.aiSegments) {
-      const validSegments = AI_SEGMENTS.map(s => s.id);
-      const invalidSegments = targeting.aiSegments.filter(
-        s => !validSegments.includes(s)
-      );
-      if (invalidSegments.length > 0) {
-        errors.push(`Invalid AI segments: ${invalidSegments.join(', ')}`);
       }
     }
 
@@ -73,7 +69,7 @@ class AdTargetingService {
   /**
    * Get targeting summary
    */
-  getTargetingSummary(targeting) {
+  async getTargetingSummary(targeting) {
     const summary = {
       categories: [],
       aiSegments: [],
@@ -82,38 +78,24 @@ class AdTargetingService {
       estimatedMultiplier: 1.0,
     };
 
-    // Add category details
-    if (targeting.categories) {
-      summary.categories = targeting.categories.map(catId => {
-        const category = AD_CATEGORIES.find(c => c.id === catId);
-        return {
-          id: catId,
-          name: category?.nameEn || catId,
-          multiplier: category?.multiplier || 1,
-        };
+    // Add category details from DB
+    if (targeting.categories && targeting.categories.length > 0) {
+      const dbCategories = await prisma.category.findMany({
+        where: { slug: { in: targeting.categories }, isActive: true },
       });
-    }
 
-    // Add AI segment details
-    if (targeting.aiSegments) {
-      summary.aiSegments = targeting.aiSegments.map(segId => {
-        const segment = AI_SEGMENTS.find(s => s.id === segId);
+      summary.categories = targeting.categories.map(catSlug => {
+        const category = dbCategories.find(c => c.slug === catSlug);
         return {
-          id: segId,
-          name: segment?.nameEn || segId,
-          multiplier: segment?.multiplier || 1,
+          id: catSlug,
+          name: category?.nameEn || catSlug,
+          multiplier: 1,
         };
       });
     }
 
     // Calculate total multiplier
-    const categoryMultipliers = summary.categories.map(c => c.multiplier);
-    const segmentMultipliers = summary.aiSegments.map(s => s.multiplier);
-    
-    const maxCategoryMult = Math.max(...categoryMultipliers, 1);
-    const maxSegmentMult = Math.max(...segmentMultipliers, 1);
-    
-    summary.estimatedMultiplier = maxCategoryMult * maxSegmentMult;
+    summary.estimatedMultiplier = 1.0;
 
     return summary;
   }

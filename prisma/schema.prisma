@@ -602,3 +602,19 @@ model ContactMessage {
   @@index([email])
   @@map("contact_messages")
 }
+
+model Category {
+  id        String   @id @default(cuid())
+  slug      String   @unique
+  nameUz    String   @map("name_uz")
+  nameRu    String   @map("name_ru")
+  nameEn    String   @map("name_en")
+  icon      String   @default("📌")
+  sortOrder Int      @default(0) @map("sort_order")
+  isActive  Boolean  @default(true) @map("is_active")
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  @@index([isActive, sortOrder])
+  @@map("categories")
+}

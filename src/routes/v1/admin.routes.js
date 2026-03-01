@@ -8,6 +8,7 @@ import pricingService from '../../services/admin/pricingService.js';
 import settingsService from '../../services/admin/settingsService.js';
 import withdrawService from '../../services/payments/withdrawService.js';
 import adminAnalytics from '../../services/analytics/adminAnalytics.js';
+import categoryService from '../../services/category/categoryService.js';
 import { authenticate } from '../../middleware/auth.js';
 import { requireAdmin, requireModerator, requireSuperAdmin } from '../../middleware/rbac.js';
 import { validate } from '../../middleware/validate.js';
@@ -822,5 +823,125 @@ router.post(
   }
 );
 
+// ==================== CATEGORY MANAGEMENT ====================
+
+
+
+/**
+ * GET /api/v1/admin/categories
+ * Get all categories (including inactive)
+ */
+router.get('/categories', requireAdmin, async (req, res, next) => {
+  try {
+    const categories = await categoryService.getAllAdmin();
+    response.success(res, { categories });
+  } catch (error) {
+    next(error);
+  }
+});
+
+/**
+ * POST /api/v1/admin/categories
+ * Create new category
+ */
+router.post(
+  '/categories',
+  requireAdmin,
+  validate([
+    body('slug').isString().notEmpty().withMessage('Slug is required'),
+    body('nameUz').isString().notEmpty().withMessage('Uzbek name is required'),
+    body('nameRu').isString().notEmpty().withMessage('Russian name is required'),
+    body('nameEn').isString().notEmpty().withMessage('English name is required'),
+    body('icon').optional().isString(),
+    body('sortOrder').optional().isInt({ min: 0 }),
+    body('isActive').optional().isBoolean(),
+  ]),
+  async (req, res, next) => {
+    try {
+      const category = await categoryService.create(req.body);
+      response.created(res, { category }, 'Category created');
+    } catch (error) {
+      next(error);
+    }
+  }
+);
+
+/**
+ * PUT /api/v1/admin/categories/:id
+ * Update category
+ */
+router.put(
+  '/categories/:id',
+  requireAdmin,
+  validate([
+    param('id').isString(),
+    body('slug').optional().isString(),
+    body('nameUz').optional().isString(),
+    body('nameRu').optional().isString(),
+    body('nameEn').optional().isString(),
+    body('icon').optional().isString(),
+    body('sortOrder').optional().isInt({ min: 0 }),
+    body('isActive').optional().isBoolean(),
+  ]),
+  async (req, res, next) => {
+    try {
+      const category = await categoryService.update(req.params.id, req.body);
+      response.success(res, { category }, 'Category updated');
+    } catch (error) {
+      next(error);
+    }
+  }
+);
+
+/**
+ * DELETE /api/v1/admin/categories/:id
+ * Delete category
+ */
+router.delete(
+  '/categories/:id',
+  requireAdmin,
+  validate([param('id').isString()]),
+  async (req, res, next) => {
+    try {
+      await categoryService.delete(req.params.id);
+      response.success(res, null, 'Category deleted');
+    } catch (error) {
+      next(error);
+    }
+  }
+);
+
+// ========== SETTINGS ==========
+
+/**
+ * GET /api/v1/admin/settings
+ * Get all platform settings grouped by category
+ */
+router.get('/settings', requireAdmin, async (req, res, next) => {
+  try {
+    const settings = await settingsService.getAllSettings();
+    response.success(res, settings);
+  } catch (error) {
+    next(error);
+  }
+});
+
+/**
+ * PUT /api/v1/admin/settings
+ * Bulk update settings
+ */
+router.put(
+  '/settings',
+  requireAdmin,
+  validate([body('settings').isObject()]),
+  async (req, res, next) => {
+    try {
+      await settingsService.bulkUpdateSettings(req.body.settings, req.user.id);
+      response.success(res, { message: 'Settings updated successfully' });
+    } catch (error) {
+      next(error);
+    }
+  }
+);
 
 export default router;
