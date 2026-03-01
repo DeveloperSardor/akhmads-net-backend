@@ -61,18 +61,11 @@ class WithdrawService {
       throw new ValidationError(`Yechish miqdori fee dan katta bo'lishi kerak ($${fee})`);
     }
 
-    // 6. Balans tekshirish
-    const wallet = await walletService.getWallet(userId);
-    if (parseFloat(wallet.available) < totalRequired) {
-      throw new InsufficientFundsError(
-        `Yetarli mablag' yo'q. Kerak: $${totalRequired} (so'rov: $${amount} + fee: $${fee})`
-      );
-    }
-
-    // 7. Pulni rezerv qilish (available → reserved)
+    // 6. Pulni rezerv qilish (available → reserved)
+    // walletService.reserve ichida balans tekshiriladi va xatolik otiladi
     await walletService.reserve(userId, totalRequired);
 
-    // 8. Withdraw so'rovi yaratish
+    // 7. Withdraw so'rovi yaratish
     const withdrawal = await prisma.withdrawRequest.create({
       data: {
         userId,
