@@ -219,7 +219,34 @@ class BotService {
         throw new NotFoundError('Bot not found');
       }
 
-      return bot;
+      // Get impressions count
+      const impressionsCount = await prisma.impression.count({
+        where: { botId: bot.id },
+      });
+
+      // Get clicks count
+      const clicksCount = await prisma.clickEvent.count({
+        where: { botId: bot.id, clicked: true },
+      });
+
+      // Calculate CTR
+      const ctr = impressionsCount > 0
+        ? ((clicksCount / impressionsCount) * 100).toFixed(2)
+        : '0.00';
+
+      // Get total revenue
+      const totalRevenue = await prisma.impression.aggregate({
+        where: { botId: bot.id },
+        _sum: { revenue: true },
+      });
+
+      return {
+        ...bot,
+        impressionsServed: impressionsCount,
+        clicks: clicksCount,
+        ctr: parseFloat(ctr),
+        spent: parseFloat(totalRevenue._sum.revenue || 0),
+      };
     } catch (error) {
       logger.error('Get bot failed:', error);
       throw error;
