@@ -211,7 +211,7 @@ router.get(
         status,
         limit: parseInt(limit),
         offset: parseInt(offset),
-        includeArchived: archived === "true",
+        onlyArchived: archived === "true",
       });
 
       // ✅ ENRICH WITH isSaved

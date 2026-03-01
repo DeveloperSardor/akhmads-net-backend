@@ -290,12 +290,12 @@ class AdService {
    */
   async getUserAds(advertiserId, filters = {}) {
     try {
-      const { status, limit = 20, offset = 0, includeArchived = false } = filters;
+      const { status, limit = 20, offset = 0, onlyArchived = false } = filters;
       console.log('getUserAds called with filters:', filters);
 
       const where = {
         advertiserId,
-        isArchived: includeArchived,
+        isArchived: onlyArchived,
       };
 
       if (status) where.status = status;
