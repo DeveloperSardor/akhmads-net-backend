@@ -120,7 +120,7 @@ class WithdrawService {
       data: {
         userId: withdrawal.userId,
         type: 'WITHDRAW',
-        provider: 'BEP20',
+        provider: 'CRYPTO',
         coin: 'USDT',
         network: 'BEP20',
         amount: withdrawal.amount,
