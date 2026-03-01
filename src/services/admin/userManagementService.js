@@ -237,27 +237,14 @@ class UserManagementService {
         },
       });
 
-      // Create transaction record
-      await prisma.transaction.create({
-        data: {
-          userId,
-          type: 'ADJUSTMENT', // Or 'DEPOSIT' depending on preference, ADJUSTMENT is clearer for manual
-          provider: 'ADMIN',
-          coin: 'USDT',
-          amount,
-          status: 'SUCCESS',
-          metadata: JSON.stringify({ reason, adminId, action: 'MANUAL_TOPUP' }),
-        },
-      });
-
-      // Create audit log
+      // Create audit log (no Transaction.create - 'ADMIN' is not a valid PaymentProvider)
       await prisma.auditLog.create({
         data: {
           userId: adminId,
           action: 'USER_WALLET_TOPUP',
           entityType: 'wallet',
           entityId: wallet.id,
-          metadata: JSON.stringify({ userId, amount, reason }),
+          metadata: JSON.stringify({ userId, amount, reason, action: 'MANUAL_TOPUP' }),
         },
       });
 
