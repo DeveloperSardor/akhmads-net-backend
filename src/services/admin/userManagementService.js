@@ -223,6 +223,53 @@ class UserManagementService {
   }
 
   /**
+   * Top up user wallet (Admin manual adjustment)
+   */
+  async topUpUserWallet(userId, amount, reason, adminId) {
+    try {
+      const wallet = await prisma.wallet.findUnique({ where: { userId } });
+      if (!wallet) throw new NotFoundError('Wallet not found');
+
+      const updatedWallet = await prisma.wallet.update({
+        where: { userId },
+        data: {
+          available: { increment: amount },
+        },
+      });
+
+      // Create transaction record
+      await prisma.transaction.create({
+        data: {
+          userId,
+          type: 'ADJUSTMENT', // Or 'DEPOSIT' depending on preference, ADJUSTMENT is clearer for manual
+          provider: 'ADMIN',
+          coin: 'USDT',
+          amount,
+          status: 'SUCCESS',
+          metadata: JSON.stringify({ reason, adminId, action: 'MANUAL_TOPUP' }),
+        },
+      });
+
+      // Create audit log
+      await prisma.auditLog.create({
+        data: {
+          userId: adminId,
+          action: 'USER_WALLET_TOPUP',
+          entityType: 'wallet',
+          entityId: wallet.id,
+          metadata: JSON.stringify({ userId, amount, reason }),
+        },
+      });
+
+      logger.info(`Admin ${adminId} topped up user ${userId} wallet by $${amount}. Reason: ${reason}`);
+      return updatedWallet;
+    } catch (error) {
+      logger.error('Top up user wallet failed:', error);
+      throw error;
+    }
+  }
+
+  /**
    * Get platform statistics
    */
   async getPlatformStats() {

@@ -590,6 +590,30 @@ router.post(
   }
 );
 
+router.post(
+  '/users/:id/topup',
+  requireAdmin,
+  validate([
+    param('id').isString(),
+    body('amount').isFloat({ min: 0.01 }).withMessage('Amount must be at least 0.01'),
+    body('reason').isString().notEmpty().withMessage('Reason is required'),
+  ]),
+  async (req, res, next) => {
+    try {
+      const { amount, reason } = req.body;
+      const wallet = await userManagementService.topUpUserWallet(
+        req.params.id,
+        parseFloat(amount),
+        reason,
+        req.userId
+      );
+      response.success(res, { wallet }, 'User wallet topped up successfully');
+    } catch (error) {
+      next(error);
+    }
+  }
+);
+
 // PRICING MANAGEMENT SECTION - Add to existing admin.routes.js
 
 // ==================== PRICING MANAGEMENT ====================
