@@ -114,6 +114,22 @@ router.get("/avatar/:username", async (req, res, next) => {
 });
 
 // All other routes require authentication
+// ✅ PUBLIC: Frequency limits
+router.get("/frequency-limits", async (req, res, next) => {
+  try {
+    const settings = await prisma.platformSettings.findMany({
+      where: { key: { in: ['min_frequency_minutes', 'max_frequency_minutes'] } },
+    });
+    const map = Object.fromEntries(settings.map(s => [s.key, parseInt(s.value)]));
+    response.success(res, {
+      min: map.min_frequency_minutes ?? 0,
+      max: map.max_frequency_minutes ?? 10080,
+    }, "Frequency limits");
+  } catch (error) {
+    next(error);
+  }
+});
+
 router.use(authenticate);
 
 /**
@@ -281,11 +297,25 @@ router.put(
     body("postFilter").optional().isIn(["all", "not_mine", "only_mine"]),
     body("allowedCategories").optional().isArray(),
     body("blockedCategories").optional().isArray(),
-    body("frequencyMinutes").optional().isInt({ min: 1, max: 1440 }),
+    body("frequencyMinutes").optional().isInt({ min: 0, max: 10080 }),
     body("monetized").optional().isBoolean(),
   ]),
   async (req, res, next) => {
     try {
+      // ✅ Admin belgilagan frequency limitlarini tekshirish
+      if (req.body.frequencyMinutes !== undefined) {
+        const freqSettings = await prisma.platformSettings.findMany({
+          where: { key: { in: ['min_frequency_minutes', 'max_frequency_minutes'] } },
+        });
+        const freqMap = Object.fromEntries(freqSettings.map(s => [s.key, parseInt(s.value)]));
+        const minFreq = freqMap.min_frequency_minutes ?? 0;
+        const maxFreq = freqMap.max_frequency_minutes ?? 10080;
+
+        if (req.body.frequencyMinutes < minFreq || req.body.frequencyMinutes > maxFreq) {
+          return response.error(res, `Chastota ${minFreq} dan ${maxFreq} minutgacha bo'lishi kerak`, 400);
+        }
+      }
+
       const bot = await botService.updateBot(
         req.params.id,
         req.userId,
