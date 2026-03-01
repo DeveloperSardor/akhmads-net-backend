@@ -114,9 +114,22 @@ router.get("/targeting/options", async (req, res, next) => {
 });
 
 /**
- * POST /api/v1/ads
- * Create ad
+ * GET /api/v1/ads/public/search
+ * Search active ads for blocking UI
  */
+router.get(
+  "/public/search",
+  validate([query("q").isString().notEmpty()]),
+  async (req, res, next) => {
+    try {
+      const ads = await adService.searchActiveAds(req.query.q);
+      response.success(res, { ads });
+    } catch (error) {
+      next(error);
+    }
+  }
+);
+
 /**
  * POST /api/v1/ads
  * Create ad
@@ -130,7 +143,7 @@ router.post(
     body("text").isString().isLength({ min: 10, max: 4096 }),
     body("htmlContent").optional().isString(),
     body("markdownContent").optional().isString(),
-    body("mediaUrl").optional().isString(), // ✅ Changed from isURL() to isString() for base64
+    body("mediaUrl").optional().isString(),
     body("mediaType").optional().isString(),
     body("buttons").optional().isArray(),
     body("poll").optional().isObject(),
@@ -138,6 +151,7 @@ router.post(
     body("cpmBid").optional().isFloat({ min: 0 }),
     body("targeting").optional().isObject(),
     body("specificBotIds").optional().isArray(),
+    body("excludedBotIds").optional().isArray(),
     body("promoCode").optional().isString(),
   ]),
   async (req, res, next) => {
@@ -266,6 +280,8 @@ router.put(
     body("text").optional().isString().isLength({ min: 10, max: 4096 }),
     body("buttons").optional().isArray(),
     body("targeting").optional().isObject(),
+    body("specificBotIds").optional().isArray(),
+    body("excludedBotIds").optional().isArray(),
   ]),
   async (req, res, next) => {
     try {

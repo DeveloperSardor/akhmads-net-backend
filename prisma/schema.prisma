@@ -114,7 +114,7 @@ model User {
   firstName  String? @map("first_name")
   lastName   String? @map("last_name")
   role       Role    @default(ADVERTISER)
-  roles      Role[]  
+  roles      Role[]
   avatarUrl  String? @map("avatar_url")
   locale     String  @default("uz")
   isActive   Boolean @default(true) @map("is_active")
@@ -323,10 +323,11 @@ model Bot {
   postFilter        String @default("all") @map("post_filter")
   allowedCategories Json?  @map("allowed_categories")
   blockedCategories Json?  @map("blocked_categories")
+  blockedAdIds      Json?  @map("blocked_ad_ids")
   frequencyMinutes  Int    @default(5) @map("frequency_minutes")
 
-  avatarUrl         String? @map("avatar_url")
-  botstatData       Json?   @map("botstat_data")
+  avatarUrl   String? @map("avatar_url")
+  botstatData Json?   @map("botstat_data")
 
   totalEarnings   Decimal @default(0) @map("total_earnings") @db.Decimal(12, 2)
   pendingEarnings Decimal @default(0) @map("pending_earnings") @db.Decimal(12, 2)
@@ -405,6 +406,7 @@ model Ad {
   targeting       Json?
   excludedUserIds Json? @map("excluded_user_ids")
   specificBotIds  Json? @map("specific_bot_ids")
+  excludedBotIds  Json? @map("excluded_bot_ids")
 
   promoCodeUsed String? @map("promo_code_used")
   discount      Decimal @default(0) @db.Decimal(12, 2)
@@ -414,22 +416,22 @@ model Ad {
   moderator       User?     @relation("ModeratedBy", fields: [moderatedBy], references: [id])
   moderatedAt     DateTime? @map("moderated_at")
 
-  aiSafetyCheck Json? @map("ai_safety_check")
-  scheduleTimezone    String?   @map("schedule_timezone")
-  scheduleActiveDays  Json?     @map("schedule_active_days") // [0,1,2,3,4,5,6]
-  scheduleActiveHours Json?     @map("schedule_active_hours") // [{start:9,end:18}]
+  aiSafetyCheck       Json?   @map("ai_safety_check")
+  scheduleTimezone    String? @map("schedule_timezone")
+  scheduleActiveDays  Json?   @map("schedule_active_days") // [0,1,2,3,4,5,6]
+  scheduleActiveHours Json?   @map("schedule_active_hours") // [{start:9,end:18}]
 
   // ✅ NEW FIELD - Archive
   isArchived Boolean @default(false) @map("is_archived")
 
-  scheduledAt DateTime? @map("scheduled_at")
-  startedAt   DateTime? @map("started_at")
-  completedAt DateTime? @map("completed_at")
+  scheduledAt       DateTime? @map("scheduled_at")
+  startedAt         DateTime? @map("started_at")
+  completedAt       DateTime? @map("completed_at")
   scheduleStartDate DateTime? @map("schedule_start_date")
   scheduleEndDate   DateTime? @map("schedule_end_date")
 
-  createdAt   DateTime  @default(now()) @map("created_at")
-  updatedAt   DateTime  @updatedAt @map("updated_at")
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
 
   impressions Impression[]
   clickEvents ClickEvent[]

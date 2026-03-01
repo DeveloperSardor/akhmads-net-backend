@@ -22,6 +22,7 @@ class AdSelectionService {
       // Parse bot settings
       const allowedCategories = JSON.parse(bot.allowedCategories || '[]');
       const blockedCategories = JSON.parse(bot.blockedCategories || '[]');
+      const blockedAdIds = JSON.parse(bot.blockedAdIds || '[]');
 
       // Build query
       const where = {
@@ -51,9 +52,26 @@ class AdSelectionService {
 
       // Filter ads
       for (const ad of ads) {
-        // Check excluded users
+        // 1. Check if Bot Owner blocked this specific ad
+        if (blockedAdIds.includes(ad.id)) {
+          continue;
+        }
+
+        // 2. Check Excluded users
         const excludedUsers = JSON.parse(ad.excludedUserIds || '[]');
         if (excludedUsers.includes(telegramUserId)) {
+          continue;
+        }
+
+        // 3. Check specific bot targeting (Advertiser requested ONLY these bots)
+        const specificBotIds = JSON.parse(ad.specificBotIds || '[]');
+        if (specificBotIds.length > 0 && !specificBotIds.includes(botId)) {
+          continue;
+        }
+
+        // 4. Check excluded bots (Advertiser blocked this bot)
+        const excludedBotIds = JSON.parse(ad.excludedBotIds || '[]');
+        if (excludedBotIds.length > 0 && excludedBotIds.includes(botId)) {
           continue;
         }
 
@@ -90,12 +108,6 @@ class AdSelectionService {
           });
 
           if (alreadyShown) continue;
-        }
-
-        // Check specific bots targeting
-        const specificBotIds = JSON.parse(ad.specificBotIds || '[]');
-        if (specificBotIds.length > 0 && !specificBotIds.includes(botId)) {
-          continue;
         }
 
         return ad;

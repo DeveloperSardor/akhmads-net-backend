@@ -250,6 +250,7 @@ class BotService {
           postFilter: data.postFilter,
           allowedCategories: data.allowedCategories,
           blockedCategories: data.blockedCategories,
+          blockedAdIds: data.blockedAdIds,
           frequencyMinutes: data.frequencyMinutes,
         },
       });
@@ -428,7 +429,41 @@ class BotService {
       throw error;
     }
   }
+
+  /**
+   * Search bots for general targeting
+   */
+  async searchBots(query) {
+    try {
+      const bots = await prisma.bot.findMany({
+        where: {
+          status: 'ACTIVE',
+          AND: [
+            {
+              OR: [
+                { username: { contains: query, mode: 'insensitive' } },
+                { firstName: { contains: query, mode: 'insensitive' } },
+              ],
+            },
+          ],
+        },
+        select: {
+          id: true,
+          username: true,
+          firstName: true,
+          avatarUrl: true,
+          totalMembers: true,
+        },
+        take: 20,
+      });
+      return bots;
+    } catch (error) {
+      logger.error('Search bots failed:', error);
+      throw error;
+    }
+  }
 }
+
 
 const botService = new BotService();
 export default botService;

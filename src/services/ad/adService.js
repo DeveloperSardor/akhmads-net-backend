@@ -402,6 +402,7 @@ class AdService {
           targeting: data.targeting ? JSON.stringify(data.targeting) : undefined,
           excludedUserIds: data.excludedUserIds ? JSON.stringify(data.excludedUserIds) : undefined,
           specificBotIds: data.specificBotIds ? JSON.stringify(data.specificBotIds) : undefined,
+          excludedBotIds: data.excludedBotIds ? JSON.stringify(data.excludedBotIds) : undefined,
           status: ad.status === 'REJECTED' ? 'DRAFT' : undefined, // Reset to DRAFT if was rejected
           rejectionReason: null, // Always clear rejection reason when user edits
         },
@@ -886,6 +887,36 @@ class AdService {
       };
     } catch (error) {
       logger.error('Get saved ads failed:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * Search active ads for blocking UI
+   */
+  async searchActiveAds(query) {
+    try {
+      const ads = await prisma.ad.findMany({
+        where: {
+          status: 'RUNNING',
+          isArchived: false,
+          OR: [
+            { title: { contains: query, mode: 'insensitive' } },
+            { text: { contains: query, mode: 'insensitive' } }
+          ]
+        },
+        select: {
+          id: true,
+          title: true,
+          text: true,
+          mediaUrl: true,
+          status: true
+        },
+        take: 20
+      });
+      return ads;
+    } catch (error) {
+      logger.error('Search active ads failed:', error);
       throw error;
     }
   }

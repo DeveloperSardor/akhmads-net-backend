@@ -116,6 +116,23 @@ router.get("/avatar/:username", async (req, res, next) => {
 router.use(authenticate);
 
 /**
+ * @route GET /api/v1/bots/public/search
+ * @desc Search active bots for targeting
+ */
+router.get(
+  "/public/search",
+  validate([query("q").isString().notEmpty()]),
+  async (req, res, next) => {
+    try {
+      const bots = await botService.searchBots(req.query.q);
+      response.success(res, { bots });
+    } catch (error) {
+      next(error);
+    }
+  }
+);
+
+/**
  * @route GET /api/v1/bots/verify-token
  * @desc Verify bot token and get info before registration
  */
