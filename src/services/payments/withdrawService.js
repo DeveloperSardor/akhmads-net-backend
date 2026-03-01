@@ -76,7 +76,7 @@ class WithdrawService {
       data: {
         userId,
         method: 'CRYPTO',
-        provider: 'BEP20',
+        provider: 'CRYPTO',
         coin: 'USDT',
         network: 'BEP20',
         address: bep20Address,
