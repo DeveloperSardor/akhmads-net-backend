@@ -291,6 +291,7 @@ class AdService {
   async getUserAds(advertiserId, filters = {}) {
     try {
       const { status, limit = 20, offset = 0, includeArchived = false } = filters;
+      console.log('getUserAds called with filters:', filters);
 
       const where = {
         advertiserId,
@@ -298,6 +299,7 @@ class AdService {
       };
 
       if (status) where.status = status;
+      console.log('getUserAds Prisma where clause:', where);
 
       const ads = await prisma.ad.findMany({
         where,
