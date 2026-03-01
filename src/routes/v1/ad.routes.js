@@ -732,33 +732,6 @@ router.post(
 
 // ==================== BROADCASTS ====================
 
-/**
- * GET /api/v1/ads/broadcast-draft
- * Poll for broadcast content uploaded via Telegram bot
- */
-router.get(
-  "/broadcast-draft",
-  requireAdvertiser,
-  async (req, res, next) => {
-    try {
-      const redis = (await import('../../config/redis.js')).default;
-      const draftKey = `bcast_content:${req.userId}`;
-      const draftJson = await redis.get(draftKey);
-
-      if (!draftJson) {
-        return response.success(res, { found: false });
-      }
-
-      const draft = JSON.parse(draftJson);
-      // Clear after retrieval so it's consumed once
-      await redis.del(draftKey);
-
-      response.success(res, { ...draft, found: true });
-    } catch (error) {
-      next(error);
-    }
-  }
-);
 
 /**
  * GET /api/v1/ads/broadcasts

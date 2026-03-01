@@ -68,12 +68,6 @@ class LoginBotHandler {
           return;
         }
 
-        // Broadcast deeplink: bcast_{userId}
-        if (args && args.startsWith('bcast_')) {
-          await this.handleBroadcastDeeplink(ctx, user, args.replace('bcast_', ''));
-          return;
-        }
-
         // 3. Regular Start -> Show Main Menu (or language selection if not set)
         await this.showMainMenu(ctx, user);
       } catch (error) {
@@ -99,17 +93,6 @@ class LoginBotHandler {
         if (!user) return;
         const isAdvertiser = user.role === 'ADVERTISER' || (user.roles && user.roles.includes('ADVERTISER'));
         if (!isAdvertiser) return;
-
-        // Check for broadcast content session first
-        const bcastSessionKey = `bcast_session:${telegramId}`;
-        const bcastSessionJson = await redis.get(bcastSessionKey);
-        if (bcastSessionJson) {
-          const bcastSession = JSON.parse(bcastSessionJson);
-          if (bcastSession.step === 'AWAITING_BCAST_CONTENT') {
-            await this.handleBroadcastContent(ctx, user, telegramId, bcastSession.targetUserId);
-            return;
-          }
-        }
 
         const sessionKey = `ad_session:${telegramId}`;
         const sessionJson = await redis.get(sessionKey);
@@ -1445,78 +1428,6 @@ class LoginBotHandler {
     }
   }
 
-  // ─────────────────────────────────────────────────────────────────
-  // BROADCAST: Deeplink + Content Collection
-  // ─────────────────────────────────────────────────────────────────
-
-  async handleBroadcastDeeplink(ctx, user, targetUserId) {
-    try {
-      const telegramId = ctx.from.id.toString();
-
-      // Only allow the actual user to use their own deeplink
-      if (user.id !== targetUserId) {
-        await ctx.reply('❌ Bu havola siz uchun emas.');
-        return;
-      }
-
-      // Set broadcast content session
-      const bcastSessionKey = `bcast_session:${telegramId}`;
-      await redis.set(bcastSessionKey, JSON.stringify({
-        step: 'AWAITING_BCAST_CONTENT',
-        targetUserId,
-      }), 600); // 10 min TTL
-
-      await ctx.reply(
-        '📡 <b>Broadcast mazmuni</b>\n\nBroadcast uchun xabar yuboring:\n• Matn\n• Rasm (caption bilan)\n• Video (caption bilan)\n\nXabar yuborilgandan so\'ng saytga qaytib broadcastni yakunlang.',
-        { parse_mode: 'HTML' }
-      );
-    } catch (error) {
-      logger.error('Broadcast deeplink error:', error);
-      await ctx.reply('❌ Xatolik yuz berdi.');
-    }
-  }
-
-  async handleBroadcastContent(ctx, user, telegramId, targetUserId) {
-    try {
-      const msg = ctx.message;
-      const text = msg.text || msg.caption || '';
-      const entities = msg.entities || msg.caption_entities || [];
-      const htmlContent = messageToHtml(text, entities);
-
-      let contentType = 'HTML';
-      let mediaUrl = null;
-      let mediaType = null;
-
-      if (msg.photo) {
-        const photo = msg.photo[msg.photo.length - 1];
-        mediaUrl = photo.file_id;
-        mediaType = 'image/jpeg';
-        contentType = 'MEDIA';
-      } else if (msg.video) {
-        mediaUrl = msg.video.file_id;
-        mediaType = 'video/mp4';
-        contentType = 'MEDIA';
-      }
-
-      const content = { contentType, text: htmlContent || text, mediaUrl, mediaType, found: true };
-
-      // Save to Redis for website to poll
-      const draftKey = `bcast_content:${targetUserId}`;
-      await redis.set(draftKey, JSON.stringify(content), 600); // 10 min
-
-      // Clear the session
-      const bcastSessionKey = `bcast_session:${telegramId}`;
-      await redis.del(bcastSessionKey);
-
-      await ctx.reply(
-        '✅ <b>Kontent saqlandi!</b>\n\nSaytga qaytib broadcastni yakunlang.',
-        { parse_mode: 'HTML' }
-      );
-    } catch (error) {
-      logger.error('Broadcast content handler error:', error);
-      await ctx.reply('❌ Xatolik yuz berdi.');
-    }
-  }
 }
 
 const loginBotHandler = new LoginBotHandler();
