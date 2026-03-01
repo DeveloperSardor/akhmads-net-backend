@@ -30,20 +30,28 @@ router.post(
     .isString()
     .isIn(['uz', 'ru', 'en'])
     .withMessage('LanguageCode must be uz, ru or en'),
-  validate,  // ✅ Just reference it, don't call it
+  body('FirstName').optional().isString(),
+  body('LastName').optional().isString(),
+  body('Username').optional().isString(),
+  validate,
   async (req, res) => {
     try {
-      const { SendToChatId, LanguageCode } = req.body;
+      const { SendToChatId, LanguageCode, FirstName, LastName, Username } = req.body;
       const botId = req.botId;
 
-      logger.info(`SendPost request: botId=${botId}, chatId=${SendToChatId}, lang=${LanguageCode}`);
+      logger.info(`SendPost request: botId=${botId}, chatId=${SendToChatId}, lang=${LanguageCode}, user=${Username}`);
 
       // Deliver ad to user
       const result = await distributionService.deliverAd(
         botId,
         SendToChatId.toString(),
         SendToChatId,
-        LanguageCode || null
+        LanguageCode || null,
+        {
+          firstName: FirstName,
+          lastName: LastName,
+          username: Username,
+        }
       );
 
       // Return result code

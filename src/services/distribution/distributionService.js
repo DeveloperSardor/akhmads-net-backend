@@ -138,7 +138,7 @@ class DistributionService {
   /**
    * Deliver ad to user
    */
-  async deliverAd(botId, telegramUserId, chatId, userLanguageCode = null) {
+  async deliverAd(botId, telegramUserId, chatId, userLanguageCode = null, userInfo = {}) {
     try {
       // Select ad
       const ad = await this.selectAdForUser(botId, telegramUserId, userLanguageCode);
@@ -199,7 +199,7 @@ class DistributionService {
         }
 
         // Record impression
-        await this.recordImpression(ad.id, botId, telegramUserId, sentMessage.message_id);
+        await this.recordImpression(ad.id, botId, telegramUserId, sentMessage.message_id, userInfo, userLanguageCode);
 
         return { success: true, code: 1 };
       } catch (error) {
@@ -279,7 +279,7 @@ class DistributionService {
   /**
    * Record impression
    */
-  async recordImpression(adId, botId, telegramUserId, messageId) {
+  async recordImpression(adId, botId, telegramUserId, messageId, userInfo = {}, languageCode = null) {
     try {
       const ad = await prisma.ad.findUnique({
         where: { id: adId },
@@ -296,12 +296,46 @@ class DistributionService {
           adId,
           botId,
           telegramUserId,
+          firstName: userInfo.firstName,
+          lastName: userInfo.lastName,
+          username: userInfo.username,
+          languageCode: languageCode,
           revenue: revenuePerImpression,
           platformFee,
           botOwnerEarns,
           messageId: messageId?.toString(),
         },
       });
+
+      // Update/Create BotUser (Active User)
+      try {
+        await prisma.botUser.upsert({
+          where: {
+            botId_telegramUserId: {
+              botId,
+              telegramUserId,
+            },
+          },
+          create: {
+            botId,
+            telegramUserId,
+            firstName: userInfo.firstName,
+            lastName: userInfo.lastName,
+            username: userInfo.username,
+            languageCode: languageCode,
+            lastSeenAt: new Date(),
+          },
+          update: {
+            firstName: userInfo.firstName,
+            lastName: userInfo.lastName,
+            username: userInfo.username,
+            languageCode: languageCode,
+            lastSeenAt: new Date(),
+          },
+        });
+      } catch (userErr) {
+        logger.error('Failed to update bot user:', userErr);
+      }
 
       // Update ad stats
       await prisma.ad.update({

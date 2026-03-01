@@ -9,6 +9,8 @@ import settingsService from '../../services/admin/settingsService.js';
 import withdrawService from '../../services/payments/withdrawService.js';
 import adminAnalytics from '../../services/analytics/adminAnalytics.js';
 import categoryService from '../../services/category/categoryService.js';
+import detailedStatsService from '../../services/admin/detailedStatsService.js';
+import broadcastService from '../../services/admin/broadcastService.js';
 import { authenticate } from '../../middleware/auth.js';
 import { requireAdmin, requireModerator, requireSuperAdmin } from '../../middleware/rbac.js';
 import { validate } from '../../middleware/validate.js';
@@ -962,6 +964,205 @@ router.put(
     try {
       await settingsService.bulkUpdateSettings(req.body.settings, req.user.id);
       response.success(res, { message: 'Settings updated successfully' });
+    } catch (error) {
+      next(error);
+    }
+  }
+);
+
+// ==================== DETAILED STATS ====================
+
+/**
+ * GET /api/v1/admin/detailed-stats/impressions
+ * All impressions with user details (Admin only)
+ */
+router.get(
+  '/detailed-stats/impressions',
+  requireAdmin,
+  validate([
+    query('botId').optional().isString(),
+    query('adId').optional().isString(),
+    query('limit').optional().isInt({ min: 1, max: 100 }),
+    query('offset').optional().isInt({ min: 0 }),
+    query('search').optional().isString(),
+  ]),
+  async (req, res, next) => {
+    try {
+      const result = await detailedStatsService.getImpressions(req.query);
+      response.paginated(res, result.impressions, {
+        page: Math.floor((req.query.offset || 0) / (req.query.limit || 50)) + 1,
+        limit: parseInt(req.query.limit || 50),
+        total: result.total,
+      });
+    } catch (error) {
+      next(error);
+    }
+  }
+);
+
+/**
+ * GET /api/v1/ads/:adId/clicks-detailed
+ * Detailed clicks for own ad
+ */
+router.get(
+  "/:adId/clicks-detailed",
+  requireAdvertiser,
+  async (req, res, next) => {
+    try {
+      // Check ownership
+      const ad = await prisma.ad.findUnique({ where: { id: req.params.adId } });
+      if (!ad || ad.advertiserId !== req.userId) {
+         return response.forbidden(res, "You do not own this ad");
+      }
+
+      const result = await detailedStatsService.getClicks({ ...req.query, adId: req.params.adId });
+      response.paginated(res, result.clicks, {
+        page: Math.floor((req.query.offset || 0) / (req.query.limit || 50)) + 1,
+        limit: parseInt(req.query.limit || 50),
+        total: result.total,
+      });
+    } catch (error) {
+      next(error);
+    }
+  }
+);
+
+/**
+ * GET /api/v1/admin/detailed-stats/clicks
+ * All clicks with user details (Admin only)
+ */
+router.get(
+  '/detailed-stats/clicks',
+  requireAdmin,
+  validate([
+    query('botId').optional().isString(),
+    query('adId').optional().isString(),
+    query('limit').optional().isInt({ min: 1, max: 100 }),
+    query('offset').optional().isInt({ min: 0 }),
+    query('search').optional().isString(),
+  ]),
+  async (req, res, next) => {
+    try {
+      const result = await detailedStatsService.getClicks(req.query);
+      response.paginated(res, result.clicks, {
+        page: Math.floor((req.query.offset || 0) / (req.query.limit || 50)) + 1,
+        limit: parseInt(req.query.limit || 50),
+        total: result.total,
+      });
+    } catch (error) {
+      next(error);
+    }
+  }
+);
+
+/**
+ * GET /api/v1/admin/detailed-stats/impressions/export
+ * Export all impressions as JSON (for CSV download)
+ */
+router.get(
+  '/detailed-stats/impressions/export',
+  requireAdmin,
+  async (req, res, next) => {
+    try {
+      const data = await detailedStatsService.getImpressionsExport(req.query);
+      response.success(res, data, 'Impressions export ready');
+    } catch (error) {
+      next(error);
+    }
+  }
+);
+
+/**
+ * GET /api/v1/admin/detailed-stats/clicks/export
+ * Export all clicks as JSON (for CSV download)
+ */
+router.get(
+  '/detailed-stats/clicks/export',
+  requireAdmin,
+  async (req, res, next) => {
+    try {
+      const data = await detailedStatsService.getClicksExport(req.query);
+      response.success(res, data, 'Clicks export ready');
+    } catch (error) {
+      next(error);
+    }
+  }
+);
+
+/**
+ * GET /api/v1/admin/detailed-stats/bot/:botId/users
+ * Bot subscribers (active users) list
+ */
+router.get(
+  '/detailed-stats/bot/:botId/users',
+  requireAdmin,
+  validate([
+    param('botId').isString(),
+    query('limit').optional().isInt({ min: 1, max: 100 }),
+    query('offset').optional().isInt({ min: 0 }),
+    query('search').optional().isString(),
+    query('activeDays').optional().isInt(),
+  ]),
+  async (req, res, next) => {
+    try {
+      const result = await detailedStatsService.getBotUsers(req.params.botId, req.query);
+      response.paginated(res, result.users, {
+        page: Math.floor((req.query.offset || 0) / (req.query.limit || 50)) + 1,
+        limit: parseInt(req.query.limit || 50),
+        total: result.total,
+        stats: result.stats
+      });
+    } catch (error) {
+      next(error);
+    }
+  }
+);
+
+/**
+ * GET /api/v1/admin/detailed-stats/bot/:botId/export
+ * Export bot users to Excel
+ */
+router.get(
+  '/detailed-stats/bot/:botId/export',
+  requireAdmin,
+  validate([
+    param('botId').isString(),
+    query('activeDays').optional().isInt(),
+  ]),
+  async (req, res, next) => {
+    try {
+      const data = await detailedStatsService.getExportData(req.params.botId, req.query);
+
+      // In a real app, we might use exceljs to generate a file
+      // For now, return JSON and let frontend handle it or provide a binary
+      response.success(res, data, 'Export data generated');
+    } catch (error) {
+      next(error);
+    }
+  }
+);
+
+// ==================== BROADCASTS ====================
+
+/**
+ * GET /api/v1/admin/broadcasts
+ * All broadcasts (Admin)
+ */
+router.get(
+  '/broadcasts',
+  requireAdmin,
+  validate([
+    query('limit').optional().isInt({ min: 1, max: 100 }),
+    query('offset').optional().isInt({ min: 0 }),
+  ]),
+  async (req, res, next) => {
+    try {
+      const result = await broadcastService.getBroadcasts(null, req.query);
+      response.paginated(res, result.broadcasts, {
+        page: Math.floor((req.query.offset || 0) / (req.query.limit || 20)) + 1,
+        limit: parseInt(req.query.limit || 20),
+        total: result.total,
+      });
     } catch (error) {
       next(error);
     }

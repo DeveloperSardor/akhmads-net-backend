@@ -143,6 +143,8 @@ model User {
   savedAds         SavedAd[]
   contactMessages  ContactMessage[]
 
+  broadcasts       Broadcast[]       @relation("AdvertiserBroadcasts")
+
   moderatedAds        Ad[]              @relation("ModeratedBy")
   approvedWithdrawals WithdrawRequest[] @relation("ApprovedBy")
 
@@ -348,6 +350,8 @@ model Bot {
   impressions   Impression[]
   clickEvents   ClickEvent[]
   botStatistics BotStatistics[]
+  botUsers      BotUser[]
+  broadcasts    Broadcast[]
 
   @@index([ownerId, status])
   @@index([status, monetized])
@@ -475,6 +479,9 @@ model Impression {
   lastName       String? @map("last_name")
   username       String?
   languageCode   String? @map("language_code")
+  
+  country        String? @default("Unknown")
+  city           String? @default("Unknown")
 
   revenue       Decimal @default(0) @db.Decimal(10, 4)
   platformFee   Decimal @default(0) @map("platform_fee") @db.Decimal(10, 4)
@@ -500,6 +507,11 @@ model ClickEvent {
   user   User?   @relation(fields: [userId], references: [id])
 
   telegramUserId String? @map("telegram_user_id")
+  firstName      String? @map("first_name")
+  lastName       String? @map("last_name")
+  username       String?
+  languageCode   String? @map("language_code")
+  
   trackingToken  String  @unique @map("tracking_token")
 
   ipAddress String? @map("ip_address")
@@ -624,4 +636,79 @@ model Category {
 
   @@index([isActive, sortOrder])
   @@map("categories")
+}
+
+model BotUser {
+  id             String   @id @default(cuid())
+  botId          String   @map("bot_id")
+  bot            Bot      @relation(fields: [botId], references: [id], onDelete: Cascade)
+  telegramUserId String   @map("telegram_user_id")
+  username       String?
+  firstName      String?  @map("first_name")
+  lastName       String?  @map("last_name")
+  languageCode   String?  @map("language_code")
+  isBot          Boolean  @default(false) @map("is_bot")
+  
+  lastSeenIp     String?  @map("last_seen_ip")
+  country        String?  @default("Unknown")
+  city           String?  @default("Unknown")
+  lastSeenAt     DateTime @default(now()) @map("last_seen_at")
+  createdAt      DateTime @default(now()) @map("created_at")
+
+  broadcastRecipients BroadcastRecipient[]
+
+  @@unique([botId, telegramUserId])
+  @@index([botId])
+  @@index([telegramUserId])
+  @@index([lastSeenAt])
+  @@map("bot_users")
+}
+
+model Broadcast {
+  id           String    @id @default(cuid())
+  advertiserId String    @map("advertiser_id")
+  advertiser   User      @relation("AdvertiserBroadcasts", fields: [advertiserId], references: [id], onDelete: Cascade)
+  botId        String    @map("bot_id")
+  bot          Bot       @relation(fields: [botId], references: [id], onDelete: Cascade)
+  status       AdStatus  @default(DRAFT)
+  contentType  AdContentType @map("content_type")
+  text         String    @db.Text
+  mediaUrl     String?   @map("media_url") @db.Text
+  mediaType    String?   @map("media_type")
+  buttons      Json?
+  
+  targetCount  Int       @default(0) @map("target_count")
+  sentCount    Int       @default(0) @map("sent_count")
+  failedCount  Int       @default(0) @map("failed_count")
+  
+  totalCost    Decimal   @map("total_cost") @db.Decimal(12, 2)
+  platformFee  Decimal   @map("platform_fee") @db.Decimal(12, 2)
+  botOwnerEarn Decimal   @map("bot_owner_earn") @db.Decimal(12, 2)
+
+  startedAt    DateTime? @map("started_at")
+  completedAt  DateTime? @map("completed_at")
+  createdAt    DateTime  @default(now()) @map("created_at")
+  updatedAt    DateTime  @updatedAt @map("updated_at")
+
+  recipients   BroadcastRecipient[]
+
+  @@index([advertiserId, status])
+  @@index([botId, status])
+  @@map("broadcasts")
+}
+
+model BroadcastRecipient {
+  id          String    @id @default(cuid())
+  broadcastId String    @map("broadcast_id")
+  broadcast   Broadcast @relation(fields: [broadcastId], references: [id], onDelete: Cascade)
+  botUserId   String    @map("bot_user_id")
+  botUser     BotUser   @relation(fields: [botUserId], references: [id], onDelete: Cascade)
+  status      String    @default("PENDING") // PENDING, SENT, FAILED
+  error       String?   @db.Text
+  sentAt      DateTime? @map("sent_at")
+  createdAt   DateTime  @default(now()) @map("created_at")
+
+  @@unique([broadcastId, botUserId])
+  @@index([broadcastId, status])
+  @@map("broadcast_recipients")
 }

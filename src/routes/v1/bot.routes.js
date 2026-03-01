@@ -11,6 +11,8 @@ import prisma from "../../config/database.js";
 import redis from "../../config/redis.js";
 import axios from "axios";
 import adminNotificationService from "../../services/telegram/adminNotificationService.js";
+import detailedStatsService from "../../services/admin/detailedStatsService.js";
+import broadcastService from "../../services/admin/broadcastService.js"; // Added broadcastService
 
 const router = Router();
 
@@ -142,6 +144,22 @@ router.get(
   async (req, res, next) => {
     try {
       const bots = await botService.searchBots(req.query.q);
+      response.success(res, { bots });
+    } catch (error) {
+      next(error);
+    }
+  }
+);
+
+/**
+ * @route GET /api/v1/bots/public
+ * @desc Get all active public bots for broadcast/targeting
+ */
+router.get(
+  "/public",
+  async (req, res, next) => {
+    try {
+      const bots = await botService.getPublicBots();
       response.success(res, { bots });
     } catch (error) {
       next(error);
@@ -505,6 +523,59 @@ router.get(
       next(error);
     }
   },
+);
+
+/**
+ * GET /api/v1/bots/:id/active-users
+ * Get list of active users for own bot
+ */
+router.get(
+  "/:id/active-users",
+  requireBotOwner,
+  validate([param("id").isString()]),
+  async (req, res, next) => {
+    try {
+      const bot = await botService.getBotById(req.params.id);
+
+      if (bot.ownerId !== req.userId) {
+        return response.forbidden(res, "Access denied");
+      }
+
+      const result = await detailedStatsService.getBotUsers(req.params.id, req.query);
+      response.paginated(res, result.users, {
+        page: Math.floor((req.query.offset || 0) / (req.query.limit || 50)) + 1,
+        limit: parseInt(req.query.limit || 50),
+        total: result.total,
+        stats: result.stats
+      });
+    } catch (error) {
+      next(error);
+    }
+  }
+);
+
+/**
+ * GET /api/v1/bots/:id/export
+ * Export bot users for own bot
+ */
+router.get(
+  "/:id/export",
+  requireBotOwner,
+  validate([param("id").isString()]),
+  async (req, res, next) => {
+    try {
+      const bot = await botService.getBotById(req.params.id);
+
+      if (bot.ownerId !== req.userId) {
+        return response.forbidden(res, "Access denied");
+      }
+
+      const data = await detailedStatsService.getExportData(req.params.id, req.query);
+      response.success(res, data, "Export data generated");
+    } catch (error) {
+      next(error);
+    }
+  }
 );
 
 export default router;

@@ -465,13 +465,12 @@ class BotService {
       const bots = await prisma.bot.findMany({
         where: {
           status: 'ACTIVE',
-          AND: [
-            {
-              OR: [
-                { username: { contains: query, mode: 'insensitive' } },
-                { firstName: { contains: query, mode: 'insensitive' } },
-              ],
-            },
+          isPaused: false,
+          monetized: true,
+          OR: [
+            { username: { contains: query, mode: 'insensitive' } },
+            { firstName: { contains: query, mode: 'insensitive' } },
+            { category: { contains: query, mode: 'insensitive' } },
           ],
         },
         select: {
@@ -479,13 +478,74 @@ class BotService {
           username: true,
           firstName: true,
           avatarUrl: true,
+          category: true,
+          language: true,
           totalMembers: true,
+          activeMembers: true,
         },
         take: 20,
       });
-      return bots;
+
+      // Enrich with active user count (last 30 days)
+      const threshold = new Date();
+      threshold.setDate(threshold.getDate() - 30);
+
+      const enrichedBots = await Promise.all(bots.map(async (bot) => {
+        const activeUsersCount = await prisma.botUser.count({
+          where: { botId: bot.id, lastSeenAt: { gte: threshold } }
+        });
+        return { 
+          ...bot, 
+          activeUsers30d: activeUsersCount,
+          broadcastPrice: activeUsersCount * 0.05 + 0.10 // Example dynamic price
+        };
+      }));
+
+      return enrichedBots;
     } catch (error) {
       logger.error('Search bots failed:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * Get all active bots for broadcast selection
+   */
+  async getPublicBots() {
+    try {
+      const threshold = new Date();
+      threshold.setDate(threshold.getDate() - 30);
+
+      const bots = await prisma.bot.findMany({
+        where: {
+          status: 'ACTIVE',
+          isPaused: false,
+          monetized: true,
+        },
+        select: {
+          id: true,
+          username: true,
+          firstName: true,
+          avatarUrl: true,
+          category: true,
+          language: true,
+        }
+      });
+
+      const enrichedBots = await Promise.all(bots.map(async (bot) => {
+        const activeUsersCount = await prisma.botUser.count({
+          where: { botId: bot.id, lastSeenAt: { gte: threshold } }
+        });
+        return { 
+          ...bot, 
+          activeUsers30d: activeUsersCount,
+          broadcastPricePerUser: 0.05 // Price per message
+        };
+      }));
+
+      return enrichedBots;
+    } catch (error) {
+      logger.error('Get public bots failed:', error);
       throw error;
     }
   }

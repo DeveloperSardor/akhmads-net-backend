@@ -1,5 +1,5 @@
-// src/routes/v1/ad.routes.js
-import { Router } from "express";
+import broadcastService from "../../services/admin/broadcastService.js";
+import detailedStatsService from "../../services/admin/detailedStatsService.js";
 import adService from "../../services/ad/adService.js";
 import adCreationService from "../../services/ad/adCreationService.js";
 import adPricingService from "../../services/ad/adPricingService.js";
@@ -727,6 +727,110 @@ router.post(
       next(error);
     }
   },
+);
+
+// ==================== BROADCASTS ====================
+
+/**
+ * GET /api/v1/ads/broadcasts
+ * Get advertiser's broadcasts
+ */
+router.get(
+  "/broadcasts",
+  requireAdvertiser,
+  async (req, res, next) => {
+    try {
+      const result = await broadcastService.getBroadcasts(req.userId, req.query);
+      response.paginated(res, result.broadcasts, {
+        page: Math.floor((req.query.offset || 0) / (req.query.limit || 20)) + 1,
+        limit: parseInt(req.query.limit || 20),
+        total: result.total,
+      });
+    } catch (error) {
+      next(error);
+    }
+  }
+);
+
+/**
+ * POST /api/v1/ads/broadcasts
+ * Create/Launch a broadcast campaign
+ */
+router.post(
+  "/broadcasts",
+  requireAdvertiser,
+  validate([
+    body("botId").isString(),
+    body("contentType").isIn(["TEXT", "HTML", "MEDIA"]),
+    body("text").isString().isLength({ min: 10, max: 4096 }),
+    body("mediaUrl").optional().isString(),
+    body("mediaType").optional().isString(),
+    body("buttons").optional().isArray(),
+    body("targetCount").isInt({ min: 1, max: 100000 }),
+    body("activeDays").optional().isInt({ min: 1, max: 365 }),
+  ]),
+  async (req, res, next) => {
+    try {
+      const broadcast = await broadcastService.createBroadcast(req.userId, req.body);
+      response.created(res, { broadcast }, "Broadcast launched successfully");
+    } catch (error) {
+      next(error);
+    }
+  }
+);
+
+/**
+ * GET /api/v1/ads/:adId/impressions
+ * Detailed impressions for own ad
+ */
+router.get(
+  "/:adId/impressions",
+  requireAdvertiser,
+  async (req, res, next) => {
+    try {
+      // Check ownership
+      const ad = await prisma.ad.findUnique({ where: { id: req.params.adId } });
+      if (!ad || ad.advertiserId !== req.userId) {
+         return response.forbidden(res, "You do not own this ad");
+      }
+
+      const result = await detailedStatsService.getImpressions({ ...req.query, adId: req.params.adId });
+      response.paginated(res, result.impressions, {
+        page: Math.floor((req.query.offset || 0) / (req.query.limit || 50)) + 1,
+        limit: parseInt(req.query.limit || 50),
+        total: result.total,
+      });
+    } catch (error) {
+      next(error);
+    }
+  }
+);
+
+/**
+ * GET /api/v1/ads/:adId/clicks-detailed
+ * Detailed clicks for own ad
+ */
+router.get(
+  "/:adId/clicks-detailed",
+  requireAdvertiser,
+  async (req, res, next) => {
+    try {
+      // Check ownership
+      const ad = await prisma.ad.findUnique({ where: { id: req.params.adId } });
+      if (!ad || ad.advertiserId !== req.userId) {
+         return response.forbidden(res, "You do not own this ad");
+      }
+
+      const result = await detailedStatsService.getClicks({ ...req.query, adId: req.params.adId });
+      response.paginated(res, result.clicks, {
+        page: Math.floor((req.query.offset || 0) / (req.query.limit || 50)) + 1,
+        limit: parseInt(req.query.limit || 50),
+        total: result.total,
+      });
+    } catch (error) {
+      next(error);
+    }
+  }
 );
 
 export default router;

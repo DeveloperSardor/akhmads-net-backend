@@ -3,6 +3,7 @@ import prisma from '../../config/database.js';
 import tracking from '../../utils/tracking.js';
 import logger from '../../utils/logger.js';
 import { NotFoundError } from '../../utils/errors.js';
+import geoip from 'geoip-lite';
 
 /**
  * Ad Tracking Service
@@ -35,20 +36,59 @@ class AdTrackingService {
       });
 
       if (!clickEvent) {
+        // Try to find user details from BotUser for more detailed tracking
+        const botUser = data.telegramUserId ? await prisma.botUser.findUnique({
+          where: {
+            botId_telegramUserId: {
+              botId: data.botId,
+              telegramUserId: data.telegramUserId,
+            },
+          },
+        }) : null;
+
+        // Resolve geo data from IP
+        const geo = geoip.lookup(ipAddress);
+        const country = geo?.country || 'Unknown';
+        const city = geo?.city || 'Unknown';
+
         clickEvent = await prisma.clickEvent.create({
           data: {
             adId: data.adId,
             botId: data.botId,
             telegramUserId: data.telegramUserId,
+            firstName: botUser?.firstName,
+            lastName: botUser?.lastName,
+            username: botUser?.username,
+            languageCode: botUser?.languageCode,
             trackingToken,
             originalUrl: data.originalUrl,
             ipAddress,
             userAgent,
             referer,
+            country,
+            city,
             clicked: true,
             clickedAt: new Date(),
           },
         });
+
+        // ✅ Update BotUser with latest geo data
+        if (data.botId && data.telegramUserId) {
+          await prisma.botUser.update({
+            where: {
+              botId_telegramUserId: {
+                botId: data.botId,
+                telegramUserId: data.telegramUserId,
+              }
+            },
+            data: {
+              lastSeenIp: ipAddress,
+              country,
+              city,
+              lastSeenAt: new Date(),
+            }
+          }).catch(err => logger.error('Failed to update BotUser geo:', err));
+        }
 
         // Update ad click count
         await prisma.ad.update({

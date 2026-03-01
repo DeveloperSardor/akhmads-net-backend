@@ -55,6 +55,7 @@
     "express-mongo-sanitize": "^2.2.0",
     "express-rate-limit": "^7.5.1",
     "express-validator": "^7.3.1",
+    "geoip-lite": "^1.4.10",
     "grammy": "^1.40.0",
     "handlebars": "^4.7.8",
     "helmet": "^7.2.0",
