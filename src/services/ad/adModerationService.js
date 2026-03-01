@@ -186,6 +186,10 @@ class AdModerationService {
         throw new NotFoundError('Ad not found');
       }
 
+      if (ad.status !== 'PENDING_REVIEW') {
+        throw new ValidationError('Only pending ads can have edits requested');
+      }
+
       // Refund reserved funds (reserved → available)
       const cost = parseFloat(ad.totalCost);
       if (cost > 0) {

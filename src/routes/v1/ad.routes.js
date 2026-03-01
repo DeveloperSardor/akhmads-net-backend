@@ -126,7 +126,7 @@ router.post(
   requireAdvertiser,
   validate([
     body("contentType").isIn(["TEXT", "HTML", "MARKDOWN", "MEDIA", "POLL"]),
-    body("title").optional().isString().isLength({ min: 3, max: 100 }), // ✅ OPTIONAL
+    body("title").optional({ checkFalsy: true }).isString().isLength({ min: 3, max: 100 }),
     body("text").isString().isLength({ min: 10, max: 4096 }),
     body("htmlContent").optional().isString(),
     body("markdownContent").optional().isString(),
@@ -262,7 +262,7 @@ router.put(
   "/:id",
   validate([
     param("id").isString(),
-    body("title").optional().isString().isLength({ min: 3, max: 100 }),
+    body("title").optional({ checkFalsy: true }).isString().isLength({ min: 3, max: 100 }),
     body("text").optional().isString().isLength({ min: 10, max: 4096 }),
     body("buttons").optional().isArray(),
     body("targeting").optional().isObject(),

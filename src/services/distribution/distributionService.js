@@ -5,7 +5,6 @@ import telegramAPI from '../../utils/telegram-api.js';
 import tracking from '../../utils/tracking.js';
 import logger from '../../utils/logger.js';
 import walletService from '../wallet/walletService.js';
-import userbotService from '../telegram/userbotService.js';
 
 /**
  * Distribution Service
@@ -159,49 +158,9 @@ class DistributionService {
       // Prepare message
       const message = await this.prepareAdMessage(ad, botId, telegramUserId);
 
-      // Send via Telegram
+      // Send via Telegram bot token (always use the registered bot)
       try {
         let sentMessage;
-
-        // Use userbot (MTProto) when ad contains premium emoji so they render correctly
-        const hasPremiumEmoji =
-          userbotService.isConfigured() &&
-          userbotService.hasPremiumEmoji(message.text);
-
-        if (hasPremiumEmoji) {
-          try {
-            const numericChatId = parseInt(chatId, 10);
-            if (ad.contentType === 'MEDIA' && ad.mediaUrl) {
-              if (ad.mediaType?.startsWith('image')) {
-                await userbotService.sendPhotoMessage(
-                  numericChatId,
-                  ad.mediaUrl,
-                  message.text,
-                  message.replyMarkup
-                );
-              } else if (ad.mediaType?.startsWith('video')) {
-                await userbotService.sendVideoMessage(
-                  numericChatId,
-                  ad.mediaUrl,
-                  message.text,
-                  message.replyMarkup
-                );
-              }
-            } else {
-              await userbotService.sendTextMessage(
-                numericChatId,
-                message.text,
-                message.replyMarkup
-              );
-            }
-            // Impression without messageId (userbot messages don't return bot message_id)
-            await this.recordImpression(ad.id, botId, telegramUserId, null);
-            return { success: true, code: 1 };
-          } catch (userbotError) {
-            logger.warn('Userbot send failed, falling back to bot API:', userbotError.message);
-            // Fall through to regular bot API delivery below
-          }
-        }
 
         if (ad.contentType === 'MEDIA' && ad.mediaUrl) {
           if (ad.mediaType?.startsWith('image')) {

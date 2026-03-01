@@ -6,6 +6,7 @@ import logger from '../../utils/logger.js';
 import { NotFoundError, InsufficientFundsError, ValidationError } from '../../utils/errors.js';
 import encryption from '../../utils/encryption.js';
 import telegramAPI from '../../utils/telegram-api.js';
+import telegramPreviewService from '../telegram/telegramPreviewService.js';
 
 /**
  * Ad Service
@@ -157,12 +158,12 @@ class AdService {
       // Reserve funds
       await walletService.reserveForAd(advertiserId, adId, cost);
 
-      // Update ad status to PENDING_REVIEW
+      // Update ad status to PENDING_REVIEW and clear rejection reason
       const updated = await prisma.ad.update({
         where: { id: adId },
         data: {
           status: 'PENDING_REVIEW',
-          // scheduledAt can be set here if needed
+          rejectionReason: null,
         },
       });
 
@@ -397,7 +398,7 @@ class AdService {
           excludedUserIds: data.excludedUserIds ? JSON.stringify(data.excludedUserIds) : undefined,
           specificBotIds: data.specificBotIds ? JSON.stringify(data.specificBotIds) : undefined,
           status: ad.status === 'REJECTED' ? 'DRAFT' : undefined, // Reset to DRAFT if was rejected
-          rejectionReason: ad.status === 'REJECTED' ? null : undefined, // Clear rejection reason
+          rejectionReason: null, // Always clear rejection reason when user edits
         },
       });
 
@@ -671,7 +672,7 @@ class AdService {
   }
 
   /**
-   * Send test ad via platform bot
+   * Send test ad via user's own registered bot (falls back to platform bot)
    */
   async sendTestAd(adId, advertiserId, telegramUserId) {
     try {
@@ -683,7 +684,34 @@ class AdService {
         throw new NotFoundError('Ad not found');
       }
 
-      // Get user's Telegram ID
+      // Try to find the user's own active bot first
+      const userBot = await prisma.bot.findFirst({
+        where: {
+          ownerId: advertiserId,
+          status: 'ACTIVE',
+          isPaused: false,
+        },
+        orderBy: { createdAt: 'asc' },
+      });
+
+      if (userBot) {
+        // Send via the user's own registered bot
+        logger.info(`Sending test ad via user's own bot ${userBot.id}`);
+        const adData = {
+          text: ad.text || '',
+          mediaUrl: ad.mediaUrl || null,
+          buttons: ad.buttons ? (typeof ad.buttons === 'string' ? JSON.parse(ad.buttons) : ad.buttons) : [],
+          contentType: ad.contentType,
+        };
+        await telegramPreviewService.sendTestAdViaBot(userBot.id, advertiserId, adData);
+        return {
+          success: true,
+          message: 'Test ad sent to your Telegram via your bot!',
+          botUsername: userBot.username,
+        };
+      }
+
+      // Fallback: use platform bot token
       const user = await prisma.user.findUnique({
         where: { id: advertiserId },
         select: { telegramId: true, username: true, firstName: true }
@@ -695,19 +723,16 @@ class AdService {
         throw new ValidationError('Telegram ID not found');
       }
 
-      // Use platform bot token
       const botToken = process.env.TELEGRAM_BOT_TOKEN;
 
       if (!botToken) {
         throw new Error('TELEGRAM_BOT_TOKEN not configured');
       }
 
-      logger.info(`Sending test ad to user ${targetUserId}`);
+      logger.info(`Sending test ad to user ${targetUserId} via platform bot`);
 
-      // Prepare message
       const message = await this.prepareTestMessage(ad);
 
-      // Send message
       try {
         if (ad.contentType === 'MEDIA' && ad.mediaUrl) {
           await telegramAPI.sendPhoto(botToken, {
@@ -726,7 +751,7 @@ class AdService {
           });
         }
 
-        logger.info(`✅ Test ad sent successfully`);
+        logger.info(`✅ Test ad sent successfully via platform bot`);
 
         return {
           success: true,
