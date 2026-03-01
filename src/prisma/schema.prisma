@@ -316,6 +316,7 @@ model Bot {
   postFilter        String @default("all") @map("post_filter")
   allowedCategories Json?  @map("allowed_categories")
   blockedCategories Json?  @map("blocked_categories")
+  blockedAdIds      Json?  @map("blocked_ad_ids")
   frequencyMinutes  Int    @default(5) @map("frequency_minutes")
 
   totalEarnings   Decimal @default(0) @map("total_earnings") @db.Decimal(12, 2)
