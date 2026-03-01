@@ -67,18 +67,18 @@ class AdCreationService {
    */
   generateTitle(text) {
     if (!text) return 'New Advertisement';
-    
+
     // Remove emojis and special chars
     let cleanText = text.replace(/[^\w\s]/g, '').trim();
-    
+
     // Take first 50 chars
     let title = cleanText.slice(0, 50).trim();
-    
-    // If empty after cleaning, use default
-    if (!title) {
+
+    // If too short or empty after cleaning, use default
+    if (!title || title.length < 3) {
       title = 'New Advertisement';
     }
-    
+
     return title;
   }
 
