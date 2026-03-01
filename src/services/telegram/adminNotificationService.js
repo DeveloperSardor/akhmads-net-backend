@@ -4,6 +4,7 @@
 import { InlineKeyboard } from 'grammy';
 import telegramBot from '../../config/telegram.js';
 import prisma from '../../config/database.js';
+import redis from '../../config/redis.js';
 import logger from '../../utils/logger.js';
 
 class AdminNotificationService {
@@ -39,13 +40,23 @@ class AdminNotificationService {
         .row()
         .text('✏️ Edit so\'r', `ad_request_edit_${ad.id}`);
 
+      const messageIds = [];
       for (const admin of admins) {
         if (admin.telegramId) {
-          await telegramBot.bot.api.sendMessage(admin.telegramId, message, {
-            parse_mode: 'HTML',
-            reply_markup: keyboard,
-          }).catch(e => logger.warn(`Admin ${admin.telegramId} ga ad xabari yuborilmadi: ${e.message}`));
+          try {
+            const msg = await telegramBot.bot.api.sendMessage(admin.telegramId, message, {
+              parse_mode: 'HTML',
+              reply_markup: keyboard,
+            });
+            messageIds.push({ chatId: admin.telegramId, messageId: msg.message_id });
+          } catch (e) {
+            logger.warn(`Admin ${admin.telegramId} ga ad xabari yuborilmadi: ${e.message}`);
+          }
         }
+      }
+
+      if (messageIds.length > 0) {
+        await redis.set(`admin_notify:ad:${ad.id}`, JSON.stringify(messageIds), 'EX', 86400 * 7);
       }
 
       logger.info(`Ad notification sent to ${admins.length} admins for ad: ${ad.id}`);
@@ -86,13 +97,23 @@ class AdminNotificationService {
         .row()
         .text('✏️ Edit so\'r', `bcast_edit_${broadcast.id}`);
 
+      const messageIds = [];
       for (const admin of admins) {
         if (admin.telegramId) {
-          await telegramBot.bot.api.sendMessage(admin.telegramId, message, {
-            parse_mode: 'HTML',
-            reply_markup: keyboard,
-          }).catch(e => logger.warn(`Admin ${admin.telegramId} ga broadcast xabari yuborilmadi: ${e.message}`));
+          try {
+            const msg = await telegramBot.bot.api.sendMessage(admin.telegramId, message, {
+              parse_mode: 'HTML',
+              reply_markup: keyboard,
+            });
+            messageIds.push({ chatId: admin.telegramId, messageId: msg.message_id });
+          } catch (e) {
+            logger.warn(`Admin ${admin.telegramId} ga broadcast xabari yuborilmadi: ${e.message}`);
+          }
         }
+      }
+
+      if (messageIds.length > 0) {
+        await redis.set(`admin_notify:broadcast:${broadcast.id}`, JSON.stringify(messageIds), 'EX', 86400 * 7);
       }
 
       logger.info(`Broadcast notification sent to ${admins.length} admins for broadcast: ${broadcast.id}`);
@@ -127,18 +148,56 @@ class AdminNotificationService {
         .text('✅ Tasdiqlash', `bot_approve_${bot.id}`)
         .text('❌ Rad etish', `bot_reject_${bot.id}`);
 
+      const messageIds = [];
       for (const admin of admins) {
         if (admin.telegramId) {
-          await telegramBot.bot.api.sendMessage(admin.telegramId, message, {
-            parse_mode: 'HTML',
-            reply_markup: keyboard,
-          }).catch(e => logger.warn(`Admin ${admin.telegramId} ga bot xabari yuborilmadi: ${e.message}`));
+          try {
+            const msg = await telegramBot.bot.api.sendMessage(admin.telegramId, message, {
+              parse_mode: 'HTML',
+              reply_markup: keyboard,
+            });
+            messageIds.push({ chatId: admin.telegramId, messageId: msg.message_id });
+          } catch (e) {
+            logger.warn(`Admin ${admin.telegramId} ga bot xabari yuborilmadi: ${e.message}`);
+          }
         }
+      }
+
+      if (messageIds.length > 0) {
+        await redis.set(`admin_notify:bot:${bot.id}`, JSON.stringify(messageIds), 'EX', 86400 * 7);
       }
 
       logger.info(`Bot notification sent to ${admins.length} admins for bot: ${bot.id}`);
     } catch (e) {
       logger.error('Bot admin notification error:', e);
+    }
+  }
+
+  /**
+   * Remove action buttons for other admins when an entity is resolved
+   */
+  async markAsResolved(entityType, entityId, resolverName, actionType) {
+    try {
+      const key = `admin_notify:${entityType}:${entityId}`;
+      const data = await redis.get(key);
+      if (data) {
+        const messageIds = JSON.parse(data);
+        const resolvedText = `${actionType} by @${resolverName}`;
+        for (const { chatId, messageId } of messageIds) {
+          try {
+            await telegramBot.bot.api.editMessageReplyMarkup(chatId, messageId, {
+              reply_markup: {
+                inline_keyboard: [[{ text: resolvedText, callback_data: 'ignore' }]]
+              }
+            });
+          } catch (e) {
+            // ignore if message not found or blocked
+          }
+        }
+        await redis.del(key);
+      }
+    } catch (e) {
+      logger.error('Error marking as resolved:', e);
     }
   }
 }

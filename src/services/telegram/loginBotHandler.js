@@ -1139,10 +1139,13 @@ class LoginBotHandler {
 
       await ctx.answerCallbackQuery('✅ Reklama tasdiqlandi!');
       const originalText = ctx.callbackQuery.message?.text || '';
+      const resolverName = ctx.from.username || ctx.from.first_name || 'Admin';
       await ctx.editMessageText(
-        `${originalText}\n\n✅ <b>TASDIQLANDI</b> — @${ctx.from.username || ctx.from.first_name}`,
+        `${originalText}\n\n✅ <b>TASDIQLANDI</b> — @${resolverName}`,
         { parse_mode: 'HTML' }
       ).catch(() => {});
+
+      adminNotificationService.markAsResolved('ad', adId, resolverName, '✅ TASDIQLANDI').catch(() => {});
 
       // ✅ Reklamachiga uning tilida xabar
       if (ad.advertiser?.telegramId) {
@@ -1184,10 +1187,13 @@ class LoginBotHandler {
 
       await ctx.answerCallbackQuery('❌ Reklama rad etildi!');
       const originalText = ctx.callbackQuery.message?.text || '';
+      const resolverName = ctx.from.username || ctx.from.first_name || 'Admin';
       await ctx.editMessageText(
-        `${originalText}\n\n❌ <b>RAD ETILDI</b> — @${ctx.from.username || ctx.from.first_name}`,
+        `${originalText}\n\n❌ <b>RAD ETILDI</b> — @${resolverName}`,
         { parse_mode: 'HTML' }
       ).catch(() => {});
+
+      adminNotificationService.markAsResolved('ad', adId, resolverName, '❌ RAD ETILDI').catch(() => {});
 
       // ✅ Reklamachiga uning tilida xabar
       if (ad.advertiser?.telegramId) {
@@ -1229,10 +1235,13 @@ class LoginBotHandler {
 
       await ctx.answerCallbackQuery('✏️ Edit so\'rovi yuborildi!');
       const originalText = ctx.callbackQuery.message?.text || '';
+      const resolverName = ctx.from.username || ctx.from.first_name || 'Admin';
       await ctx.editMessageText(
-        `${originalText}\n\n✏️ <b>EDIT SO'RALDI</b> — @${ctx.from.username || ctx.from.first_name}`,
+        `${originalText}\n\n✏️ <b>EDIT SO'RALDI</b> — @${resolverName}`,
         { parse_mode: 'HTML' }
       ).catch(() => {});
+
+      adminNotificationService.markAsResolved('ad', adId, resolverName, '✏️ EDIT SO\'RALDI').catch(() => {});
 
       // ✅ Reklamachiga uning tilida xabar
       if (ad.advertiser?.telegramId) {
@@ -1278,10 +1287,13 @@ class LoginBotHandler {
 
       await ctx.answerCallbackQuery('✅ Bot tasdiqlandi!');
       const originalText = ctx.callbackQuery.message?.text || '';
+      const resolverName = ctx.from.username || ctx.from.first_name || 'Admin';
       await ctx.editMessageText(
-        `${originalText}\n\n✅ <b>BOT TASDIQLANDI</b> — @${ctx.from.username || ctx.from.first_name}`,
+        `${originalText}\n\n✅ <b>BOT TASDIQLANDI</b> — @${resolverName}`,
         { parse_mode: 'HTML' }
       ).catch(() => {});
+
+      adminNotificationService.markAsResolved('bot', botId, resolverName, '✅ TASDIQLANDI').catch(() => {});
 
       // ✅ Bot egasiga uning tilida xabar
       if (bot.owner?.telegramId) {
@@ -1322,10 +1334,13 @@ class LoginBotHandler {
 
       await ctx.answerCallbackQuery('❌ Bot rad etildi!');
       const originalText = ctx.callbackQuery.message?.text || '';
+      const resolverName = ctx.from.username || ctx.from.first_name || 'Admin';
       await ctx.editMessageText(
-        `${originalText}\n\n❌ <b>BOT RAD ETILDI</b> — @${ctx.from.username || ctx.from.first_name}`,
+        `${originalText}\n\n❌ <b>BOT RAD ETILDI</b> — @${resolverName}`,
         { parse_mode: 'HTML' }
       ).catch(() => {});
+
+      adminNotificationService.markAsResolved('bot', botId, resolverName, '❌ RAD ETILDI').catch(() => {});
 
       // ✅ Bot egasiga uning tilida xabar
       if (bot.owner?.telegramId) {
@@ -1362,10 +1377,13 @@ class LoginBotHandler {
 
       await ctx.answerCallbackQuery('✅ Broadcast tasdiqlandi!');
       const originalText = ctx.callbackQuery.message?.text || '';
+      const resolverName = ctx.from.username || ctx.from.first_name || 'Admin';
       await ctx.editMessageText(
-        `${originalText}\n\n✅ <b>TASDIQLANDI</b> — @${ctx.from.username || ctx.from.first_name}`,
+        `${originalText}\n\n✅ <b>TASDIQLANDI</b> — @${resolverName}`,
         { parse_mode: 'HTML' }
       ).catch(() => {});
+
+      adminNotificationService.markAsResolved('broadcast', broadcastId, resolverName, '✅ TASDIQLANDI').catch(() => {});
 
       logger.info(`Broadcast ${broadcastId} approved via bot by admin ${admin.id}`);
     } catch (error) {
@@ -1389,10 +1407,13 @@ class LoginBotHandler {
 
       await ctx.answerCallbackQuery('❌ Broadcast rad etildi!');
       const originalText = ctx.callbackQuery.message?.text || '';
+      const resolverName = ctx.from.username || ctx.from.first_name || 'Admin';
       await ctx.editMessageText(
-        `${originalText}\n\n❌ <b>RAD ETILDI</b> — @${ctx.from.username || ctx.from.first_name}`,
+        `${originalText}\n\n❌ <b>RAD ETILDI</b> — @${resolverName}`,
         { parse_mode: 'HTML' }
       ).catch(() => {});
+      
+      adminNotificationService.markAsResolved('broadcast', broadcastId, resolverName, '❌ RAD ETILDI').catch(() => {});
 
       logger.info(`Broadcast ${broadcastId} rejected via bot by admin ${admin.id}`);
     } catch (error) {
@@ -1416,10 +1437,13 @@ class LoginBotHandler {
 
       await ctx.answerCallbackQuery('✏️ Edit so\'rovi yuborildi!');
       const originalText = ctx.callbackQuery.message?.text || '';
+      const resolverName = ctx.from.username || ctx.from.first_name || 'Admin';
       await ctx.editMessageText(
-        `${originalText}\n\n✏️ <b>EDIT SO'RALDI</b> — @${ctx.from.username || ctx.from.first_name}`,
+        `${originalText}\n\n✏️ <b>EDIT SO'RALDI</b> — @${resolverName}`,
         { parse_mode: 'HTML' }
       ).catch(() => {});
+      
+      adminNotificationService.markAsResolved('broadcast', broadcastId, resolverName, '✏️ EDIT SO\'RALDI').catch(() => {});
 
       logger.info(`Broadcast ${broadcastId} edit requested via bot by admin ${admin.id}`);
     } catch (error) {
