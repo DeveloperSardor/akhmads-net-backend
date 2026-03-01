@@ -10,6 +10,7 @@ import response from "../../utils/response.js";
 import prisma from "../../config/database.js";
 import redis from "../../config/redis.js";
 import axios from "axios";
+import adminNotificationService from "../../services/telegram/adminNotificationService.js";
 
 const router = Router();
 
@@ -169,6 +170,13 @@ router.post(
   async (req, res, next) => {
     try {
       const bot = await botService.registerBot(req.userId, req.body);
+
+      // ✅ Adminlarga Telegram xabari + inline tugmalar
+      const owner = await prisma.user.findUnique({
+        where: { id: req.userId },
+        select: { username: true, firstName: true, telegramId: true },
+      });
+      adminNotificationService.notifyNewBot(bot, owner).catch(() => {});
 
       // ✅ Return both bot and apiKey
       response.created(

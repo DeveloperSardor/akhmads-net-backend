@@ -19,6 +19,7 @@ import response from "../../utils/response.js";
 import prisma from "../../config/database.js";
 import multer from "multer";
 import adMediaService from "../../services/ad/adMediaService.js";
+import adminNotificationService from "../../services/telegram/adminNotificationService.js";
 
 const router = Router();
 
@@ -304,6 +305,13 @@ router.post(
   async (req, res, next) => {
     try {
       const ad = await adService.submitAd(req.params.id, req.userId);
+
+      // ✅ Adminlarga Telegram xabari + inline tugmalar
+      const advertiser = await prisma.user.findUnique({
+        where: { id: req.userId },
+        select: { username: true, firstName: true, telegramId: true },
+      });
+      adminNotificationService.notifyNewAd(ad, advertiser).catch(() => {});
 
       response.success(res, { ad }, "Ad submitted for review");
     } catch (error) {

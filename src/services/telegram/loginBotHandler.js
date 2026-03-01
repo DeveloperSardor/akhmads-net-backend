@@ -11,6 +11,7 @@ import logger from '../../utils/logger.js';
 import i18n from '../../utils/i18n.js';
 import { messageToHtml } from '../../utils/telegram-html.js';
 import walletService from '../wallet/walletService.js';
+import adminNotificationService from './adminNotificationService.js';
 
 /**
  * Login Bot Handler - GramAds Style
@@ -192,6 +193,37 @@ class LoginBotHandler {
       }
       if (data.startsWith('draft_')) {
         await this.handleDraftInteractions(ctx, data);
+        return;
+      }
+      // ✅ Admin: Withdraw approve/reject
+      if (data.startsWith('wd_approve_')) {
+        await this.handleWithdrawApprove(ctx, data.replace('wd_approve_', ''));
+        return;
+      }
+      if (data.startsWith('wd_reject_')) {
+        await this.handleWithdrawReject(ctx, data.replace('wd_reject_', ''));
+        return;
+      }
+      // ✅ Admin: Ad approve/reject/edit
+      if (data.startsWith('ad_approve_')) {
+        await this.handleAdApprove(ctx, data.replace('ad_approve_', ''));
+        return;
+      }
+      if (data.startsWith('ad_reject_')) {
+        await this.handleAdReject(ctx, data.replace('ad_reject_', ''));
+        return;
+      }
+      if (data.startsWith('ad_request_edit_')) {
+        await this.handleAdRequestEdit(ctx, data.replace('ad_request_edit_', ''));
+        return;
+      }
+      // ✅ Admin: Bot approve/reject
+      if (data.startsWith('bot_approve_')) {
+        await this.handleBotApprove(ctx, data.replace('bot_approve_', ''));
+        return;
+      }
+      if (data.startsWith('bot_reject_')) {
+        await this.handleBotReject(ctx, data.replace('bot_reject_', ''));
         return;
       }
       await this.handleCallbackQuery(ctx);
@@ -941,6 +973,9 @@ class LoginBotHandler {
         { parse_mode: 'HTML' }
       );
 
+      // ✅ Adminlarga xabar yuborish (bot orqali yuborilgan reklamalar uchun ham)
+      adminNotificationService.notifyNewAd(ad, user).catch(() => {});
+
       // Cleanup session
       if (sessionKey) {
         await redis.del(sessionKey);
@@ -964,6 +999,258 @@ class LoginBotHandler {
     await ctx.reply(text, {
       parse_mode: 'HTML'
     });
+  }
+
+  // ─────────────────────────────────────────────────────────────────
+  // ADMIN ACTIONS: Withdraw Approve / Reject
+  // ─────────────────────────────────────────────────────────────────
+
+  async handleWithdrawApprove(ctx, withdrawalId) {
+    try {
+      const telegramId = ctx.from.id.toString();
+      const admin = await prisma.user.findUnique({
+        where: { telegramId },
+        select: { id: true, role: true },
+      });
+
+      if (!admin || !['ADMIN', 'SUPER_ADMIN'].includes(admin.role)) {
+        await ctx.answerCallbackQuery('❌ Ruxsat yo\'q!');
+        return;
+      }
+
+      const withdrawal = await prisma.withdrawRequest.findUnique({ where: { id: withdrawalId } });
+      if (!withdrawal) {
+        await ctx.answerCallbackQuery('❌ So\'rov topilmadi');
+        return;
+      }
+      if (!['REQUESTED', 'PENDING_REVIEW'].includes(withdrawal.status)) {
+        await ctx.answerCallbackQuery(`⚠️ Bu so'rov allaqachon: ${withdrawal.status}`);
+        return;
+      }
+
+      // Import withdrawService dynamically to avoid circular deps
+      const { default: withdrawService } = await import('../payments/withdrawService.js');
+      await withdrawService.approveWithdrawal(withdrawalId, admin.id);
+
+      await ctx.answerCallbackQuery('✅ Tasdiqlandi!');
+      await ctx.editMessageText(
+        ctx.message?.text || ctx.callbackQuery.message?.text || '' + `\n\n✅ <b>Tasdiqlandi!</b> (Admin: ${ctx.from.first_name})`,
+        { parse_mode: 'HTML' }
+      );
+
+      logger.info(`Withdrawal ${withdrawalId} approved via bot by admin ${admin.id}`);
+    } catch (error) {
+      logger.error('Bot withdraw approve error:', error);
+      await ctx.answerCallbackQuery(`❌ Xatolik: ${error.message}`);
+    }
+  }
+
+  async handleWithdrawReject(ctx, withdrawalId) {
+    try {
+      const telegramId = ctx.from.id.toString();
+      const admin = await prisma.user.findUnique({
+        where: { telegramId },
+        select: { id: true, role: true },
+      });
+
+      if (!admin || !['ADMIN', 'SUPER_ADMIN'].includes(admin.role)) {
+        await ctx.answerCallbackQuery('❌ Ruxsat yo\'q!');
+        return;
+      }
+
+      const withdrawal = await prisma.withdrawRequest.findUnique({ where: { id: withdrawalId } });
+      if (!withdrawal) {
+        await ctx.answerCallbackQuery('❌ So\'rov topilmadi');
+        return;
+      }
+      if (!['REQUESTED', 'PENDING_REVIEW'].includes(withdrawal.status)) {
+        await ctx.answerCallbackQuery(`⚠️ Bu so'rov allaqachon: ${withdrawal.status}`);
+        return;
+      }
+
+      const { default: withdrawService } = await import('../payments/withdrawService.js');
+      await withdrawService.rejectWithdrawal(withdrawalId, admin.id, 'Admin tomonidan rad etildi');
+
+      await ctx.answerCallbackQuery('❌ Rad etildi!');
+      await ctx.editMessageText(
+        (ctx.callbackQuery.message?.text || '') + `\n\n❌ <b>Rad etildi!</b> (Admin: ${ctx.from.first_name})`,
+        { parse_mode: 'HTML' }
+      );
+
+      logger.info(`Withdrawal ${withdrawalId} rejected via bot by admin ${admin.id}`);
+    } catch (error) {
+      logger.error('Bot withdraw reject error:', error);
+      await ctx.answerCallbackQuery(`❌ Xatolik: ${error.message}`);
+    }
+  }
+
+  // ─────────────────────────────────────────────────────────────────
+  // ADMIN ACTIONS: Ad Approve / Reject / Edit Request
+  // ─────────────────────────────────────────────────────────────────
+
+  async handleAdApprove(ctx, adId) {
+    try {
+      const telegramId = ctx.from.id.toString();
+      const admin = await prisma.user.findUnique({ where: { telegramId }, select: { id: true, role: true } });
+
+      if (!admin || !['ADMIN', 'MODERATOR', 'SUPER_ADMIN'].includes(admin.role)) {
+        await ctx.answerCallbackQuery('❌ Ruxsat yo\'q!');
+        return;
+      }
+
+      const ad = await prisma.ad.findUnique({ where: { id: adId } });
+      if (!ad) { await ctx.answerCallbackQuery('❌ Reklama topilmadi'); return; }
+      if (ad.status !== 'PENDING_REVIEW') {
+        await ctx.answerCallbackQuery(`⚠️ Status: ${ad.status}`);
+        return;
+      }
+
+      await prisma.ad.update({
+        where: { id: adId },
+        data: { status: 'ACTIVE', reviewedBy: admin.id, reviewedAt: new Date() },
+      });
+
+      await ctx.answerCallbackQuery('✅ Reklama tasdiqlandi!');
+      await ctx.editMessageText(
+        (ctx.callbackQuery.message?.text || '') + `\n\n✅ <b>TASDIQLANDI</b> by ${ctx.from.first_name}`,
+        { parse_mode: 'HTML' }
+      );
+    } catch (error) {
+      logger.error('Bot ad approve error:', error);
+      await ctx.answerCallbackQuery(`❌ Xatolik: ${error.message}`);
+    }
+  }
+
+  async handleAdReject(ctx, adId) {
+    try {
+      const telegramId = ctx.from.id.toString();
+      const admin = await prisma.user.findUnique({ where: { telegramId }, select: { id: true, role: true } });
+
+      if (!admin || !['ADMIN', 'MODERATOR', 'SUPER_ADMIN'].includes(admin.role)) {
+        await ctx.answerCallbackQuery('❌ Ruxsat yo\'q!');
+        return;
+      }
+
+      const ad = await prisma.ad.findUnique({ where: { id: adId } });
+      if (!ad) { await ctx.answerCallbackQuery('❌ Reklama topilmadi'); return; }
+
+      await prisma.ad.update({
+        where: { id: adId },
+        data: { status: 'REJECTED', reviewedBy: admin.id, reviewedAt: new Date() },
+      });
+
+      await ctx.answerCallbackQuery('❌ Reklama rad etildi!');
+      await ctx.editMessageText(
+        (ctx.callbackQuery.message?.text || '') + `\n\n❌ <b>RAD ETILDI</b> by ${ctx.from.first_name}`,
+        { parse_mode: 'HTML' }
+      );
+    } catch (error) {
+      logger.error('Bot ad reject error:', error);
+      await ctx.answerCallbackQuery(`❌ Xatolik: ${error.message}`);
+    }
+  }
+
+  async handleAdRequestEdit(ctx, adId) {
+    try {
+      const telegramId = ctx.from.id.toString();
+      const admin = await prisma.user.findUnique({ where: { telegramId }, select: { id: true, role: true } });
+
+      if (!admin || !['ADMIN', 'MODERATOR', 'SUPER_ADMIN'].includes(admin.role)) {
+        await ctx.answerCallbackQuery('❌ Ruxsat yo\'q!');
+        return;
+      }
+
+      const ad = await prisma.ad.findUnique({
+        where: { id: adId },
+        include: { advertiser: { select: { telegramId: true, firstName: true } } },
+      });
+      if (!ad) { await ctx.answerCallbackQuery('❌ Reklama topilmadi'); return; }
+
+      await prisma.ad.update({
+        where: { id: adId },
+        data: { status: 'EDIT_REQUESTED', reviewedBy: admin.id, reviewedAt: new Date() },
+      });
+
+      // Reklama beruvchiga xabar yuborish
+      if (ad.advertiser?.telegramId) {
+        await ctx.api.sendMessage(
+          ad.advertiser.telegramId,
+          `✏️ <b>Reklamangizni tahrirlash so'rovi</b>\n\nAdmin reklamangizni ko'rib chiqdi va tahrirlashni so'radi.\n🆔 Ad ID: <code>${adId}</code>\n\nIltimos, admin paneliga kirb reklamangizni tahrirlang.`,
+          { parse_mode: 'HTML' }
+        ).catch(() => {});
+      }
+
+      await ctx.answerCallbackQuery('✏️ Edit so\'rovi yuborildi!');
+      await ctx.editMessageText(
+        (ctx.callbackQuery.message?.text || '') + `\n\n✏️ <b>EDIT SO'RALDI</b> by ${ctx.from.first_name}`,
+        { parse_mode: 'HTML' }
+      );
+    } catch (error) {
+      logger.error('Bot ad request edit error:', error);
+      await ctx.answerCallbackQuery(`❌ Xatolik: ${error.message}`);
+    }
+  }
+
+  // ─────────────────────────────────────────────────────────────────
+  // ADMIN ACTIONS: Bot Approve / Reject
+  // ─────────────────────────────────────────────────────────────────
+
+  async handleBotApprove(ctx, botId) {
+    try {
+      const telegramId = ctx.from.id.toString();
+      const admin = await prisma.user.findUnique({ where: { telegramId }, select: { id: true, role: true } });
+
+      if (!admin || !['ADMIN', 'MODERATOR', 'SUPER_ADMIN'].includes(admin.role)) {
+        await ctx.answerCallbackQuery('❌ Ruxsat yo\'q!');
+        return;
+      }
+
+      const bot = await prisma.bot.findUnique({ where: { id: botId } });
+      if (!bot) { await ctx.answerCallbackQuery('❌ Bot topilmadi'); return; }
+
+      await prisma.bot.update({
+        where: { id: botId },
+        data: { status: 'ACTIVE', verifiedAt: new Date() },
+      });
+
+      await ctx.answerCallbackQuery('✅ Bot tasdiqlandi!');
+      await ctx.editMessageText(
+        (ctx.callbackQuery.message?.text || '') + `\n\n✅ <b>BOT TASDIQLANDI</b> by ${ctx.from.first_name}`,
+        { parse_mode: 'HTML' }
+      );
+    } catch (error) {
+      logger.error('Bot approve error:', error);
+      await ctx.answerCallbackQuery(`❌ Xatolik: ${error.message}`);
+    }
+  }
+
+  async handleBotReject(ctx, botId) {
+    try {
+      const telegramId = ctx.from.id.toString();
+      const admin = await prisma.user.findUnique({ where: { telegramId }, select: { id: true, role: true } });
+
+      if (!admin || !['ADMIN', 'MODERATOR', 'SUPER_ADMIN'].includes(admin.role)) {
+        await ctx.answerCallbackQuery('❌ Ruxsat yo\'q!');
+        return;
+      }
+
+      const bot = await prisma.bot.findUnique({ where: { id: botId } });
+      if (!bot) { await ctx.answerCallbackQuery('❌ Bot topilmadi'); return; }
+
+      await prisma.bot.update({
+        where: { id: botId },
+        data: { status: 'REJECTED' },
+      });
+
+      await ctx.answerCallbackQuery('❌ Bot rad etildi!');
+      await ctx.editMessageText(
+        (ctx.callbackQuery.message?.text || '') + `\n\n❌ <b>BOT RAD ETILDI</b> by ${ctx.from.first_name}`,
+        { parse_mode: 'HTML' }
+      );
+    } catch (error) {
+      logger.error('Bot reject error:', error);
+      await ctx.answerCallbackQuery(`❌ Xatolik: ${error.message}`);
+    }
   }
 }
 

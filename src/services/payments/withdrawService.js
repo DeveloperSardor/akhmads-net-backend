@@ -3,6 +3,7 @@ import prisma from '../../config/database.js';
 import walletService from '../wallet/walletService.js';
 import telegramBot from '../../config/telegram.js';
 import logger from '../../utils/logger.js';
+import { InlineKeyboard } from 'grammy';
 import { InsufficientFundsError, ValidationError } from '../../utils/errors.js';
 
 // BEP-20 manzil formati: 0x + 40 hex belgi
@@ -346,8 +347,9 @@ class WithdrawService {
         select: { firstName: true, lastName: true, username: true, telegramId: true },
       });
 
-      const admins = await prisma.user.findMany({
-        where: { role: { in: ['ADMIN', 'SUPER_ADMIN'] }, isActive: true },
+      // ✅ Faqat SUPER_ADMIN ga yuboriladi
+      const superAdmins = await prisma.user.findMany({
+        where: { role: 'SUPER_ADMIN', isActive: true },
         select: { telegramId: true },
       });
 
@@ -365,10 +367,17 @@ class WithdrawService {
         `🆔 ID: <code>${withdrawal.id}</code>\n\n` +
         `⚠️ USDT jo'nating, keyin tasdiqlang!`;
 
-      for (const admin of admins) {
+      // ✅ Inline buttons: Tasdiqlash / Rad etish
+      const keyboard = new InlineKeyboard()
+        .text('✅ Tasdiqlash', `wd_approve_${withdrawal.id}`)
+        .text('❌ Rad etish', `wd_reject_${withdrawal.id}`);
+
+      for (const admin of superAdmins) {
         if (admin.telegramId) {
-          await telegramBot.sendMessage(admin.telegramId, message, { parse_mode: 'HTML' })
-            .catch(e => logger.warn(`Admin ${admin.telegramId} ga xabar yuborilmadi: ${e.message}`));
+          await telegramBot.bot.api.sendMessage(admin.telegramId, message, {
+            parse_mode: 'HTML',
+            reply_markup: keyboard,
+          }).catch(e => logger.warn(`SuperAdmin ${admin.telegramId} ga xabar yuborilmadi: ${e.message}`));
         }
       }
     } catch (e) {
