@@ -19,8 +19,11 @@ class JWT {
      * @returns {string} - JWT token
      */
     generateAccessToken(payload) {
+        const isAdmin = payload.role === 'ADMIN' || (payload.roles && payload.roles.includes('ADMIN'));
+        const expiresIn = isAdmin ? '1d' : '2d';
+
         return jwt.sign(payload, this.secret, {
-            expiresIn: this.accessExpiry,
+            expiresIn: expiresIn,
             issuer: 'akhmads.net',
             jwtid: nanoid(),
         });
@@ -32,8 +35,11 @@ class JWT {
      * @returns {string} - JWT token
      */
     generateRefreshToken(payload) {
+        const isAdmin = payload.role === 'ADMIN' || (payload.roles && payload.roles.includes('ADMIN'));
+        const expiresIn = isAdmin ? '1d' : '2d';
+
         return jwt.sign(payload, this.secret, {
-            expiresIn: this.refreshExpiry,
+            expiresIn: expiresIn,
             issuer: 'akhmads.net',
             jwtid: nanoid(),
         });

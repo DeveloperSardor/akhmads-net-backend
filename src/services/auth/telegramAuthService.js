@@ -173,10 +173,11 @@ class TelegramAuthService {
       const tokens = jwtUtil.generateTokenPair(user);
 
       // Store refresh token in Redis
+      const isAdminLogin = user.role === 'ADMIN' || (user.roles && user.roles.includes('ADMIN'));
       await redis.set(
         `refresh_token:${user.id}`,
         tokens.refreshToken,
-        7 * 24 * 60 * 60
+        isAdminLogin ? 1 * 24 * 60 * 60 : 2 * 24 * 60 * 60
       );
 
       // ✅ Clean up login codes from Redis
@@ -261,7 +262,8 @@ class TelegramAuthService {
       });
 
       const tokens = jwtUtil.generateTokenPair(user);
-      await redis.set(`refresh_token:${user.id}`, tokens.refreshToken, 7 * 24 * 60 * 60);
+      const isAdminWidget = user.role === 'ADMIN' || (user.roles && user.roles.includes('ADMIN'));
+      await redis.set(`refresh_token:${user.id}`, tokens.refreshToken, isAdminWidget ? 1 * 24 * 60 * 60 : 2 * 24 * 60 * 60);
 
       logger.info(`Widget login success: ${user.id}`);
 
@@ -322,10 +324,11 @@ class TelegramAuthService {
       const tokens = jwtUtil.generateTokenPair(user);
 
       // Store refresh token
+      const isAdminPolling = user.role === 'ADMIN' || (user.roles && user.roles.includes('ADMIN'));
       await redis.set(
         `refresh_token:${user.id}`,
         tokens.refreshToken,
-        7 * 24 * 60 * 60
+        isAdminPolling ? 1 * 24 * 60 * 60 : 2 * 24 * 60 * 60
       );
 
       return {
@@ -378,10 +381,11 @@ class TelegramAuthService {
       const tokens = jwtUtil.generateTokenPair(user);
 
       // Update refresh token in Redis
+      const isAdminRefresh = user.role === 'ADMIN' || (user.roles && user.roles.includes('ADMIN'));
       await redis.set(
         `refresh_token:${user.id}`,
         tokens.refreshToken,
-        7 * 24 * 60 * 60
+        isAdminRefresh ? 1 * 24 * 60 * 60 : 2 * 24 * 60 * 60
       );
 
       logger.info(`Token refreshed for user: ${user.id}`);

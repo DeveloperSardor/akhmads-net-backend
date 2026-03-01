@@ -66,10 +66,11 @@ class JwtService {
       const tokens = this.generateTokens(user);
 
       // Store new refresh token
+      const isAdmin = user.role === 'ADMIN' || (user.roles && user.roles.includes('ADMIN'));
       await redis.set(
         `refresh_token:${user.id}`,
         tokens.refreshToken,
-        7 * 24 * 60 * 60
+        isAdmin ? 1 * 24 * 60 * 60 : 2 * 24 * 60 * 60
       );
 
       logger.info(`Token refreshed for user: ${user.id}`);
