@@ -291,15 +291,12 @@ class AdService {
   async getUserAds(advertiserId, filters = {}) {
     try {
       const { status, limit = 20, offset = 0, onlyArchived = false } = filters;
-      console.log('getUserAds called with filters:', filters);
-
       const where = {
         advertiserId,
         isArchived: onlyArchived,
       };
 
       if (status) where.status = status;
-      console.log('getUserAds Prisma where clause:', where);
 
       const ads = await prisma.ad.findMany({
         where,
@@ -598,7 +595,7 @@ class AdService {
   }
 
   /**
-   * Unarchive ad
+   * ✅ Unarchive ad
    */
   async unarchiveAd(adId, advertiserId) {
     try {
@@ -623,31 +620,7 @@ class AdService {
     }
   }
 
-  /**
-   * ✅ NEW - Get user's saved ads
-   */
-  async getSavedAds(advertiserId) {
-    try {
-      const savedAds = await prisma.savedAd.findMany({
-        where: { userId: advertiserId },
-        include: {
-          ad: true
-        },
-        orderBy: { createdAt: 'desc' }
-      });
-
-      // Extract the Ad objects and attach isSaved=true
-      const ads = savedAds.map(saved => ({
-        ...saved.ad,
-        isSaved: true
-      }));
-
-      return ads;
-    } catch (error) {
-      logger.error('Get saved ads failed:', error);
-      throw error;
-    }
-  }
+  // The redundant getSavedAds was here and is now removed.
 
   /**
    * Get ad performance
@@ -910,7 +883,10 @@ class AdService {
       const total = await prisma.savedAd.count({ where: { userId } });
 
       return {
-        ads: savedAds.map(s => s.ad),
+        ads: savedAds.map(s => ({
+          ...s.ad,
+          isSaved: true
+        })),
         total,
       };
     } catch (error) {

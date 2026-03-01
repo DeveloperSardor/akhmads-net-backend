@@ -250,9 +250,9 @@ router.get(
  */
 router.get("/saved", async (req, res, next) => {
   try {
-    const ads = await adService.getSavedAds(req.userId);
-
-    response.success(res, { ads });
+    const result = await adService.getSavedAds(req.userId);
+    // Return just the array to match getMyAds structure
+    response.success(res, result.ads);
   } catch (error) {
     next(error);
   }
