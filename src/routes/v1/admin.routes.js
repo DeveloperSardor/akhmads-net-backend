@@ -1001,33 +1001,6 @@ router.get(
 );
 
 /**
- * GET /api/v1/ads/:adId/clicks-detailed
- * Detailed clicks for own ad
- */
-router.get(
-  "/:adId/clicks-detailed",
-  requireAdvertiser,
-  async (req, res, next) => {
-    try {
-      // Check ownership
-      const ad = await prisma.ad.findUnique({ where: { id: req.params.adId } });
-      if (!ad || ad.advertiserId !== req.userId) {
-         return response.forbidden(res, "You do not own this ad");
-      }
-
-      const result = await detailedStatsService.getClicks({ ...req.query, adId: req.params.adId });
-      response.paginated(res, result.clicks, {
-        page: Math.floor((req.query.offset || 0) / (req.query.limit || 50)) + 1,
-        limit: parseInt(req.query.limit || 50),
-        total: result.total,
-      });
-    } catch (error) {
-      next(error);
-    }
-  }
-);
-
-/**
  * GET /api/v1/admin/detailed-stats/clicks
  * All clicks with user details (Admin only)
  */
