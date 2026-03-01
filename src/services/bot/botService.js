@@ -513,15 +513,13 @@ class BotService {
    */
   async getPublicBots() {
     try {
-      const threshold = new Date();
-      threshold.setDate(threshold.getDate() - 30);
+      const now = new Date();
+      const threshold3d  = new Date(now); threshold3d.setDate(now.getDate() - 3);
+      const threshold7d  = new Date(now); threshold7d.setDate(now.getDate() - 7);
+      const threshold30d = new Date(now); threshold30d.setDate(now.getDate() - 30);
 
       const bots = await prisma.bot.findMany({
-        where: {
-          status: 'ACTIVE',
-          isPaused: false,
-          monetized: true,
-        },
+        where: { status: 'ACTIVE', isPaused: false, monetized: true },
         select: {
           id: true,
           username: true,
@@ -529,17 +527,22 @@ class BotService {
           avatarUrl: true,
           category: true,
           language: true,
+          totalMembers: true,
         }
       });
 
       const enrichedBots = await Promise.all(bots.map(async (bot) => {
-        const activeUsersCount = await prisma.botUser.count({
-          where: { botId: bot.id, lastSeenAt: { gte: threshold } }
-        });
-        return { 
-          ...bot, 
-          activeUsers30d: activeUsersCount,
-          broadcastPricePerUser: 0.05 // Price per message
+        const [c3d, c7d, c30d] = await Promise.all([
+          prisma.botUser.count({ where: { botId: bot.id, lastSeenAt: { gte: threshold3d } } }),
+          prisma.botUser.count({ where: { botId: bot.id, lastSeenAt: { gte: threshold7d } } }),
+          prisma.botUser.count({ where: { botId: bot.id, lastSeenAt: { gte: threshold30d } } }),
+        ]);
+        return {
+          ...bot,
+          activeUsers3d: c3d,
+          activeUsers7d: c7d,
+          activeUsers30d: c30d,
+          broadcastPricePerUser: 0.05,
         };
       }));
 
