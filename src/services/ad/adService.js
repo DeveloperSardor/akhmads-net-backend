@@ -883,10 +883,13 @@ class AdService {
       const total = await prisma.savedAd.count({ where: { userId } });
 
       return {
-        ads: savedAds.map(s => ({
-          ...s.ad,
-          isSaved: true
-        })),
+        ads: savedAds.map(s => {
+          const adObj = s.ad.toJSON ? s.ad.toJSON() : s.ad;
+          return {
+            ...adObj,
+            isSaved: true
+          };
+        }),
         total,
       };
     } catch (error) {
