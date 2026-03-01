@@ -1148,9 +1148,9 @@ class LoginBotHandler {
       if (ad.advertiser?.telegramId) {
         const locale = ad.advertiser.locale || 'uz';
         const msgs = {
-          uz: `✅ <b>Reklamangiz tasdiqlandi!</b>\n\n🆔 Ad ID: <code>${adId}</code>\n\nReklamangiz tarqatilishni boshladi. Barakalla!`,
-          ru: `✅ <b>Ваша реклама одобрена!</b>\n\n🆔 Ad ID: <code>${adId}</code>\n\nРаспространение рекламы начато. Поздравляем!`,
-          en: `✅ <b>Your ad has been approved!</b>\n\n🆔 Ad ID: <code>${adId}</code>\n\nYour ad is now live. Congratulations!`,
+          uz: `<tg-emoji emoji-id="5465665476971471368">✅</tg-emoji> <b>Reklamangiz tasdiqlandi!</b>\n\n<tg-emoji emoji-id="5451732530049692482">🆔</tg-emoji> Ad ID: <code>${adId}</code>\n\n<blockquote>Reklamangiz tarqatilishni boshladi. Barakalla!</blockquote>`,
+          ru: `<tg-emoji emoji-id="5465665476971471368">✅</tg-emoji> <b>Ваша реклама одобрена!</b>\n\n<tg-emoji emoji-id="5451732530049692482">🆔</tg-emoji> Ad ID: <code>${adId}</code>\n\n<blockquote>Распространение рекламы начато. Поздравляем!</blockquote>`,
+          en: `<tg-emoji emoji-id="5465665476971471368">✅</tg-emoji> <b>Your ad has been approved!</b>\n\n<tg-emoji emoji-id="5451732530049692482">🆔</tg-emoji> Ad ID: <code>${adId}</code>\n\n<blockquote>Your ad is now live. Congratulations!</blockquote>`,
         };
         await this._notifyUser(ad.advertiser.telegramId, locale, msgs[locale] || msgs.uz);
       }
@@ -1193,9 +1193,9 @@ class LoginBotHandler {
       if (ad.advertiser?.telegramId) {
         const locale = ad.advertiser.locale || 'uz';
         const msgs = {
-          uz: `❌ <b>Reklamangiz rad etildi</b>\n\n🆔 Ad ID: <code>${adId}</code>\n\nAfsuski, reklamangiz moderatsiyadan o'tmadi. Reklamani qayta ko'rib, qayta yuboring.`,
-          ru: `❌ <b>Ваша реклама отклонена</b>\n\n🆔 Ad ID: <code>${adId}</code>\n\nК сожалению, ваша реклама не прошла модерацию. Пересмотрите и отправьте снова.`,
-          en: `❌ <b>Your ad was rejected</b>\n\n🆔 Ad ID: <code>${adId}</code>\n\nUnfortunately, your ad did not pass moderation. Please review and resubmit.`,
+          uz: `<tg-emoji emoji-id="5427145328824716768">❌</tg-emoji> <b>Reklamangiz rad etildi</b>\n\n<tg-emoji emoji-id="5451732530049692482">🆔</tg-emoji> Ad ID: <code>${adId}</code>\n\n<blockquote>Afsuski, reklamangiz moderatsiyadan o'tmadi. Reklamani qayta ko'rib, qayta yuboring.</blockquote>`,
+          ru: `<tg-emoji emoji-id="5427145328824716768">❌</tg-emoji> <b>Ваша реклама отклонена</b>\n\n<tg-emoji emoji-id="5451732530049692482">🆔</tg-emoji> Ad ID: <code>${adId}</code>\n\n<blockquote>К сожалению, ваша реклама не прошла модерацию. Пересмотрите и отправьте снова.</blockquote>`,
+          en: `<tg-emoji emoji-id="5427145328824716768">❌</tg-emoji> <b>Your ad was rejected</b>\n\n<tg-emoji emoji-id="5451732530049692482">🆔</tg-emoji> Ad ID: <code>${adId}</code>\n\n<blockquote>Unfortunately, your ad did not pass moderation. Please review and resubmit.</blockquote>`,
         };
         await this._notifyUser(ad.advertiser.telegramId, locale, msgs[locale] || msgs.uz);
       }
@@ -1238,9 +1238,9 @@ class LoginBotHandler {
       if (ad.advertiser?.telegramId) {
         const locale = ad.advertiser.locale || 'uz';
         const msgs = {
-          uz: `✏️ <b>Reklamangizni tahrirlash so'raldi</b>\n\n🆔 Ad ID: <code>${adId}</code>\n\nAdmin reklamangizni ko'rib chiqdi va o'zgartirishlar so'radi.\n\nIltimos, saytga kirib reklamangizni tahrirlang va qayta yuboring.`,
-          ru: `✏️ <b>Запрошено редактирование рекламы</b>\n\n🆔 Ad ID: <code>${adId}</code>\n\nАдмин запросил изменения в вашей рекламе.\n\nПожалуйста, зайдите на сайт, отредактируйте и отправьте снова.`,
-          en: `✏️ <b>Edit requested for your ad</b>\n\n🆔 Ad ID: <code>${adId}</code>\n\nAn admin has reviewed your ad and requested changes.\n\nPlease log in to the site, edit, and resubmit.`,
+          uz: `<tg-emoji emoji-id="5449557404487140410">✏️</tg-emoji> <b>Reklamangizni tahrirlash so'raldi</b>\n\n<tg-emoji emoji-id="5451732530049692482">🆔</tg-emoji> Ad ID: <code>${adId}</code>\n\n<blockquote>Admin reklamangizni ko'rib chiqdi va o'zgartirishlar so'radi.\nIltimos, saytga kirib reklamangizni tahrirlang va qayta yuboring.</blockquote>`,
+          ru: `<tg-emoji emoji-id="5449557404487140410">✏️</tg-emoji> <b>Запрошено редактирование рекламы</b>\n\n<tg-emoji emoji-id="5451732530049692482">🆔</tg-emoji> Ad ID: <code>${adId}</code>\n\n<blockquote>Админ запросил изменения в вашей рекламе.\nПожалуйста, зайдите на сайт, отредактируйте и отправьте снова.</blockquote>`,
+          en: `<tg-emoji emoji-id="5449557404487140410">✏️</tg-emoji> <b>Edit requested for your ad</b>\n\n<tg-emoji emoji-id="5451732530049692482">🆔</tg-emoji> Ad ID: <code>${adId}</code>\n\n<blockquote>An admin has reviewed your ad and requested changes.\nPlease log in to the site, edit, and resubmit.</blockquote>`,
         };
         await this._notifyUser(ad.advertiser.telegramId, locale, msgs[locale] || msgs.uz);
       }
@@ -1287,9 +1287,9 @@ class LoginBotHandler {
       if (bot.owner?.telegramId) {
         const locale = bot.owner.locale || 'uz';
         const msgs = {
-          uz: `✅ <b>Botingiz tasdiqlandi!</b>\n\n🤖 Bot: @${bot.username}\n\nBotingiz endi reklama tarqatishni boshlashi mumkin. Barakalla!`,
-          ru: `✅ <b>Ваш бот одобрен!</b>\n\n🤖 Bot: @${bot.username}\n\nТеперь ваш бот может начать распространение рекламы. Поздравляем!`,
-          en: `✅ <b>Your bot has been approved!</b>\n\n🤖 Bot: @${bot.username}\n\nYour bot can now start distributing ads. Congratulations!`,
+          uz: `<tg-emoji emoji-id="5465665476971471368">✅</tg-emoji> <b>Botingiz tasdiqlandi!</b>\n\n<tg-emoji emoji-id="5237910103738096181">🤖</tg-emoji> Bot: @${bot.username}\n\n<blockquote>Botingiz endi reklama tarqatishni boshlashi mumkin. Barakalla!</blockquote>`,
+          ru: `<tg-emoji emoji-id="5465665476971471368">✅</tg-emoji> <b>Ваш бот одобрен!</b>\n\n<tg-emoji emoji-id="5237910103738096181">🤖</tg-emoji> Bot: @${bot.username}\n\n<blockquote>Теперь ваш бот может начать распространение рекламы. Поздравляем!</blockquote>`,
+          en: `<tg-emoji emoji-id="5465665476971471368">✅</tg-emoji> <b>Your bot has been approved!</b>\n\n<tg-emoji emoji-id="5237910103738096181">🤖</tg-emoji> Bot: @${bot.username}\n\n<blockquote>Your bot can now start distributing ads. Congratulations!</blockquote>`,
         };
         await this._notifyUser(bot.owner.telegramId, locale, msgs[locale] || msgs.uz);
       }
@@ -1331,9 +1331,9 @@ class LoginBotHandler {
       if (bot.owner?.telegramId) {
         const locale = bot.owner.locale || 'uz';
         const msgs = {
-          uz: `❌ <b>Botingiz rad etildi</b>\n\n🤖 Bot: @${bot.username}\n\nAfsuski, botingiz moderatsiyadan o'tmadi. Botingizni tekshirib, qayta ro'yxatdan o'ting.`,
-          ru: `❌ <b>Ваш бот отклонён</b>\n\n🤖 Bot: @${bot.username}\n\nК сожалению, ваш бот не прошёл модерацию. Проверьте бота и зарегистрируйтесь снова.`,
-          en: `❌ <b>Your bot was rejected</b>\n\n🤖 Bot: @${bot.username}\n\nUnfortunately, your bot did not pass moderation. Please review and re-register.`,
+          uz: `<tg-emoji emoji-id="5427145328824716768">❌</tg-emoji> <b>Botingiz rad etildi</b>\n\n<tg-emoji emoji-id="5237910103738096181">🤖</tg-emoji> Bot: @${bot.username}\n\n<blockquote>Afsuski, botingiz moderatsiyadan o'tmadi. Botingizni tekshirib, qayta ro'yxatdan o'ting.</blockquote>`,
+          ru: `<tg-emoji emoji-id="5427145328824716768">❌</tg-emoji> <b>Ваш бот отклонён</b>\n\n<tg-emoji emoji-id="5237910103738096181">🤖</tg-emoji> Bot: @${bot.username}\n\n<blockquote>К сожалению, ваш бот не прошёл модерацию. Проверьте бота и зарегистрируйтесь снова.</blockquote>`,
+          en: `<tg-emoji emoji-id="5427145328824716768">❌</tg-emoji> <b>Your bot was rejected</b>\n\n<tg-emoji emoji-id="5237910103738096181">🤖</tg-emoji> Bot: @${bot.username}\n\n<blockquote>Unfortunately, your bot did not pass moderation. Please review and re-register.</blockquote>`,
         };
         await this._notifyUser(bot.owner.telegramId, locale, msgs[locale] || msgs.uz);
       }

@@ -390,11 +390,11 @@ class WithdrawService {
       if (!withdrawal.user?.telegramId) return;
 
       const message =
-        `✅ <b>Withdraw Tasdiqlandi!</b>\n\n` +
-        `💰 Miqdor: <b>$${withdrawal.netAmount} USDT</b>\n` +
-        `🔗 Manzil: <code>${withdrawal.address}</code>\n` +
-        `🌐 Tarmoq: BEP-20 (BSC)\n\n` +
-        `USDT hisobingizga tushdi. BSCScan orqali tekshirishingiz mumkin.`;
+        `<tg-emoji emoji-id="5465665476971471368">✅</tg-emoji> <b>Withdraw Tasdiqlandi!</b>\n\n` +
+        `<tg-emoji emoji-id="5904462880941545555">💰</tg-emoji> Miqdor: <b>$${withdrawal.netAmount} USDT</b>\n` +
+        `<tg-emoji emoji-id="5451732530049692482">🔗</tg-emoji> Manzil: <code>${withdrawal.address}</code>\n` +
+        `<tg-emoji emoji-id="5451732530049692482">🌐</tg-emoji> Tarmoq: BEP-20 (BSC)\n\n` +
+        `<blockquote>USDT hisobingizga tushdi. BSCScan orqali tekshirishingiz mumkin.</blockquote>`;
 
       await telegramBot.sendMessage(withdrawal.user.telegramId, message, { parse_mode: 'HTML' });
     } catch (e) {
@@ -406,11 +406,13 @@ class WithdrawService {
     try {
       if (!withdrawal.user?.telegramId) return;
 
+      const totalAmount = parseFloat(withdrawal.amount) + parseFloat(withdrawal.fee);
+
       const message =
-        `❌ <b>Withdraw Rad Etildi</b>\n\n` +
-        `💰 So'rov miqdori: $${withdrawal.amount} USDT\n` +
+        `<tg-emoji emoji-id="5427145328824716768">❌</tg-emoji> <b>Withdraw Rad Etildi</b>\n\n` +
+        `<tg-emoji emoji-id="5904462880941545555">💰</tg-emoji> So'rov miqdori: $${withdrawal.amount} USDT\n` +
         `📋 Sabab: ${reason}\n\n` +
-        `💚 <b>$${totalReturned} hisobingizga qaytarildi.</b>`;
+        `<blockquote><tg-emoji emoji-id="5465665476971471368">💚</tg-emoji> <b>$${totalAmount} hisobingizga qaytarildi.</b></blockquote>`;
 
       await telegramBot.sendMessage(withdrawal.user.telegramId, message, { parse_mode: 'HTML' });
     } catch (e) {
