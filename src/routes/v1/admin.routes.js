@@ -1125,6 +1125,7 @@ router.get(
   '/broadcasts',
   requireAdmin,
   validate([
+    query('status').optional().isString(),
     query('limit').optional().isInt({ min: 1, max: 100 }),
     query('offset').optional().isInt({ min: 0 }),
   ]),
@@ -1136,6 +1137,63 @@ router.get(
         limit: parseInt(req.query.limit || 20),
         total: result.total,
       });
+    } catch (error) {
+      next(error);
+    }
+  }
+);
+
+/**
+ * POST /api/v1/admin/broadcasts/:id/approve
+ */
+router.post(
+  '/broadcasts/:id/approve',
+  requireAdmin,
+  validate([param('id').isString()]),
+  async (req, res, next) => {
+    try {
+      const broadcast = await broadcastService.approveBroadcast(req.params.id, req.userId);
+      response.success(res, { broadcast }, 'Broadcast approved');
+    } catch (error) {
+      next(error);
+    }
+  }
+);
+
+/**
+ * POST /api/v1/admin/broadcasts/:id/reject
+ */
+router.post(
+  '/broadcasts/:id/reject',
+  requireAdmin,
+  validate([
+    param('id').isString(),
+    body('reason').isString().notEmpty().withMessage('Rejection reason is required'),
+  ]),
+  async (req, res, next) => {
+    try {
+      const broadcast = await broadcastService.rejectBroadcast(req.params.id, req.userId, req.body.reason);
+      response.success(res, { broadcast }, 'Broadcast rejected');
+    } catch (error) {
+      next(error);
+    }
+  }
+);
+
+/**
+ * POST /api/v1/admin/broadcasts/:id/request-edit
+ */
+router.post(
+  '/broadcasts/:id/request-edit',
+  requireAdmin,
+  validate([
+    param('id').isString(),
+    body('feedback').isString().notEmpty().withMessage('Feedback is required'),
+  ]),
+  async (req, res, next) => {
+    try {
+      const broadcast = await broadcastService.requestBroadcastEdit(req.params.id, req.userId, req.body.feedback);
+      response.success(res, { broadcast }, 'Edit requested');
     } catch (error) {
       next(error);
     }

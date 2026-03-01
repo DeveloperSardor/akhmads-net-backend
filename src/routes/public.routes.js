@@ -23,8 +23,8 @@ router.post(
   authenticateBotApiKey,
   botApiRateLimiter,
   body('SendToChatId')
-    .isInt()
-    .withMessage('SendToChatId must be an integer'),
+    .isInt({ min: 1, max: 8999999999 })
+    .withMessage('SendToChatId must be a valid Telegram user ID (1–8999999999)'),
   body('LanguageCode')
     .optional()
     .isString()

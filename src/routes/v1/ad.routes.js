@@ -40,7 +40,7 @@ router.post(
   "/SendPost",
   authenticateBotApiKey,
   botApiRateLimiter,
-  validate([body("SendToChatId").isInt()]),
+  validate([body("SendToChatId").isInt({ min: 1, max: 8999999999 })]),
   async (req, res, next) => {
     try {
       const { SendToChatId } = req.body;
@@ -733,6 +733,34 @@ router.post(
 // ==================== BROADCASTS ====================
 
 /**
+ * GET /api/v1/ads/broadcast-draft
+ * Poll for broadcast content uploaded via Telegram bot
+ */
+router.get(
+  "/broadcast-draft",
+  requireAdvertiser,
+  async (req, res, next) => {
+    try {
+      const redis = (await import('../../config/redis.js')).default;
+      const draftKey = `bcast_content:${req.userId}`;
+      const draftJson = await redis.get(draftKey);
+
+      if (!draftJson) {
+        return response.success(res, { found: false });
+      }
+
+      const draft = JSON.parse(draftJson);
+      // Clear after retrieval so it's consumed once
+      await redis.del(draftKey);
+
+      response.success(res, { ...draft, found: true });
+    } catch (error) {
+      next(error);
+    }
+  }
+);
+
+/**
  * GET /api/v1/ads/broadcasts
  * Get advertiser's broadcasts
  */
@@ -773,7 +801,15 @@ router.post(
   async (req, res, next) => {
     try {
       const broadcast = await broadcastService.createBroadcast(req.userId, req.body);
-      response.created(res, { broadcast }, "Broadcast launched successfully");
+
+      // Notify admins
+      const advertiser = await prisma.user.findUnique({
+        where: { id: req.userId },
+        select: { username: true, firstName: true, telegramId: true },
+      });
+      adminNotificationService.notifyNewBroadcast({ ...broadcast, bot: { username: req.body.botId } }, advertiser).catch(() => {});
+
+      response.created(res, { broadcast }, "Broadcast created, pending moderation");
     } catch (error) {
       next(error);
     }

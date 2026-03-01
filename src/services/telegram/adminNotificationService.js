@@ -55,6 +55,53 @@ class AdminNotificationService {
   }
 
   /**
+   * Yangi broadcast yaratilganda adminga xabar yuboradi
+   */
+  async notifyNewBroadcast(broadcast, advertiser) {
+    try {
+      const admins = await prisma.user.findMany({
+        where: { role: { in: ['ADMIN', 'MODERATOR', 'SUPER_ADMIN'] }, isActive: true },
+        select: { telegramId: true },
+      });
+
+      const userName = advertiser?.username
+        ? `@${advertiser.username}`
+        : `${advertiser?.firstName || ''} (ID: ${advertiser?.telegramId || '?'})`;
+
+      const textPreview = (broadcast.text || '').substring(0, 200);
+      const adPreview = textPreview.length >= 200 ? textPreview + '...' : textPreview;
+
+      const message =
+        `📡 <b>Yangi Broadcast So'rovi</b>\n\n` +
+        `👤 Reklamachi: ${userName}\n` +
+        `🆔 ID: <code>${broadcast.id}</code>\n` +
+        `🤖 Bot: @${broadcast.bot?.username || '?'}\n` +
+        `👥 Qabul qiluvchilar: ${broadcast.targetCount} ta\n` +
+        `💰 Narx: $${parseFloat(broadcast.totalCost).toFixed(2)}\n\n` +
+        `📝 <b>Matn:</b>\n${adPreview}`;
+
+      const keyboard = new InlineKeyboard()
+        .text('✅ Tasdiqlash', `bcast_approve_${broadcast.id}`)
+        .text('❌ Rad etish', `bcast_reject_${broadcast.id}`)
+        .row()
+        .text('✏️ Edit so\'r', `bcast_edit_${broadcast.id}`);
+
+      for (const admin of admins) {
+        if (admin.telegramId) {
+          await telegramBot.bot.api.sendMessage(admin.telegramId, message, {
+            parse_mode: 'HTML',
+            reply_markup: keyboard,
+          }).catch(e => logger.warn(`Admin ${admin.telegramId} ga broadcast xabari yuborilmadi: ${e.message}`));
+        }
+      }
+
+      logger.info(`Broadcast notification sent to ${admins.length} admins for broadcast: ${broadcast.id}`);
+    } catch (e) {
+      logger.error('Broadcast admin notification error:', e);
+    }
+  }
+
+  /**
    * Yangi bot qo'shilganda admin/moderator/superadmin larga xabar yuboradi
    */
   async notifyNewBot(bot, owner) {

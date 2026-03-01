@@ -68,6 +68,12 @@ class LoginBotHandler {
           return;
         }
 
+        // Broadcast deeplink: bcast_{userId}
+        if (args && args.startsWith('bcast_')) {
+          await this.handleBroadcastDeeplink(ctx, user, args.replace('bcast_', ''));
+          return;
+        }
+
         // 3. Regular Start -> Show Main Menu (or language selection if not set)
         await this.showMainMenu(ctx, user);
       } catch (error) {
@@ -94,12 +100,23 @@ class LoginBotHandler {
         const isAdvertiser = user.role === 'ADVERTISER' || (user.roles && user.roles.includes('ADVERTISER'));
         if (!isAdvertiser) return;
 
+        // Check for broadcast content session first
+        const bcastSessionKey = `bcast_session:${telegramId}`;
+        const bcastSessionJson = await redis.get(bcastSessionKey);
+        if (bcastSessionJson) {
+          const bcastSession = JSON.parse(bcastSessionJson);
+          if (bcastSession.step === 'AWAITING_BCAST_CONTENT') {
+            await this.handleBroadcastContent(ctx, user, telegramId, bcastSession.targetUserId);
+            return;
+          }
+        }
+
         const sessionKey = `ad_session:${telegramId}`;
         const sessionJson = await redis.get(sessionKey);
 
         if (sessionJson) {
           const session = JSON.parse(sessionJson);
-          
+
           if (session.step === 'AWAITING_BUTTON_TEXT') {
             session.temp = { buttonText: ctx.message.text };
             session.step = 'AWAITING_BUTTON_URL';
@@ -224,6 +241,19 @@ class LoginBotHandler {
       }
       if (data.startsWith('bot_reject_')) {
         await this.handleBotReject(ctx, data.replace('bot_reject_', ''));
+        return;
+      }
+      // ✅ Admin: Broadcast approve/reject/edit
+      if (data.startsWith('bcast_approve_')) {
+        await this.handleBroadcastApprove(ctx, data.replace('bcast_approve_', ''));
+        return;
+      }
+      if (data.startsWith('bcast_reject_')) {
+        await this.handleBroadcastReject(ctx, data.replace('bcast_reject_', ''));
+        return;
+      }
+      if (data.startsWith('bcast_edit_')) {
+        await this.handleBroadcastEdit(ctx, data.replace('bcast_edit_', ''));
         return;
       }
       await this.handleCallbackQuery(ctx);
@@ -1327,6 +1357,164 @@ class LoginBotHandler {
     } catch (error) {
       logger.error('Bot reject error:', error);
       await ctx.answerCallbackQuery(`❌ Xatolik: ${error.message?.substring(0, 50)}`);
+    }
+  }
+
+  // ─────────────────────────────────────────────────────────────────
+  // ADMIN ACTIONS: Broadcast Approve / Reject / Edit Request
+  // ─────────────────────────────────────────────────────────────────
+
+  async handleBroadcastApprove(ctx, broadcastId) {
+    try {
+      const telegramId = ctx.from.id.toString();
+      const admin = await prisma.user.findUnique({ where: { telegramId }, select: { id: true, role: true } });
+
+      if (!admin || !['ADMIN', 'MODERATOR', 'SUPER_ADMIN'].includes(admin.role)) {
+        await ctx.answerCallbackQuery('❌ Ruxsat yo\'q!');
+        return;
+      }
+
+      const { default: broadcastService } = await import('../admin/broadcastService.js');
+      await broadcastService.approveBroadcast(broadcastId, admin.id);
+
+      await ctx.answerCallbackQuery('✅ Broadcast tasdiqlandi!');
+      const originalText = ctx.callbackQuery.message?.text || '';
+      await ctx.editMessageText(
+        `${originalText}\n\n✅ <b>TASDIQLANDI</b> — @${ctx.from.username || ctx.from.first_name}`,
+        { parse_mode: 'HTML' }
+      ).catch(() => {});
+
+      logger.info(`Broadcast ${broadcastId} approved via bot by admin ${admin.id}`);
+    } catch (error) {
+      logger.error('Bot broadcast approve error:', error);
+      await ctx.answerCallbackQuery(`❌ Xatolik: ${error.message?.substring(0, 50)}`);
+    }
+  }
+
+  async handleBroadcastReject(ctx, broadcastId) {
+    try {
+      const telegramId = ctx.from.id.toString();
+      const admin = await prisma.user.findUnique({ where: { telegramId }, select: { id: true, role: true } });
+
+      if (!admin || !['ADMIN', 'MODERATOR', 'SUPER_ADMIN'].includes(admin.role)) {
+        await ctx.answerCallbackQuery('❌ Ruxsat yo\'q!');
+        return;
+      }
+
+      const { default: broadcastService } = await import('../admin/broadcastService.js');
+      await broadcastService.rejectBroadcast(broadcastId, admin.id, 'Admin tomonidan rad etildi');
+
+      await ctx.answerCallbackQuery('❌ Broadcast rad etildi!');
+      const originalText = ctx.callbackQuery.message?.text || '';
+      await ctx.editMessageText(
+        `${originalText}\n\n❌ <b>RAD ETILDI</b> — @${ctx.from.username || ctx.from.first_name}`,
+        { parse_mode: 'HTML' }
+      ).catch(() => {});
+
+      logger.info(`Broadcast ${broadcastId} rejected via bot by admin ${admin.id}`);
+    } catch (error) {
+      logger.error('Bot broadcast reject error:', error);
+      await ctx.answerCallbackQuery(`❌ Xatolik: ${error.message?.substring(0, 50)}`);
+    }
+  }
+
+  async handleBroadcastEdit(ctx, broadcastId) {
+    try {
+      const telegramId = ctx.from.id.toString();
+      const admin = await prisma.user.findUnique({ where: { telegramId }, select: { id: true, role: true } });
+
+      if (!admin || !['ADMIN', 'MODERATOR', 'SUPER_ADMIN'].includes(admin.role)) {
+        await ctx.answerCallbackQuery('❌ Ruxsat yo\'q!');
+        return;
+      }
+
+      const { default: broadcastService } = await import('../admin/broadcastService.js');
+      await broadcastService.requestBroadcastEdit(broadcastId, admin.id, 'Admin tomonidan tahrir so\'raldi');
+
+      await ctx.answerCallbackQuery('✏️ Edit so\'rovi yuborildi!');
+      const originalText = ctx.callbackQuery.message?.text || '';
+      await ctx.editMessageText(
+        `${originalText}\n\n✏️ <b>EDIT SO'RALDI</b> — @${ctx.from.username || ctx.from.first_name}`,
+        { parse_mode: 'HTML' }
+      ).catch(() => {});
+
+      logger.info(`Broadcast ${broadcastId} edit requested via bot by admin ${admin.id}`);
+    } catch (error) {
+      logger.error('Bot broadcast edit error:', error);
+      await ctx.answerCallbackQuery(`❌ Xatolik: ${error.message?.substring(0, 50)}`);
+    }
+  }
+
+  // ─────────────────────────────────────────────────────────────────
+  // BROADCAST: Deeplink + Content Collection
+  // ─────────────────────────────────────────────────────────────────
+
+  async handleBroadcastDeeplink(ctx, user, targetUserId) {
+    try {
+      const telegramId = ctx.from.id.toString();
+
+      // Only allow the actual user to use their own deeplink
+      if (user.id !== targetUserId) {
+        await ctx.reply('❌ Bu havola siz uchun emas.');
+        return;
+      }
+
+      // Set broadcast content session
+      const bcastSessionKey = `bcast_session:${telegramId}`;
+      await redis.set(bcastSessionKey, JSON.stringify({
+        step: 'AWAITING_BCAST_CONTENT',
+        targetUserId,
+      }), 600); // 10 min TTL
+
+      await ctx.reply(
+        '📡 <b>Broadcast mazmuni</b>\n\nBroadcast uchun xabar yuboring:\n• Matn\n• Rasm (caption bilan)\n• Video (caption bilan)\n\nXabar yuborilgandan so\'ng saytga qaytib broadcastni yakunlang.',
+        { parse_mode: 'HTML' }
+      );
+    } catch (error) {
+      logger.error('Broadcast deeplink error:', error);
+      await ctx.reply('❌ Xatolik yuz berdi.');
+    }
+  }
+
+  async handleBroadcastContent(ctx, user, telegramId, targetUserId) {
+    try {
+      const msg = ctx.message;
+      const text = msg.text || msg.caption || '';
+      const entities = msg.entities || msg.caption_entities || [];
+      const htmlContent = messageToHtml(text, entities);
+
+      let contentType = 'HTML';
+      let mediaUrl = null;
+      let mediaType = null;
+
+      if (msg.photo) {
+        const photo = msg.photo[msg.photo.length - 1];
+        mediaUrl = photo.file_id;
+        mediaType = 'image/jpeg';
+        contentType = 'MEDIA';
+      } else if (msg.video) {
+        mediaUrl = msg.video.file_id;
+        mediaType = 'video/mp4';
+        contentType = 'MEDIA';
+      }
+
+      const content = { contentType, text: htmlContent || text, mediaUrl, mediaType, found: true };
+
+      // Save to Redis for website to poll
+      const draftKey = `bcast_content:${targetUserId}`;
+      await redis.set(draftKey, JSON.stringify(content), 600); // 10 min
+
+      // Clear the session
+      const bcastSessionKey = `bcast_session:${telegramId}`;
+      await redis.del(bcastSessionKey);
+
+      await ctx.reply(
+        '✅ <b>Kontent saqlandi!</b>\n\nSaytga qaytib broadcastni yakunlang.',
+        { parse_mode: 'HTML' }
+      );
+    } catch (error) {
+      logger.error('Broadcast content handler error:', error);
+      await ctx.reply('❌ Xatolik yuz berdi.');
     }
   }
 }

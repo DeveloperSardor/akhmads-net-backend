@@ -5,6 +5,8 @@ import telegramAPI from '../../utils/telegram-api.js';
 import tracking from '../../utils/tracking.js';
 import logger from '../../utils/logger.js';
 import walletService from '../wallet/walletService.js';
+import redis from '../../config/redis.js';
+import { MINIMUM_FREQUENCY_MINUTES, MAX_IMPRESSIONS_PER_BOT_HOUR } from '../../config/constants.js';
 
 /**
  * Distribution Service
@@ -36,10 +38,21 @@ class DistributionService {
 
       if (lastImpression) {
         const timeSince = Date.now() - lastImpression.createdAt.getTime();
-        const minInterval = bot.frequencyMinutes * 60 * 1000;
+        // Enforce absolute minimum gap regardless of bot's frequencyMinutes setting
+        const effectiveMinutes = Math.max(bot.frequencyMinutes, MINIMUM_FREQUENCY_MINUTES);
+        const minInterval = effectiveMinutes * 60 * 1000;
         if (timeSince < minInterval) {
           return null; // Hali erta
         }
+      }
+
+      // Per-bot hourly impression cap (anti-abuse)
+      const hourAgo = new Date(Date.now() - 60 * 60 * 1000);
+      const hourlyCount = await prisma.impression.count({
+        where: { botId, createdAt: { gte: hourAgo } },
+      });
+      if (hourlyCount >= MAX_IMPRESSIONS_PER_BOT_HOUR) {
+        return null;
       }
 
       // Asosiy query — deliveredImpressions < targetImpressions ni Prisma field

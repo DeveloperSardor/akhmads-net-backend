@@ -126,6 +126,11 @@ export const LIMITS = {
   MAX_BOT_FREQUENCY_MINUTES: 1440, // 24 hours
 };
 
+// Anti-abuse: minimum gap enforced regardless of bot's frequencyMinutes setting
+export const MINIMUM_FREQUENCY_MINUTES = 5;
+// Anti-abuse: max impressions one bot can record in 1 hour
+export const MAX_IMPRESSIONS_PER_BOT_HOUR = 500;
+
 export const RATE_LIMITS = {
   AUTH: {
     windowMs: 15 * 60 * 1000, // 15 minutes

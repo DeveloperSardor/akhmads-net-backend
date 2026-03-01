@@ -62,12 +62,12 @@ class BroadcastService {
       // 4. Charge advertiser
       await walletService.debit(advertiserId, totalCost, 'AD_SPEND', 'Broadcast');
 
-      // 5. Create Broadcast record
+      // 5. Create Broadcast record (PENDING — awaiting admin moderation)
       const broadcast = await prisma.broadcast.create({
         data: {
           advertiserId,
           botId,
-          status: 'APPROVED', // Auto-approve for now if paid
+          status: 'PENDING',
           contentType,
           text,
           mediaUrl,
@@ -80,7 +80,7 @@ class BroadcastService {
         }
       });
 
-      // 6. Create recipients
+      // 6. Create recipients (will be sent after admin approval)
       const recipientData = usersToNotify.map(u => ({
         broadcastId: broadcast.id,
         botUserId: u.id,
@@ -89,11 +89,6 @@ class BroadcastService {
 
       await prisma.broadcastRecipient.createMany({
         data: recipientData
-      });
-
-      // Trigger background processing
-      this.processBroadcast(broadcast.id).catch(err => {
-        logger.error(`Initial broadcast process failed: ${broadcast.id}`, err);
       });
 
       return broadcast;
@@ -188,15 +183,18 @@ class BroadcastService {
   async sendTGMessage(botToken, chatId, broadcast) {
     const { contentType, text, mediaUrl, mediaType, buttons } = broadcast;
 
-    // Prepare buttons if any
+    // Prepare buttons with color support (same as distributionService)
     let replyMarkup = null;
     if (buttons && Array.isArray(buttons) && buttons.length > 0) {
       replyMarkup = {
         inline_keyboard: [
-          buttons.map(btn => ({
-            text: btn.text,
-            url: btn.url
-          }))
+          buttons.map(btn => {
+            let style = btn.style;
+            if (btn.color === 'green') style = 'success';
+            else if (btn.color === 'red') style = 'danger';
+            else if (btn.color === 'blue') style = 'primary';
+            return { text: btn.text, url: btn.url, style };
+          })
         ]
       };
     }
@@ -229,16 +227,112 @@ class BroadcastService {
     });
   }
 
+  async approveBroadcast(broadcastId, adminId) {
+    const broadcast = await prisma.broadcast.findUnique({ where: { id: broadcastId } });
+    if (!broadcast) throw new Error('Broadcast not found');
+    if (broadcast.status !== 'PENDING') throw new Error('Broadcast is not pending');
+
+    await prisma.broadcast.update({
+      where: { id: broadcastId },
+      data: { status: 'APPROVED' }
+    });
+
+    // Run in background
+    this.processBroadcast(broadcastId).catch(err => {
+      logger.error(`Broadcast process failed after approval: ${broadcastId}`, err);
+    });
+
+    // Notify advertiser
+    try {
+      const advertiser = await prisma.user.findUnique({ where: { id: broadcast.advertiserId }, select: { telegramId: true, locale: true } });
+      if (advertiser?.telegramId) {
+        const { default: telegramBot } = await import('../../config/telegram.js');
+        await telegramBot.bot.api.sendMessage(
+          advertiser.telegramId,
+          `✅ <b>Broadcast tasdiqlandi!</b>\n\n🆔 ID: <code>${broadcastId}</code>\n👥 Qabul qiluvchilar: ${broadcast.targetCount} ta\n\nYaqin orada yuboriladi.`,
+          { parse_mode: 'HTML' }
+        ).catch(() => {});
+      }
+    } catch (e) {
+      logger.warn('Failed to notify advertiser on broadcast approve:', e.message);
+    }
+
+    return await prisma.broadcast.findUnique({ where: { id: broadcastId } });
+  }
+
+  async rejectBroadcast(broadcastId, adminId, reason) {
+    const broadcast = await prisma.broadcast.findUnique({ where: { id: broadcastId } });
+    if (!broadcast) throw new Error('Broadcast not found');
+    if (broadcast.status !== 'PENDING') throw new Error('Broadcast is not pending');
+
+    await prisma.broadcast.update({
+      where: { id: broadcastId },
+      data: { status: 'REJECTED' }
+    });
+
+    // Refund advertiser
+    try {
+      await walletService.credit(broadcast.advertiserId, broadcast.totalCost, 'REFUND', broadcastId);
+    } catch (e) {
+      logger.error('Broadcast reject refund failed:', e);
+    }
+
+    // Notify advertiser
+    try {
+      const advertiser = await prisma.user.findUnique({ where: { id: broadcast.advertiserId }, select: { telegramId: true } });
+      if (advertiser?.telegramId) {
+        const { default: telegramBot } = await import('../../config/telegram.js');
+        await telegramBot.bot.api.sendMessage(
+          advertiser.telegramId,
+          `❌ <b>Broadcast rad etildi</b>\n\n🆔 ID: <code>${broadcastId}</code>\n📝 Sabab: ${reason || 'Moderatsiya qoidalariga mos kelmaydi'}\n\n💰 $${broadcast.totalCost.toFixed(2)} hamyoningizga qaytarildi.`,
+          { parse_mode: 'HTML' }
+        ).catch(() => {});
+      }
+    } catch (e) {
+      logger.warn('Failed to notify advertiser on broadcast reject:', e.message);
+    }
+
+    return await prisma.broadcast.findUnique({ where: { id: broadcastId } });
+  }
+
+  async requestBroadcastEdit(broadcastId, adminId, feedback) {
+    const broadcast = await prisma.broadcast.findUnique({ where: { id: broadcastId } });
+    if (!broadcast) throw new Error('Broadcast not found');
+
+    await prisma.broadcast.update({
+      where: { id: broadcastId },
+      data: { status: 'DRAFT' }
+    });
+
+    // Notify advertiser
+    try {
+      const advertiser = await prisma.user.findUnique({ where: { id: broadcast.advertiserId }, select: { telegramId: true } });
+      if (advertiser?.telegramId) {
+        const { default: telegramBot } = await import('../../config/telegram.js');
+        await telegramBot.bot.api.sendMessage(
+          advertiser.telegramId,
+          `✏️ <b>Broadcast tahrir so'raldi</b>\n\n🆔 ID: <code>${broadcastId}</code>\n📝 Izoh: ${feedback}\n\nSaytga kiring va broadcastni qayta yuboring.`,
+          { parse_mode: 'HTML' }
+        ).catch(() => {});
+      }
+    } catch (e) {
+      logger.warn('Failed to notify advertiser on broadcast edit request:', e.message);
+    }
+
+    return await prisma.broadcast.findUnique({ where: { id: broadcastId } });
+  }
+
   async getBroadcasts(advertiserId = null, filters = {}) {
-    const { limit = 20, offset = 0 } = filters;
+    const { limit = 20, offset = 0, status } = filters;
     const where = {};
     if (advertiserId) where.advertiserId = advertiserId;
+    if (status) where.status = status;
 
     const broadcasts = await prisma.broadcast.findMany({
       where,
       include: {
-        bot: { select: { username: true } },
-        advertiser: { select: { firstName: true, lastName: true, username: true } }
+        bot: { select: { username: true, id: true } },
+        advertiser: { select: { id: true, firstName: true, lastName: true, username: true, telegramId: true } }
       },
       orderBy: { createdAt: 'desc' },
       take: parseInt(limit),
