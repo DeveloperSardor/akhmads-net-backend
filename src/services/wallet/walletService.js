@@ -100,7 +100,7 @@ class WalletService {
       },
     });
 
-    await this.addLedgerEntry(userId, type, -amount, referenceId,
+    await this.addLedgerEntry(userId, type === 'SPEND' ? 'SPEND' : type, -amount, referenceId,
       `available: ${parseFloat(wallet.available)} → ${parseFloat(wallet.available) - amount}`
     );
 
@@ -232,7 +232,7 @@ class WalletService {
       },
     });
 
-    await this.addLedgerEntry(userId, 'RESERVE', -amount, null,
+    await this.addLedgerEntry(userId, 'WITHDRAW_RESERVE', -amount, null,
       `Withdraw reserve: available -$${amount}, reserved +$${amount}`
     );
 
@@ -261,7 +261,7 @@ class WalletService {
       },
     });
 
-    await this.addLedgerEntry(userId, 'RESERVE_RELEASE', amount, null,
+    await this.addLedgerEntry(userId, 'WITHDRAW_RELEASE', amount, null,
       `Withdraw release: reserved -$${amount}, available +$${amount}`
     );
 

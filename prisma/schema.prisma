@@ -102,6 +102,11 @@ enum LedgerType {
   REFUND
   AD_RESERVE
   AD_REFUND
+  WITHDRAW_RESERVE
+  WITHDRAW_RELEASE
+  DEPOSIT_PENDING
+  DEPOSIT_CANCELLED
+  SPEND
 }
 
 // ==================== CORE MODELS ====================

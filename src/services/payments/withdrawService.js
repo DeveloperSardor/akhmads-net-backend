@@ -1,6 +1,7 @@
 // src/services/payments/withdrawService.js
 import prisma from '../../config/database.js';
 import walletService from '../wallet/walletService.js';
+import telegramBot from '../../config/telegram.js';
 import logger from '../../utils/logger.js';
 import { InsufficientFundsError, ValidationError } from '../../utils/errors.js';
 
@@ -371,12 +372,9 @@ class WithdrawService {
         `🆔 ID: <code>${withdrawal.id}</code>\n\n` +
         `⚠️ USDT jo'nating, keyin tasdiqlang!`;
 
-      const { Telegraf } = await import('telegraf');
-      const bot = new Telegraf(process.env.TELEGRAM_BOT_TOKEN);
-
       for (const admin of admins) {
         if (admin.telegramId) {
-          await bot.telegram.sendMessage(admin.telegramId, message, { parse_mode: 'HTML' })
+          await telegramBot.sendMessage(admin.telegramId, message, { parse_mode: 'HTML' })
             .catch(e => logger.warn(`Admin ${admin.telegramId} ga xabar yuborilmadi: ${e.message}`));
         }
       }
@@ -389,9 +387,6 @@ class WithdrawService {
     try {
       if (!withdrawal.user?.telegramId) return;
 
-      const { Telegraf } = await import('telegraf');
-      const bot = new Telegraf(process.env.TELEGRAM_BOT_TOKEN);
-
       const message =
         `✅ <b>Withdraw Tasdiqlandi!</b>\n\n` +
         `💰 Miqdor: <b>$${withdrawal.netAmount} USDT</b>\n` +
@@ -399,7 +394,7 @@ class WithdrawService {
         `🌐 Tarmoq: BEP-20 (BSC)\n\n` +
         `USDT hisobingizga tushdi. BSCScan orqali tekshirishingiz mumkin.`;
 
-      await bot.telegram.sendMessage(withdrawal.user.telegramId, message, { parse_mode: 'HTML' });
+      await telegramBot.sendMessage(withdrawal.user.telegramId, message, { parse_mode: 'HTML' });
     } catch (e) {
       logger.error('User approve notification xatosi:', e);
     }
@@ -409,18 +404,13 @@ class WithdrawService {
     try {
       if (!withdrawal.user?.telegramId) return;
 
-      const { Telegraf } = await import('telegraf');
-      const bot = new Telegraf(process.env.TELEGRAM_BOT_TOKEN);
-
-      const totalReturned = parseFloat(withdrawal.amount) + parseFloat(withdrawal.fee);
-
       const message =
         `❌ <b>Withdraw Rad Etildi</b>\n\n` +
         `💰 So'rov miqdori: $${withdrawal.amount} USDT\n` +
         `📋 Sabab: ${reason}\n\n` +
         `💚 <b>$${totalReturned} hisobingizga qaytarildi.</b>`;
 
-      await bot.telegram.sendMessage(withdrawal.user.telegramId, message, { parse_mode: 'HTML' });
+      await telegramBot.sendMessage(withdrawal.user.telegramId, message, { parse_mode: 'HTML' });
     } catch (e) {
       logger.error('User reject notification xatosi:', e);
     }
