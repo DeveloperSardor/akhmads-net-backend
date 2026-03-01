@@ -622,6 +622,32 @@ class AdService {
   }
 
   /**
+   * ✅ NEW - Get user's saved ads
+   */
+  async getSavedAds(advertiserId) {
+    try {
+      const savedAds = await prisma.savedAd.findMany({
+        where: { userId: advertiserId },
+        include: {
+          ad: true
+        },
+        orderBy: { createdAt: 'desc' }
+      });
+
+      // Extract the Ad objects and attach isSaved=true
+      const ads = savedAds.map(saved => ({
+        ...saved.ad,
+        isSaved: true
+      }));
+
+      return ads;
+    } catch (error) {
+      logger.error('Get saved ads failed:', error);
+      throw error;
+    }
+  }
+
+  /**
    * Get ad performance
    */
   async getAdPerformance(adId) {

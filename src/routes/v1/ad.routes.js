@@ -205,12 +205,13 @@ router.get(
   ]),
   async (req, res, next) => {
     try {
-      const { status, limit = 20, offset = 0 } = req.query;
+      const { status, limit = 20, offset = 0, archived = "false" } = req.query;
 
       const result = await adService.getUserAds(req.userId, {
         status,
         limit: parseInt(limit),
         offset: parseInt(offset),
+        includeArchived: archived === "true",
       });
 
       // ✅ ENRICH WITH isSaved
