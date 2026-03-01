@@ -294,7 +294,7 @@ class AdService {
 
       const where = {
         advertiserId,
-        isArchived: includeArchived ? undefined : false,
+        isArchived: includeArchived,
       };
 
       if (status) where.status = status;

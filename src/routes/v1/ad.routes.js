@@ -245,6 +245,20 @@ router.get(
 );
 
 /**
+ * GET /api/v1/ads/saved
+ * Get saved ads
+ */
+router.get("/saved", async (req, res, next) => {
+  try {
+    const ads = await adService.getSavedAds(req.userId);
+
+    response.success(res, { ads });
+  } catch (error) {
+    next(error);
+  }
+});
+
+/**
  * GET /api/v1/ads/:id
  * Get ad details
  */
@@ -578,20 +592,6 @@ router.post(
     }
   },
 );
-
-/**
- * GET /api/v1/ads/saved
- * Get saved ads
- */
-router.get("/saved", async (req, res, next) => {
-  try {
-    const ads = await adService.getSavedAds(req.userId);
-
-    response.success(res, { ads });
-  } catch (error) {
-    next(error);
-  }
-});
 
 /**
  * GET /api/v1/ads/:id/stats/daily
