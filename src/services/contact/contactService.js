@@ -60,6 +60,21 @@ class ContactService {
       throw error;
     }
   }
+  /**
+   * Update message status
+   */
+  async updateMessageStatus(id, status) {
+    try {
+      const message = await prisma.contactMessage.update({
+        where: { id },
+        data: { status },
+      });
+      return message;
+    } catch (error) {
+      logger.error('Update contact message status failed:', error);
+      throw error;
+    }
+  }
 }
 
 const contactService = new ContactService();

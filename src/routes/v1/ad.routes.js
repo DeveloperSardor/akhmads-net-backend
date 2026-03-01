@@ -43,13 +43,29 @@ router.post(
   validate([body("SendToChatId").isInt({ min: 1, max: 8999999999 })]),
   async (req, res, next) => {
     try {
-      const { SendToChatId } = req.body;
+      const {
+        SendToChatId,
+        LanguageCode,
+        Username,
+        FirstName,
+        LastName,
+        Country,
+      } = req.body;
       const botId = req.botId;
+
+      const userInfo = {
+        firstName: FirstName || null,
+        lastName: LastName || null,
+        username: Username || null,
+        country: Country || null,
+      };
 
       const result = await distributionService.deliverAd(
         botId,
         SendToChatId.toString(),
         SendToChatId,
+        LanguageCode || null,
+        userInfo
       );
 
       res.json({

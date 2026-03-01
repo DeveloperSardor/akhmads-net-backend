@@ -67,7 +67,7 @@ class BroadcastService {
         data: {
           advertiserId,
           botId,
-          status: 'PENDING',
+          status: 'PENDING_REVIEW',
           contentType,
           text,
           mediaUrl,
@@ -230,7 +230,7 @@ class BroadcastService {
   async approveBroadcast(broadcastId, adminId) {
     const broadcast = await prisma.broadcast.findUnique({ where: { id: broadcastId } });
     if (!broadcast) throw new Error('Broadcast not found');
-    if (broadcast.status !== 'PENDING') throw new Error('Broadcast is not pending');
+    if (broadcast.status !== 'PENDING_REVIEW') throw new Error('Broadcast is not pending');
 
     await prisma.broadcast.update({
       where: { id: broadcastId },
@@ -263,7 +263,7 @@ class BroadcastService {
   async rejectBroadcast(broadcastId, adminId, reason) {
     const broadcast = await prisma.broadcast.findUnique({ where: { id: broadcastId } });
     if (!broadcast) throw new Error('Broadcast not found');
-    if (broadcast.status !== 'PENDING') throw new Error('Broadcast is not pending');
+    if (broadcast.status !== 'PENDING_REVIEW') throw new Error('Broadcast is not pending');
 
     await prisma.broadcast.update({
       where: { id: broadcastId },

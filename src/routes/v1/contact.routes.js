@@ -3,7 +3,7 @@ import contactService from '../../services/contact/contactService.js';
 import { authenticate, optionalAuthenticate } from '../../middleware/auth.js';
 import { requireAdmin } from '../../middleware/rbac.js';
 import { validate } from '../../middleware/validate.js';
-import { body, query } from 'express-validator';
+import { body, param, query } from 'express-validator';
 import response from '../../utils/response.js';
 
 const router = Router();
@@ -63,6 +63,32 @@ router.get(
         limit: parseInt(limit),
         total: result.total,
       });
+    } catch (error) {
+      next(error);
+    }
+  }
+);
+
+/**
+ * PATCH /api/v1/contact/messages/:id/status
+ * Update contact message status
+ */
+router.patch(
+  '/messages/:id/status',
+  authenticate,
+  requireAdmin,
+  validate([
+    param('id').isString(),
+    body('status').isIn(['new', 'read', 'resolved']),
+  ]),
+  async (req, res, next) => {
+    try {
+      const { id } = req.params;
+      const { status } = req.body;
+
+      const message = await contactService.updateMessageStatus(id, status);
+
+      response.success(res, { message }, 'Message status updated');
     } catch (error) {
       next(error);
     }
