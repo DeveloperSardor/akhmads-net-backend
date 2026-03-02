@@ -2,6 +2,7 @@
 import prisma from '../../config/database.js';
 import ExcelJS from 'exceljs';
 import logger from '../../utils/logger.js';
+import dailyStatsService from './dailyStatsService.js';
 
 /**
  * Advertiser Analytics Service
@@ -11,7 +12,7 @@ class AdvertiserAnalytics {
   /**
    * Get advertiser dashboard overview
    */
-  async getOverview(advertiserId) {
+  async getOverview(advertiserId, days = 7) {
     try {
       // Get wallet
       const wallet = await prisma.wallet.findUnique({
@@ -42,6 +43,24 @@ class AdvertiserAnalytics {
         ? (adStats._sum.clicks / adStats._sum.deliveredImpressions) * 100
         : 0;
 
+      // Get daily time-series data for charts
+      const dailyStats = await dailyStatsService.getAdvertiserDailyStats(advertiserId, days);
+
+      const formatDate = (d) => {
+        const date = new Date(d);
+        return date.toLocaleDateString('en', { month: 'short', day: 'numeric' });
+      };
+
+      const revenue = dailyStats.map(d => ({
+        date: formatDate(d.date),
+        earnings: parseFloat(Number(d.spent || 0).toFixed(4)),
+      }));
+
+      const ctr = dailyStats.map(d => ({
+        date: formatDate(d.date),
+        ctr: parseFloat(Number(d.ctr || 0).toFixed(2)),
+      }));
+
       return {
         wallet: {
           available: wallet?.available || 0,
@@ -56,6 +75,8 @@ class AdvertiserAnalytics {
           averageCtr: parseFloat(avgCtr.toFixed(2)),
           totalSpent: adStats._sum.totalCost || 0,
         },
+        revenue,
+        ctr,
       };
     } catch (error) {
       logger.error('Get advertiser overview failed:', error);

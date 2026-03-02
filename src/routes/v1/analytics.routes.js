@@ -17,7 +17,8 @@ router.use(authenticate);
  */
 router.get('/advertiser/overview', async (req, res, next) => {
   try {
-    const overview = await advertiserAnalytics.getOverview(req.userId);
+    const days = Math.min(parseInt(req.query.days) || 7, 90);
+    const overview = await advertiserAnalytics.getOverview(req.userId, days);
 
     response.success(res, { overview });
   } catch (error) {
