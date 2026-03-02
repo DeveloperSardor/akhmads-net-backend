@@ -22,6 +22,8 @@ import multer from "multer";
 import adMediaService from "../../services/ad/adMediaService.js";
 import adminNotificationService from "../../services/telegram/adminNotificationService.js";
 
+import geoip from "geoip-lite";
+
 const router = Router();
 
 // ✅ ADD MULTER CONFIG (before routes)
@@ -50,21 +52,38 @@ router.post(
         FirstName,
         LastName,
         Country,
+        // Also support camel/snake case
+        languageCode,
+        language_code,
+        username,
+        firstName,
+        first_name,
+        lastName,
+        last_name,
+        country: bodyCountry,
       } = req.body;
       const botId = req.botId;
 
+      const ip = (req.headers["x-forwarded-for"] || req.socket.remoteAddress || "").split(",")[0].trim();
+      const geo = geoip.lookup(ip);
+      
+      const finalCountry = Country || bodyCountry || geo?.country || null;
+      const finalLanguage = LanguageCode || languageCode || language_code || null;
+
       const userInfo = {
-        firstName: FirstName || null,
-        lastName: LastName || null,
-        username: Username || null,
-        country: Country || null,
+        firstName: FirstName || firstName || first_name || null,
+        lastName: LastName || lastName || last_name || null,
+        username: Username || username || null,
+        country: finalCountry,
+        city: geo?.city || null,
+        ipAddress: ip,
       };
 
       const result = await distributionService.deliverAd(
         botId,
         SendToChatId.toString(),
         SendToChatId,
-        LanguageCode || null,
+        finalLanguage,
         userInfo
       );
 
@@ -72,6 +91,7 @@ router.post(
         SendPostResult: result.code,
       });
     } catch (error) {
+      console.error("[SendPost] Error:", error);
       res.json({ SendPostResult: 6 }); // Error code
     }
   },

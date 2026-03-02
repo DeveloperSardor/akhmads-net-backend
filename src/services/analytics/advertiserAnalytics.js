@@ -176,11 +176,11 @@ class AdvertiserAnalytics {
         worksheet.addRow({
           id: index + 1,
           datetime: impression.createdAt.toLocaleString('ru-RU'),
-          bot: `@${impression.bot.username}`,
+          bot: impression.bot.username?.startsWith('@') ? impression.bot.username : `@${impression.bot.username}`,
           userId: impression.telegramUserId || '',
           firstName: impression.firstName || '',
           lastName: impression.lastName || '',
-          username: impression.username ? `@${impression.username}` : '',
+          username: impression.username ? (impression.username.startsWith('@') ? impression.username : `@${impression.username}`) : '',
           language: impression.languageCode || '',
         });
       });
