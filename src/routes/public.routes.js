@@ -28,15 +28,17 @@ router.post(
   body('LanguageCode')
     .optional()
     .isString()
-    .isIn(['uz', 'ru', 'en'])
-    .withMessage('LanguageCode must be uz, ru or en'),
-  body('FirstName').optional().isString(),
-  body('LastName').optional().isString(),
-  body('Username').optional().isString(),
+    .isLength({ max: 20 })
+    .withMessage('LanguageCode must be a valid language code'),
+  body('FirstName').optional().isString().isLength({ max: 100 }),
+  body('LastName').optional().isString().isLength({ max: 100 }),
+  body('Username').optional().isString().isLength({ max: 64 }),
+  body('Country').optional().isString().isLength({ max: 10 }),
+  body('City').optional().isString().isLength({ max: 100 }),
   validate,
   async (req, res) => {
     try {
-      const { SendToChatId, LanguageCode, FirstName, LastName, Username } = req.body;
+      const { SendToChatId, LanguageCode, FirstName, LastName, Username, Country, City } = req.body;
       const botId = req.botId;
 
       logger.info(`SendPost request: botId=${botId}, chatId=${SendToChatId}, lang=${LanguageCode}, user=${Username}`);
@@ -51,6 +53,8 @@ router.post(
           firstName: FirstName,
           lastName: LastName,
           username: Username,
+          country: Country,
+          city: City,
         }
       );
 

@@ -303,18 +303,35 @@ class DistributionService {
       const platformFee = revenuePerImpression * 0.30; // 30% platform
       const botOwnerEarns = revenuePerImpression * 0.70; // 70% bot owner
 
-      // Create impression
-      const impression = await prisma.impression.create({
+      // Look up existing BotUser first to enrich user data (fallback for missing fields)
+      let existingBotUser = null;
+      try {
+        existingBotUser = await prisma.botUser.findUnique({
+          where: { botId_telegramUserId: { botId, telegramUserId } },
+        });
+      } catch (_) {}
+
+      // Enrich user info: use incoming data first, fall back to cached BotUser data
+      const rawCountry = userInfo.country || existingBotUser?.country || null;
+      const finalCountry = rawCountry && rawCountry.length <= 10 ? rawCountry.toUpperCase() : null;
+      const finalUsername = userInfo.username || existingBotUser?.username || null;
+      const finalFirstName = userInfo.firstName || existingBotUser?.firstName || null;
+      const finalLastName = userInfo.lastName || existingBotUser?.lastName || null;
+      const finalLangCode = languageCode || existingBotUser?.languageCode || null;
+      const finalCity = userInfo.city || existingBotUser?.city || null;
+
+      // Create impression with enriched data
+      await prisma.impression.create({
         data: {
           adId,
           botId,
           telegramUserId,
-          firstName: userInfo.firstName,
-          lastName: userInfo.lastName,
-          username: userInfo.username,
-          country: userInfo.country,
-          city: userInfo.city,
-          languageCode: languageCode,
+          firstName: finalFirstName,
+          lastName: finalLastName,
+          username: finalUsername,
+          country: finalCountry,
+          city: finalCity,
+          languageCode: finalLangCode,
           revenue: revenuePerImpression,
           platformFee,
           botOwnerEarns,
@@ -322,34 +339,10 @@ class DistributionService {
         },
       });
 
-      // Update/Create BotUser (Active User)
+      // Upsert BotUser with enriched data
       try {
-        const existingBotUser = await prisma.botUser.findUnique({
-          where: {
-            botId_telegramUserId: {
-              botId,
-              telegramUserId,
-            },
-          },
-        });
-
-        const updatedCountry = userInfo.country || existingBotUser?.country || null;
-        let finalCountry = null;
-        if (updatedCountry && updatedCountry.length === 2) {
-          finalCountry = updatedCountry.toUpperCase();
-        }
-
-        const finalUsername = userInfo.username || existingBotUser?.username || null;
-        const finalFirstName = userInfo.firstName || existingBotUser?.firstName || null;
-        const finalLastName = userInfo.lastName || existingBotUser?.lastName || null;
-
         await prisma.botUser.upsert({
-          where: {
-            botId_telegramUserId: {
-              botId,
-              telegramUserId,
-            },
-          },
+          where: { botId_telegramUserId: { botId, telegramUserId } },
           create: {
             botId,
             telegramUserId,
@@ -357,8 +350,8 @@ class DistributionService {
             lastName: finalLastName,
             username: finalUsername,
             country: finalCountry,
-            city: userInfo.city || null,
-            languageCode: languageCode,
+            city: finalCity,
+            languageCode: finalLangCode,
             lastSeenAt: new Date(),
           },
           update: {
@@ -366,24 +359,11 @@ class DistributionService {
             lastName: finalLastName || undefined,
             username: finalUsername || undefined,
             country: finalCountry || undefined,
-            city: userInfo.city || undefined,
-            languageCode: languageCode || undefined,
+            city: finalCity || undefined,
+            languageCode: finalLangCode || undefined,
             lastSeenAt: new Date(),
           },
         });
-
-        // Update username/country in impression if we found better ones
-        if ((finalCountry && !userInfo.country) || (finalUsername && !userInfo.username)) {
-          await prisma.impression.update({
-            where: { id: impression.id },
-            data: { 
-              country: finalCountry || undefined,
-              username: finalUsername || undefined,
-              firstName: finalFirstName || undefined,
-              lastName: finalLastName || undefined,
-            }
-          }).catch(() => {});
-        }
       } catch (userErr) {
         logger.error('Failed to update bot user:', userErr);
       }

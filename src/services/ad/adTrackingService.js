@@ -88,6 +88,21 @@ class AdTrackingService {
               lastSeenAt: new Date(),
             }
           }).catch(err => logger.error('Failed to update BotUser geo:', err));
+
+          // Backfill impressions that are missing country/city for this user
+          if (country && country !== 'Unknown') {
+            await prisma.impression.updateMany({
+              where: {
+                botId: data.botId,
+                telegramUserId: data.telegramUserId,
+                country: null,
+              },
+              data: {
+                country,
+                city: city !== 'Unknown' ? city : undefined,
+              },
+            }).catch(err => logger.error('Failed to backfill impression geo:', err));
+          }
         }
 
         // Update ad click count
