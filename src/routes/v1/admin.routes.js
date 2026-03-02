@@ -205,6 +205,59 @@ router.post(
   }
 );
 
+// ==================== AD MANAGEMENT (ADMIN) ====================
+
+/**
+ * DELETE /api/v1/admin/ads/:id
+ */
+router.delete(
+  '/ads/:id',
+  requireAdmin,
+  validate([param('id').isString()]),
+  async (req, res, next) => {
+    try {
+      await adService.deleteAd(req.params.id, null, true);
+      response.success(res, null, 'Ad deleted by admin');
+    } catch (error) {
+      next(error);
+    }
+  }
+);
+
+/**
+ * POST /api/v1/admin/ads/:id/pause
+ */
+router.post(
+  '/ads/:id/pause',
+  requireAdmin,
+  validate([param('id').isString()]),
+  async (req, res, next) => {
+    try {
+      const ad = await adService.adminPauseAd(req.params.id, req.userId);
+      response.success(res, { ad }, 'Ad paused by admin');
+    } catch (error) {
+      next(error);
+    }
+  }
+);
+
+/**
+ * POST /api/v1/admin/ads/:id/resume
+ */
+router.post(
+  '/ads/:id/resume',
+  requireAdmin,
+  validate([param('id').isString()]),
+  async (req, res, next) => {
+    try {
+      const ad = await adService.adminResumeAd(req.params.id, req.userId);
+      response.success(res, { ad }, 'Ad resumed by admin');
+    } catch (error) {
+      next(error);
+    }
+  }
+);
+
 // ==================== LEGACY MODERATION ROUTES (Keep for compatibility) ====================
 
 router.get('/moderation/queue', requireModerator, async (req, res, next) => {

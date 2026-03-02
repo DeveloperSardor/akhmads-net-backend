@@ -478,27 +478,27 @@ class AdService {
   /**
    * ✅ UPDATED - Delete ad with proper refund handling
    */
-  async deleteAd(adId, advertiserId) {
+  async deleteAd(adId, advertiserId, isAdmin = false) {
     try {
-      const ad = await prisma.ad.findFirst({
-        where: { id: adId, advertiserId },
-      });
+      const where = isAdmin ? { id: adId } : { id: adId, advertiserId };
+      const ad = await prisma.ad.findFirst({ where });
 
       if (!ad) {
         throw new NotFoundError('Ad not found');
       }
 
-      // Can delete: DRAFT, REJECTED, COMPLETED, PAUSED
-      const deletableStatuses = ['DRAFT', 'REJECTED', 'COMPLETED', 'PAUSED'];
-
-      if (!deletableStatuses.includes(ad.status)) {
-        throw new ValidationError(`Cannot delete ad with status: ${ad.status}`);
+      // If not admin, can only delete: DRAFT, REJECTED, COMPLETED, PAUSED
+      if (!isAdmin) {
+        const deletableStatuses = ['DRAFT', 'REJECTED', 'COMPLETED', 'PAUSED'];
+        if (!deletableStatuses.includes(ad.status)) {
+          throw new ValidationError(`Cannot delete ad with status: ${ad.status}`);
+        }
       }
 
       // Refund if in PENDING_REVIEW (funds still reserved)
       if (ad.status === 'PENDING_REVIEW') {
         const cost = parseFloat(ad.totalCost);
-        await walletService.refundAdReserve(advertiserId, adId, cost);
+        await walletService.refundAdReserve(ad.advertiserId, adId, cost);
         logger.info(`💰 Refunded $${cost} for deleted ad ${adId}`);
       }
 
@@ -506,10 +506,48 @@ class AdService {
         where: { id: adId },
       });
 
-      logger.info(`🗑️ Ad deleted: ${adId}`);
+      logger.info(`🗑️ Ad deleted by ${isAdmin ? 'ADMIN' : 'USER'}: ${adId}`);
       return true;
     } catch (error) {
       logger.error('Delete ad failed:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * Admin version of pause
+   */
+  async adminPauseAd(adId, adminId) {
+    try {
+      const ad = await prisma.ad.findUnique({ where: { id: adId } });
+      if (!ad) throw new NotFoundError('Ad not found');
+      
+      const updated = await prisma.ad.update({
+        where: { id: adId },
+        data: { status: 'PAUSED', moderatedBy: adminId, moderatedAt: new Date() },
+      });
+      return updated;
+    } catch (error) {
+      logger.error('Admin pause ad failed:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * Admin version of resume
+   */
+  async adminResumeAd(adId, adminId) {
+    try {
+      const ad = await prisma.ad.findUnique({ where: { id: adId } });
+      if (!ad) throw new NotFoundError('Ad not found');
+      
+      const updated = await prisma.ad.update({
+        where: { id: adId },
+        data: { status: 'RUNNING', moderatedBy: adminId, moderatedAt: new Date() },
+      });
+      return updated;
+    } catch (error) {
+      logger.error('Admin resume ad failed:', error);
       throw error;
     }
   }

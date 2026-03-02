@@ -304,7 +304,7 @@ class DistributionService {
       const botOwnerEarns = revenuePerImpression * 0.70; // 70% bot owner
 
       // Create impression
-      await prisma.impression.create({
+      const impression = await prisma.impression.create({
         data: {
           adId,
           botId,
@@ -323,6 +323,25 @@ class DistributionService {
 
       // Update/Create BotUser (Active User)
       try {
+        const existingBotUser = await prisma.botUser.findUnique({
+          where: {
+            botId_telegramUserId: {
+              botId,
+              telegramUserId,
+            },
+          },
+        });
+
+        const updatedCountry = userInfo.country || existingBotUser?.country || null;
+        let finalCountry = null;
+        if (updatedCountry && updatedCountry.length === 2) {
+          finalCountry = updatedCountry.toUpperCase();
+        }
+
+        const finalUsername = userInfo.username || existingBotUser?.username || null;
+        const finalFirstName = userInfo.firstName || existingBotUser?.firstName || null;
+        const finalLastName = userInfo.lastName || existingBotUser?.lastName || null;
+
         await prisma.botUser.upsert({
           where: {
             botId_telegramUserId: {
@@ -333,22 +352,35 @@ class DistributionService {
           create: {
             botId,
             telegramUserId,
-            firstName: userInfo.firstName,
-            lastName: userInfo.lastName,
-            username: userInfo.username,
-            country: userInfo.country,
+            firstName: finalFirstName,
+            lastName: finalLastName,
+            username: finalUsername,
+            country: finalCountry,
             languageCode: languageCode,
             lastSeenAt: new Date(),
           },
           update: {
-            firstName: userInfo.firstName,
-            lastName: userInfo.lastName,
-            username: userInfo.username,
-            country: userInfo.country,
-            languageCode: languageCode,
+            firstName: finalFirstName || undefined,
+            lastName: finalLastName || undefined,
+            username: finalUsername || undefined,
+            country: finalCountry || undefined,
+            languageCode: languageCode || undefined,
             lastSeenAt: new Date(),
           },
         });
+
+        // Update username/country in impression if we found better ones
+        if ((finalCountry && !userInfo.country) || (finalUsername && !userInfo.username)) {
+          await prisma.impression.update({
+            where: { id: impression.id },
+            data: { 
+              country: finalCountry || undefined,
+              username: finalUsername || undefined,
+              firstName: finalFirstName || undefined,
+              lastName: finalLastName || undefined,
+            }
+          }).catch(() => {});
+        }
       } catch (userErr) {
         logger.error('Failed to update bot user:', userErr);
       }

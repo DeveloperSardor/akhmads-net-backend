@@ -613,7 +613,7 @@ class LoginBotHandler {
 
     const welcomeText = i18n.t(locale, 'welcome', {
       name,
-      balance: (parseFloat(balance) / 100).toFixed(2),
+      balance: parseFloat(balance).toFixed(2),
       miniAppUrl: `https://t.me/akhmadsnetbot/app`
     }) + (user.role === 'ADVERTISER' || (user.roles && user.roles.includes('ADVERTISER')) ? `\n\n📢 <b>Reklama berish:</b> Shunchaki botga matn yoki rasm/video yuboring!` : '');
 
@@ -624,12 +624,12 @@ class LoginBotHandler {
     keyboard
       .add({ 
         text: i18n.t(locale, 'channel') + " ↗️", 
-        callback_data: 'channel', 
+        url: 'https://t.me/akhmads_net', 
         icon_custom_emoji_id: emojiIds.pencil 
       })
       .add({ 
         text: i18n.t(locale, 'chat') + " ↗️", 
-        callback_data: 'chat', 
+        url: 'https://t.me/akhmads_chat', 
         icon_custom_emoji_id: emojiIds.chat 
       })
       .row();
@@ -681,19 +681,43 @@ class LoginBotHandler {
           parse_mode: 'HTML'
         });
       } else {
-        await ctx.replyWithAnimation(new InputFile(createReadStream(gifPath)), {
-          caption: welcomeText,
-          reply_markup: keyboard,
-          parse_mode: 'HTML'
-        });
+        // ✅ OPTIMIZATION: Use file_id from Redis if available
+        const cachedFileId = await redis.get('main_gif_file_id');
+        
+        if (cachedFileId) {
+          await ctx.replyWithAnimation(cachedFileId, {
+            caption: welcomeText,
+            reply_markup: keyboard,
+            parse_mode: 'HTML'
+          });
+        } else {
+          const msg = await ctx.replyWithAnimation(new InputFile(createReadStream(gifPath)), {
+            caption: welcomeText,
+            reply_markup: keyboard,
+            parse_mode: 'HTML'
+          });
+          
+          // Save file_id for future use
+          if (msg.animation?.file_id) {
+            await redis.set('main_gif_file_id', msg.animation.file_id);
+          }
+        }
       }
     } catch (error) {
+      logger.error('Main menu render error:', error);
       // Fallback if animation fails or can't be edited
       if (options.edit) {
-        await ctx.editMessageText(welcomeText, {
-          reply_markup: keyboard,
-          parse_mode: 'HTML'
-        });
+        try {
+          await ctx.editMessageText(welcomeText, {
+            reply_markup: keyboard,
+            parse_mode: 'HTML'
+          });
+        } catch (e) {
+          await ctx.reply(welcomeText, {
+            reply_markup: keyboard,
+            parse_mode: 'HTML'
+          });
+        }
       } else {
         await ctx.reply(welcomeText, {
           reply_markup: keyboard,
@@ -803,11 +827,7 @@ class LoginBotHandler {
         return;
       }
 
-      if (data === 'channel' || data === 'chat') {
-        const user = await prisma.user.findUnique({ where: { telegramId } });
-        await ctx.answerCallbackQuery(i18n.t(user?.locale || 'uz', 'coming_soon'));
-        return;
-      }
+
 
       if (data === 'how_to_add_ad') {
         const user = await prisma.user.findUnique({ where: { telegramId } });
@@ -1179,6 +1199,11 @@ class LoginBotHandler {
       });
       if (!ad) { await ctx.answerCallbackQuery('❌ Reklama topilmadi'); return; }
 
+      if (ad.status !== 'SUBMITTED' && ad.status !== 'PENDING_REVIEW') {
+        await ctx.answerCallbackQuery('⚠️ Bu reklama allaqachon ko\'rib chiqilgan');
+        return;
+      }
+
       // ✅ To'g'ri field nomlar
       await prisma.ad.update({
         where: { id: adId },
@@ -1226,6 +1251,11 @@ class LoginBotHandler {
         include: { advertiser: { select: { telegramId: true, locale: true } } },
       });
       if (!ad) { await ctx.answerCallbackQuery('❌ Reklama topilmadi'); return; }
+
+      if (ad.status !== 'SUBMITTED' && ad.status !== 'PENDING_REVIEW') {
+        await ctx.answerCallbackQuery('⚠️ Bu reklama allaqachon ko\'rib chiqilgan');
+        return;
+      }
 
       // ✅ To'g'ri field nomlar (EDIT_REQUESTED status schema da bo'lmasligi mumkin, PENDING_REVIEW ga qaytaramiz)
       await prisma.ad.update({
@@ -1279,6 +1309,11 @@ class LoginBotHandler {
       });
       if (!bot) { await ctx.answerCallbackQuery('❌ Bot topilmadi'); return; }
 
+      if (bot.status !== 'PENDING') {
+        await ctx.answerCallbackQuery('⚠️ Bu bot allaqachon ko\'rib chiqilgan');
+        return;
+      }
+
       // ✅ BotStatus: ACTIVE (schema dagi valid value)
       await prisma.bot.update({
         where: { id: botId },
@@ -1327,6 +1362,11 @@ class LoginBotHandler {
       });
       if (!bot) { await ctx.answerCallbackQuery('❌ Bot topilmadi'); return; }
 
+      if (bot.status !== 'PENDING') {
+        await ctx.answerCallbackQuery('⚠️ Bu bot allaqachon ko\'rib chiqilgan');
+        return;
+      }
+
       await prisma.bot.update({
         where: { id: botId },
         data: { status: 'REJECTED' },
@@ -1372,6 +1412,14 @@ class LoginBotHandler {
         return;
       }
 
+      const broadcast = await prisma.broadcast.findUnique({ where: { id: broadcastId } });
+      if (!broadcast) { await ctx.answerCallbackQuery('❌ Broadcast topilmadi'); return; }
+
+      if (broadcast.status !== 'PENDING') {
+        await ctx.answerCallbackQuery('⚠️ Bu broadcast allaqachon ko\'rib chiqilgan');
+        return;
+      }
+
       const { default: broadcastService } = await import('../admin/broadcastService.js');
       await broadcastService.approveBroadcast(broadcastId, admin.id);
 
@@ -1399,6 +1447,14 @@ class LoginBotHandler {
 
       if (!admin || !['ADMIN', 'MODERATOR', 'SUPER_ADMIN'].includes(admin.role)) {
         await ctx.answerCallbackQuery('❌ Ruxsat yo\'q!');
+        return;
+      }
+
+      const broadcast = await prisma.broadcast.findUnique({ where: { id: broadcastId } });
+      if (!broadcast) { await ctx.answerCallbackQuery('❌ Broadcast topilmadi'); return; }
+
+      if (broadcast.status !== 'PENDING') {
+        await ctx.answerCallbackQuery('⚠️ Bu broadcast allaqachon ko\'rib chiqilgan');
         return;
       }
 
