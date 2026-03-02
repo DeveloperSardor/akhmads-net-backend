@@ -64,13 +64,10 @@ class DetailedStatsService {
       const total = await prisma.impression.count({ where });
 
       // Enrich impressions missing user data from BotUser cache
-      const missing = impressions.filter(
-        imp => !imp.username && !imp.firstName && (!imp.country || imp.country === 'Unknown')
-      );
-      if (missing.length > 0) {
-        const pairs = missing.map(imp => ({ botId: imp.botId, telegramUserId: imp.telegramUserId }));
+      const pairs0 = impressions.filter(imp => imp.botId && imp.telegramUserId && !imp.username && !imp.firstName).map(imp => ({ botId: imp.botId, telegramUserId: imp.telegramUserId }));
+      if (pairs0.length > 0) {
         const botUsers = await prisma.botUser.findMany({
-          where: { OR: pairs },
+          where: { OR: pairs0 },
           select: { botId: true, telegramUserId: true, username: true, firstName: true, lastName: true, languageCode: true, country: true, city: true },
         });
         const buMap = Object.fromEntries(botUsers.map(bu => [`${bu.botId}:${bu.telegramUserId}`, bu]));
@@ -209,18 +206,15 @@ class DetailedStatsService {
       const total = await prisma.clickEvent.count({ where });
 
       // Enrich clicks missing user data from BotUser cache
-      const missingClicks = clicks.filter(
-        c => !c.username && !c.firstName
-      );
-      if (missingClicks.length > 0) {
-        const pairs = missingClicks.map(c => ({ botId: c.botId, telegramUserId: c.telegramUserId }));
-        const botUsers = await prisma.botUser.findMany({
-          where: { OR: pairs },
+      const pairs1 = clicks.filter(c => c.botId && c.telegramUserId && !c.username && !c.firstName).map(c => ({ botId: c.botId, telegramUserId: c.telegramUserId }));
+      if (pairs1.length > 0) {
+        const botUsers1 = await prisma.botUser.findMany({
+          where: { OR: pairs1 },
           select: { botId: true, telegramUserId: true, username: true, firstName: true, lastName: true, languageCode: true, country: true, city: true },
         });
-        const buMap = Object.fromEntries(botUsers.map(bu => [`${bu.botId}:${bu.telegramUserId}`, bu]));
+        const buMap1 = Object.fromEntries(botUsers1.map(bu => [`${bu.botId}:${bu.telegramUserId}`, bu]));
         for (const c of clicks) {
-          const bu = buMap[`${c.botId}:${c.telegramUserId}`];
+          const bu = buMap1[`${c.botId}:${c.telegramUserId}`];
           if (!bu) continue;
           if (!c.username) c.username = bu.username;
           if (!c.firstName) c.firstName = bu.firstName;
@@ -267,11 +261,10 @@ class DetailedStatsService {
       });
 
       // Enrich from BotUser for missing fields
-      const expMissing = impressions.filter(i => !i.username && !i.firstName);
-      if (expMissing.length > 0) {
-        const pairs = expMissing.map(i => ({ botId: i.botId, telegramUserId: i.telegramUserId }));
+      const pairs2 = impressions.filter(i => i.botId && i.telegramUserId && !i.username && !i.firstName).map(i => ({ botId: i.botId, telegramUserId: i.telegramUserId }));
+      if (pairs2.length > 0) {
         const bus = await prisma.botUser.findMany({
-          where: { OR: pairs },
+          where: { OR: pairs2 },
           select: { botId: true, telegramUserId: true, username: true, firstName: true, lastName: true, languageCode: true, country: true, city: true },
         });
         const buMap = Object.fromEntries(bus.map(b => [`${b.botId}:${b.telegramUserId}`, b]));
@@ -333,11 +326,10 @@ class DetailedStatsService {
       });
 
       // Enrich from BotUser for missing fields
-      const expClickMissing = clicks.filter(c => !c.username && !c.firstName);
-      if (expClickMissing.length > 0) {
-        const pairs = expClickMissing.map(c => ({ botId: c.botId, telegramUserId: c.telegramUserId }));
+      const pairs3 = clicks.filter(c => c.botId && c.telegramUserId && !c.username && !c.firstName).map(c => ({ botId: c.botId, telegramUserId: c.telegramUserId }));
+      if (pairs3.length > 0) {
         const bus = await prisma.botUser.findMany({
-          where: { OR: pairs },
+          where: { OR: pairs3 },
           select: { botId: true, telegramUserId: true, username: true, firstName: true, lastName: true, languageCode: true, country: true, city: true },
         });
         const buMap = Object.fromEntries(bus.map(b => [`${b.botId}:${b.telegramUserId}`, b]));
