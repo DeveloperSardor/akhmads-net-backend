@@ -84,25 +84,49 @@ router.get("/avatar/:username", async (req, res, next) => {
 
     // 4. Stream the target image pipeline directly back to the client
     try {
+      console.log(`[AvatarProxy] Fetching: ${fetchUrl} (Original: ${targetUrl})`);
       const sourceResponse = await axios.get(fetchUrl, {
         responseType: "stream",
-        timeout: 5000,
+        timeout: 10000,
       });
-      res.set("Content-Type", sourceResponse.headers["content-type"]);
+      
+      let contentType = sourceResponse.headers["content-type"] || sourceResponse.headers["Content-Type"];
+      
+      // Guess content type if it's missing or generic
+      if (!contentType || contentType === 'application/octet-stream') {
+        if (targetUrl.toLowerCase().endsWith('.jpg') || targetUrl.toLowerCase().endsWith('.jpeg')) {
+          contentType = 'image/jpeg';
+        } else if (targetUrl.toLowerCase().endsWith('.png')) {
+          contentType = 'image/png';
+        } else if (targetUrl.toLowerCase().endsWith('.webp')) {
+          contentType = 'image/webp';
+        } else if (targetUrl.toLowerCase().endsWith('.gif')) {
+          contentType = 'image/gif';
+        }
+      }
+
+      console.log(`[AvatarProxy] Success: ${username}, Content-Type: ${contentType}`);
+      res.set("Content-Type", contentType || 'image/jpeg');
       res.set("Cache-Control", "public, max-age=86400");
       return sourceResponse.data.pipe(res);
     } catch (fetchErr) {
+       console.error(`[AvatarProxy] Fetch Error for ${username}:`, fetchErr.message);
        // If internal/proxy fetch failed, try the original public target one last time
        if (fetchUrl !== targetUrl) {
-          const retryResponse = await axios.get(targetUrl, { responseType: "stream", timeout: 3000 });
-          res.set("Content-Type", retryResponse.headers["content-type"]);
-          res.set("Cache-Control", "public, max-age=86400");
-          return retryResponse.data.pipe(res);
+          try {
+            const retryResponse = await axios.get(targetUrl, { responseType: "stream", timeout: 5000 });
+            res.set("Content-Type", retryResponse.headers["content-type"] || 'image/jpeg');
+            res.set("Cache-Control", "public, max-age=86400");
+            return retryResponse.data.pipe(res);
+          } catch (retryErr) {
+            console.error(`[AvatarProxy] Retry failed for ${username}`);
+          }
        }
        throw fetchErr;
     }
 
   } catch (error) {
+    console.warn(`[AvatarProxy] Ultimate fallback to ui-avatars for @${req.params.username}`);
     // Ultimate fallback if the eventual target stream link is dead or blocks us
     const fallbackImage = `https://ui-avatars.com/api/?name=${req.params.username.replace("@", "")}&background=random&color=fff&size=128`;
     try {
