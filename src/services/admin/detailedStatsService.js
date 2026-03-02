@@ -266,6 +266,27 @@ class DetailedStatsService {
         take: 10000,
       });
 
+      // Enrich from BotUser for missing fields
+      const expMissing = impressions.filter(i => !i.username && !i.firstName);
+      if (expMissing.length > 0) {
+        const pairs = expMissing.map(i => ({ botId: i.botId, telegramUserId: i.telegramUserId }));
+        const bus = await prisma.botUser.findMany({
+          where: { OR: pairs },
+          select: { botId: true, telegramUserId: true, username: true, firstName: true, lastName: true, languageCode: true, country: true, city: true },
+        });
+        const buMap = Object.fromEntries(bus.map(b => [`${b.botId}:${b.telegramUserId}`, b]));
+        for (const imp of impressions) {
+          const bu = buMap[`${imp.botId}:${imp.telegramUserId}`];
+          if (!bu) continue;
+          if (!imp.username) imp.username = bu.username;
+          if (!imp.firstName) imp.firstName = bu.firstName;
+          if (!imp.lastName) imp.lastName = bu.lastName;
+          if (!imp.languageCode) imp.languageCode = bu.languageCode;
+          if (!imp.country || imp.country === 'Unknown') imp.country = bu.country;
+          if (!imp.city || imp.city === 'Unknown') imp.city = bu.city;
+        }
+      }
+
       return impressions.map(imp => ({
         'ID': imp.id,
         'Telegram ID': imp.telegramUserId || '',
@@ -310,6 +331,27 @@ class DetailedStatsService {
         orderBy: { clickedAt: 'desc' },
         take: 10000,
       });
+
+      // Enrich from BotUser for missing fields
+      const expClickMissing = clicks.filter(c => !c.username && !c.firstName);
+      if (expClickMissing.length > 0) {
+        const pairs = expClickMissing.map(c => ({ botId: c.botId, telegramUserId: c.telegramUserId }));
+        const bus = await prisma.botUser.findMany({
+          where: { OR: pairs },
+          select: { botId: true, telegramUserId: true, username: true, firstName: true, lastName: true, languageCode: true, country: true, city: true },
+        });
+        const buMap = Object.fromEntries(bus.map(b => [`${b.botId}:${b.telegramUserId}`, b]));
+        for (const c of clicks) {
+          const bu = buMap[`${c.botId}:${c.telegramUserId}`];
+          if (!bu) continue;
+          if (!c.username) c.username = bu.username;
+          if (!c.firstName) c.firstName = bu.firstName;
+          if (!c.lastName) c.lastName = bu.lastName;
+          if (!c.languageCode) c.languageCode = bu.languageCode;
+          if (!c.country || c.country === 'Unknown') c.country = bu.country;
+          if (!c.city || c.city === 'Unknown') c.city = bu.city;
+        }
+      }
 
       return clicks.map(c => ({
         'ID': c.id,
