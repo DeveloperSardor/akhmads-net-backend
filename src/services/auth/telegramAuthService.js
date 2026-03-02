@@ -131,24 +131,30 @@ class TelegramAuthService {
 
         logger.info(`New user created: ${user.id} (${user.firstName} ${user.lastName})`);
       } else {
-        // ✅ UPDATE EXISTING USER if Telegram data changed
-        const needsUpdate =
+        // ✅ UPDATE EXISTING USER if Telegram data changed or missing roles
+        const needsRoleUpgrade = !user.roles || !user.roles.includes('BOT_OWNER');
+        const needsDataUpdate =
           telegramUser.first_name !== user.firstName ||
           telegramUser.last_name !== user.lastName ||
           telegramUser.username !== user.username ||
-          telegramUser.photo_url !== user.avatarUrl;  // ✅ Check avatar changes
+          telegramUser.photo_url !== user.avatarUrl;
 
-        if (needsUpdate) {
+        if (needsDataUpdate || needsRoleUpgrade) {
+          const newRoles = [...(user.roles || [])];
+          if (!newRoles.includes('ADVERTISER')) newRoles.push('ADVERTISER');
+          if (!newRoles.includes('BOT_OWNER')) newRoles.push('BOT_OWNER');
+
           user = await prisma.user.update({
             where: { id: user.id },
             data: {
               firstName: telegramUser.first_name || user.firstName,
               lastName: telegramUser.last_name || user.lastName,
               username: telegramUser.username || user.username,
-              avatarUrl: telegramUser.photo_url || user.avatarUrl,  // ✅ UPDATE AVATAR
+              avatarUrl: telegramUser.photo_url || user.avatarUrl,
+              roles: newRoles,
             },
           });
-          logger.info(`User data updated: ${user.id}`);
+          logger.info(`User data updated: ${user.id} (Upgraded: ${needsRoleUpgrade})`);
         }
       }
 
@@ -227,20 +233,26 @@ class TelegramAuthService {
             avatarUrl: telegramUser.photo_url || null,
             locale: telegramUser.language_code || 'en',
             role: 'ADVERTISER',
-            roles: ['ADVERTISER'],
+            roles: ['ADVERTISER', 'BOT_OWNER'],
             isActive: true,
           },
         });
         await prisma.wallet.create({ data: { userId: user.id } });
         logger.info(`New user via widget login: ${user.id}`);
       } else {
+        const needsRoleUpgrade = !user.roles || !user.roles.includes('BOT_OWNER');
         const needsUpdate =
           telegramUser.first_name !== user.firstName ||
           telegramUser.last_name !== user.lastName ||
           telegramUser.username !== user.username ||
-          (telegramUser.photo_url && telegramUser.photo_url !== user.avatarUrl);
+          (telegramUser.photo_url && telegramUser.photo_url !== user.avatarUrl) ||
+          needsRoleUpgrade;
 
         if (needsUpdate) {
+          const newRoles = [...(user.roles || [])];
+          if (!newRoles.includes('ADVERTISER')) newRoles.push('ADVERTISER');
+          if (!newRoles.includes('BOT_OWNER')) newRoles.push('BOT_OWNER');
+
           user = await prisma.user.update({
             where: { id: user.id },
             data: {
@@ -248,8 +260,10 @@ class TelegramAuthService {
               lastName: telegramUser.last_name || user.lastName,
               username: telegramUser.username || user.username,
               avatarUrl: telegramUser.photo_url || user.avatarUrl,
+              roles: newRoles,
             },
           });
+          logger.info(`User updated: ${user.id} (Upgraded roles: ${needsRoleUpgrade})`);
         }
       }
 

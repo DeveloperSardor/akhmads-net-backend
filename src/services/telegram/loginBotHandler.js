@@ -51,6 +51,7 @@ class LoginBotHandler {
                 lastName: from.last_name,
                 username: from.username,
                 role: 'ADVERTISER',
+                roles: ['ADVERTISER', 'BOT_OWNER'],
                 isActive: true,
                 locale: from.language_code || 'uz',
               },
@@ -69,6 +70,7 @@ class LoginBotHandler {
               lastName: from.last_name,
               username: from.username,
               role: 'ADVERTISER',
+              roles: ['ADVERTISER', 'BOT_OWNER'],
               isActive: true,
               locale: 'uz', // Default
             },
