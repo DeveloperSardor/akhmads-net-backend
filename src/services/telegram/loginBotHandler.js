@@ -614,62 +614,33 @@ class LoginBotHandler {
     const welcomeText = i18n.t(locale, 'welcome', {
       name,
       balance: parseFloat(balance).toFixed(2),
-      miniAppUrl: `https://t.me/akhmadsnetbot/app`
-    }) + (user.role === 'ADVERTISER' || (user.roles && user.roles.includes('ADVERTISER')) ? `\n\n📢 <b>Reklama berish:</b> Shunchaki botga matn yoki rasm/video yuboring!` : '');
+    });
 
     const isHttp = authUrl.startsWith('http://');
     const emojiIds = i18n.emojis(locale);
     const keyboard = new InlineKeyboard();
 
-    keyboard
-      .add({ 
-        text: i18n.t(locale, 'channel') + " ↗️", 
-        url: 'https://t.me/akhmads_net', 
-        icon_custom_emoji_id: emojiIds.pencil 
-      })
-      .add({ 
-        text: i18n.t(locale, 'chat') + " ↗️", 
-        url: 'https://t.me/akhmads_chat', 
-        icon_custom_emoji_id: emojiIds.chat 
-      })
-      .row();
-
-    // 1.5. Add Ad via Bot (For Advertisers)
-    if (user.role === 'ADVERTISER' || (user.roles && user.roles.includes('ADVERTISER'))) {
-      keyboard.add({
-        text: "📢 Reklama qo'shish (Bot)",
-        callback_data: 'how_to_add_ad'
-      }).row();
-    }
-
-    // 2. Authorize (PRIMARY BLUE)
+    // 1. Authorize (PRIMARY BLUE)
     if (isHttp) {
       this.sessions.set(`auth_url:${telegramId}`, authUrl);
-      keyboard.add({ 
-        text: i18n.t(locale, 'auth_web'), 
+      keyboard.add({
+        text: i18n.t(locale, 'auth_web'),
         callback_data: 'authorize_web',
-        style: 'primary', 
-        icon_custom_emoji_id: emojiIds.play 
+        style: 'primary',
+        icon_custom_emoji_id: emojiIds.play
       });
     } else {
-      keyboard.add({ 
-        text: i18n.t(locale, 'auth_web'), 
+      keyboard.add({
+        text: i18n.t(locale, 'auth_web'),
         url: authUrl,
-        style: 'primary', 
-        icon_custom_emoji_id: emojiIds.play 
+        style: 'primary',
+        icon_custom_emoji_id: emojiIds.play
       });
     }
-    keyboard.row();
 
-    // 3. Mini App
-    if (frontendUrl.startsWith('https://')) {
-      keyboard.webApp(i18n.t(locale, 'open_mini_app'), frontendUrl);
-    } else {
-      keyboard.url(i18n.t(locale, 'open_mini_app'), frontendUrl);
-    }
-
+    // 2. Language change
     keyboard.row()
-      .text('🌐 Tilni o\'zgartirish / Change Language', 'change_lang');
+      .text(i18n.t(locale, 'change_language'), 'change_lang');
 
     const __dirname = dirname(fileURLToPath(import.meta.url));
     const gifPath = join(__dirname, '../../../main-gif.mov');
