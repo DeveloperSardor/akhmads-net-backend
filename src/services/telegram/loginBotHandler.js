@@ -643,7 +643,7 @@ class LoginBotHandler {
       .text(i18n.t(locale, 'change_language'), 'change_lang');
 
     const __dirname = dirname(fileURLToPath(import.meta.url));
-    const gifPath = join(__dirname, '../../../main-gif.mov');
+    const gifPath = join(__dirname, '../../../main-gif-opt.mp4');
     
     try {
       if (options.edit) {
