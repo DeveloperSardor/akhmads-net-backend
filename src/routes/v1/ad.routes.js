@@ -295,6 +295,64 @@ router.get("/saved", async (req, res, next) => {
   }
 });
 
+// ==================== BROADCASTS ====================
+
+/**
+ * GET /api/v1/ads/broadcasts
+ * Get advertiser's broadcasts
+ */
+router.get(
+  "/broadcasts",
+  requireAdvertiser,
+  async (req, res, next) => {
+    try {
+      const result = await broadcastService.getBroadcasts(req.userId, req.query);
+      response.paginated(res, result.broadcasts, {
+        page: Math.floor((req.query.offset || 0) / (req.query.limit || 20)) + 1,
+        limit: parseInt(req.query.limit || 20),
+        total: result.total,
+      });
+    } catch (error) {
+      next(error);
+    }
+  }
+);
+
+/**
+ * POST /api/v1/ads/broadcasts
+ * Create/Launch a broadcast campaign
+ */
+router.post(
+  "/broadcasts",
+  requireAdvertiser,
+  validate([
+    body("botId").isString(),
+    body("contentType").isIn(["TEXT", "HTML", "MEDIA"]),
+    body("text").isString().isLength({ min: 10, max: 4096 }),
+    body("mediaUrl").optional().isString(),
+    body("mediaType").optional().isString(),
+    body("buttons").optional().isArray(),
+    body("targetCount").isInt({ min: 1, max: 100000 }),
+    body("activeDays").optional().isInt({ min: 1, max: 365 }),
+  ]),
+  async (req, res, next) => {
+    try {
+      const broadcast = await broadcastService.createBroadcast(req.userId, req.body);
+
+      // Notify admins
+      const advertiser = await prisma.user.findUnique({
+        where: { id: req.userId },
+        select: { username: true, firstName: true, telegramId: true },
+      });
+      adminNotificationService.notifyNewBroadcast({ ...broadcast, bot: { username: req.body.botId } }, advertiser).catch(() => {});
+
+      response.created(res, { broadcast }, "Broadcast created, pending moderation");
+    } catch (error) {
+      next(error);
+    }
+  }
+);
+
 /**
  * GET /api/v1/ads/:id
  * Get ad details
@@ -764,65 +822,6 @@ router.post(
       next(error);
     }
   },
-);
-
-// ==================== BROADCASTS ====================
-
-
-/**
- * GET /api/v1/ads/broadcasts
- * Get advertiser's broadcasts
- */
-router.get(
-  "/broadcasts",
-  requireAdvertiser,
-  async (req, res, next) => {
-    try {
-      const result = await broadcastService.getBroadcasts(req.userId, req.query);
-      response.paginated(res, result.broadcasts, {
-        page: Math.floor((req.query.offset || 0) / (req.query.limit || 20)) + 1,
-        limit: parseInt(req.query.limit || 20),
-        total: result.total,
-      });
-    } catch (error) {
-      next(error);
-    }
-  }
-);
-
-/**
- * POST /api/v1/ads/broadcasts
- * Create/Launch a broadcast campaign
- */
-router.post(
-  "/broadcasts",
-  requireAdvertiser,
-  validate([
-    body("botId").isString(),
-    body("contentType").isIn(["TEXT", "HTML", "MEDIA"]),
-    body("text").isString().isLength({ min: 10, max: 4096 }),
-    body("mediaUrl").optional().isString(),
-    body("mediaType").optional().isString(),
-    body("buttons").optional().isArray(),
-    body("targetCount").isInt({ min: 1, max: 100000 }),
-    body("activeDays").optional().isInt({ min: 1, max: 365 }),
-  ]),
-  async (req, res, next) => {
-    try {
-      const broadcast = await broadcastService.createBroadcast(req.userId, req.body);
-
-      // Notify admins
-      const advertiser = await prisma.user.findUnique({
-        where: { id: req.userId },
-        select: { username: true, firstName: true, telegramId: true },
-      });
-      adminNotificationService.notifyNewBroadcast({ ...broadcast, bot: { username: req.body.botId } }, advertiser).catch(() => {});
-
-      response.created(res, { broadcast }, "Broadcast created, pending moderation");
-    } catch (error) {
-      next(error);
-    }
-  }
 );
 
 /**
