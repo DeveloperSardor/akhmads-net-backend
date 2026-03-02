@@ -56,12 +56,12 @@ class TelegramPreviewService {
 
       if (mediaUrl) {
         sentMessage = await bot.api.sendPhoto(user.telegramId, mediaUrl, {
-          caption: `🧪 PREVIEW\n\n${text}`,
+          caption: text,
           parse_mode: 'HTML',
           reply_markup: replyMarkup,
         });
       } else {
-        sentMessage = await bot.api.sendMessage(user.telegramId, `🧪 PREVIEW\n\n${text}`, {
+        sentMessage = await bot.api.sendMessage(user.telegramId, text, {
           parse_mode: 'HTML',
           reply_markup: replyMarkup,
         });
@@ -119,11 +119,11 @@ class TelegramPreviewService {
         }
 
         sentMessage = await telegramBot.api.sendPhoto(user.telegramId, photoSource, {
-          caption: `🧪 TEST AD\n\n${text}`,
+          caption: text,
           reply_markup: replyMarkup,
         });
       } else {
-        sentMessage = await telegramBot.api.sendMessage(user.telegramId, `🧪 TEST AD\n\n${text}`, {
+        sentMessage = await telegramBot.api.sendMessage(user.telegramId, text, {
           reply_markup: replyMarkup,
         });
       }
