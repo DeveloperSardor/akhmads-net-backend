@@ -904,15 +904,20 @@ class LoginBotHandler {
         keyboard.url(i18n.t(locale, 'open_mini_app'), frontendUrl);
       }
 
-      const successText = i18n.t(locale, 'auth_success');
-
       await ctx.answerCallbackQuery('✅');
-      await ctx.editMessageText(successText, { 
-        reply_markup: keyboard,
-        parse_mode: 'HTML'
-      });
+      try {
+        await ctx.deleteMessage();
+      } catch (e) {}
 
       this.sessions.delete(telegramId);
+
+      // Refresh user to get full object including wallet for showMainMenu
+      const fullUser = await prisma.user.findUnique({
+        where: { id: result.user.id },
+        include: { wallet: true },
+      });
+
+      await this.showMainMenu(ctx, fullUser, { edit: false });
 
       logger.info(`User ${telegramId} logged in successfully with avatar`);
     } catch (error) {
