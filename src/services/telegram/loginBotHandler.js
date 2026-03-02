@@ -12,6 +12,7 @@ import i18n from '../../utils/i18n.js';
 import { messageToHtml } from '../../utils/telegram-html.js';
 import walletService from '../wallet/walletService.js';
 import adminNotificationService from './adminNotificationService.js';
+import adModerationService from '../ad/adModerationService.js';
 
 /**
  * Login Bot Handler - GramAds Style
@@ -1122,11 +1123,8 @@ class LoginBotHandler {
         return;
       }
 
-      // ✅ To'g'ri field nomlar: moderatedBy, moderatedAt
-      await prisma.ad.update({
-        where: { id: adId },
-        data: { status: 'ACTIVE', moderatedBy: admin.id, moderatedAt: new Date() },
-      });
+      // Use adModerationService for correct status flow + wallet reserve confirmation
+      await adModerationService.approveAd(adId, admin.id);
 
       await ctx.answerCallbackQuery('✅ Reklama tasdiqlandi!');
       const originalText = ctx.callbackQuery.message?.text || '';
