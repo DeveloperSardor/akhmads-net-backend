@@ -39,6 +39,28 @@ class LoginBotHandler {
           include: { wallet: true },
         });
 
+        // 2. Handle Deep Linking (Login) - Check this FIRST
+        // If user is here to login, we process it regardless of registration state
+        //But we still need a user record to store locale etc.
+        if (args && args.startsWith('login_')) {
+          if (!user) {
+            user = await prisma.user.create({
+              data: {
+                telegramId,
+                firstName: from.first_name,
+                lastName: from.last_name,
+                username: from.username,
+                role: 'ADVERTISER',
+                isActive: true,
+                locale: from.language_code || 'uz',
+              },
+            });
+            await prisma.wallet.create({ data: { userId: user.id } });
+          }
+          await this.handleLoginStart(ctx, args);
+          return;
+        }
+
         if (!user) {
           user = await prisma.user.create({
             data: {
@@ -48,7 +70,7 @@ class LoginBotHandler {
               username: from.username,
               role: 'ADVERTISER',
               isActive: true,
-              locale: 'uz', // Default, will prompt to change
+              locale: 'uz', // Default
             },
           });
           await prisma.wallet.create({ data: { userId: user.id } });
@@ -58,18 +80,12 @@ class LoginBotHandler {
           return;
         }
 
-        // 2. Handle Deep Linking
-        if (args && args.startsWith('login_')) {
-          await this.handleLoginStart(ctx, args);
-          return;
-        }
-
         if (args === 'add_ad') {
           await this.showHowToAddAd(ctx, user);
           return;
         }
 
-        // 3. Regular Start -> Show Main Menu (or language selection if not set)
+        // 3. Regular Start -> Show Main Menu
         await this.showMainMenu(ctx, user);
       } catch (error) {
         logger.error('Start command error:', error);
@@ -528,13 +544,18 @@ class LoginBotHandler {
    * Show Language Selection Menu
    */
   async showLanguageSelection(ctx) {
+    const from = ctx.from;
+    const telegramId = from.id.toString();
+    const user = await prisma.user.findUnique({ where: { telegramId } });
+    const locale = user?.locale || 'uz';
+
     const keyboard = new InlineKeyboard()
       .text('🇺🇿 O\'zbekcha', 'set_lang:uz')
       .text('🇷🇺 Русский', 'set_lang:ru')
       .row()
       .text('🇺🇸 English', 'set_lang:en');
 
-    await ctx.reply('<b>Choose your language / Tilni tanlang / Выберите язык:</b>', {
+    await ctx.reply(`<b>${i18n.t(locale, 'select_language')}</b>`, {
       parse_mode: 'HTML',
       reply_markup: keyboard
     });
