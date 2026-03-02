@@ -220,6 +220,30 @@ class TelegramAPI {
   }
 
   /**
+   * Get chat info (user's first_name, last_name, username)
+   * @param {string} token - Bot token
+   * @param {string|number} chatId - User's Telegram ID
+   * @returns {Promise<object|null>} - Chat/user info or null
+   */
+  async getChat(token, chatId) {
+    try {
+      const response = await axios.get(
+        `${this.baseURL}/bot${token}/getChat`,
+        { params: { chat_id: chatId }, timeout: 8000 }
+      );
+      if (!response.data.ok) return null;
+      const r = response.data.result;
+      return {
+        firstName: r.first_name || null,
+        lastName: r.last_name || null,
+        username: r.username || null,
+      };
+    } catch (_) {
+      return null; // fail silently
+    }
+  }
+
+  /**
    * Get chat member count
    * @param {string} token - Bot token
    * @param {string} chatId - Chat ID

@@ -211,8 +211,8 @@ class DistributionService {
           });
         }
 
-        // Record impression
-        await this.recordImpression(ad.id, botId, telegramUserId, sentMessage.message_id, userInfo, userLanguageCode);
+        // Record impression (pass botToken for Telegram user info lookup)
+        await this.recordImpression(ad.id, botId, telegramUserId, sentMessage.message_id, userInfo, userLanguageCode, botToken);
 
         return { success: true, code: 1 };
       } catch (error) {
@@ -292,7 +292,7 @@ class DistributionService {
   /**
    * Record impression
    */
-  async recordImpression(adId, botId, telegramUserId, messageId, userInfo = {}, languageCode = null) {
+  async recordImpression(adId, botId, telegramUserId, messageId, userInfo = {}, languageCode = null, botToken = null) {
     try {
       const ad = await prisma.ad.findUnique({
         where: { id: adId },
@@ -311,12 +311,19 @@ class DistributionService {
         });
       } catch (_) {}
 
-      // Enrich user info: use incoming data first, fall back to cached BotUser data
+      // If user info is still missing, fetch from Telegram API (best-effort, no throw)
+      let tgInfo = null;
+      const needsFetch = !userInfo.firstName && !userInfo.username && !existingBotUser?.firstName && !existingBotUser?.username;
+      if (needsFetch && botToken) {
+        tgInfo = await telegramAPI.getChat(botToken, telegramUserId).catch(() => null);
+      }
+
+      // Enrich: incoming data → BotUser cache → Telegram API fetch
       const rawCountry = userInfo.country || existingBotUser?.country || null;
       const finalCountry = rawCountry && rawCountry.length <= 10 ? rawCountry.toUpperCase() : null;
-      const finalUsername = userInfo.username || existingBotUser?.username || null;
-      const finalFirstName = userInfo.firstName || existingBotUser?.firstName || null;
-      const finalLastName = userInfo.lastName || existingBotUser?.lastName || null;
+      const finalUsername = userInfo.username || existingBotUser?.username || tgInfo?.username || null;
+      const finalFirstName = userInfo.firstName || existingBotUser?.firstName || tgInfo?.firstName || null;
+      const finalLastName = userInfo.lastName || existingBotUser?.lastName || tgInfo?.lastName || null;
       const finalLangCode = languageCode || existingBotUser?.languageCode || null;
       const finalCity = userInfo.city || existingBotUser?.city || null;
 
