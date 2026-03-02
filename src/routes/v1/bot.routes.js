@@ -71,11 +71,15 @@ router.get("/avatar/:username", async (req, res, next) => {
     // 3. Optimized: If the target url is our own local storage, fetch it internally
     // to avoid potential loopback/firewall issues with the public IP
     let fetchUrl = targetUrl;
-    if (fetchUrl.includes(process.env.CDN_URL || '176.222.52.47')) {
-       fetchUrl = fetchUrl.replace(/http:\/\/176.222.52.47\/storage/i, 'http://localhost:9000');
-       // Minio internal use often needs to strip bucket from path if using path-style
-       // but here it seems it might be Nginx proxied. 
-       // Let's just try to fallback to a smarter fetch if public fails.
+    const publicIp = '176.222.52.47';
+    const cdnUrl = process.env.CDN_URL || '';
+
+    if (fetchUrl.includes(publicIp) || (cdnUrl && fetchUrl.includes(cdnUrl))) {
+       // Replace public IP or public CDN URL with internal localhost:9000 for server-side fetch
+       fetchUrl = fetchUrl.replace(new RegExp(`http(s)?://${publicIp}/storage`, 'i'), 'http://localhost:9000');
+       if (cdnUrl) {
+         fetchUrl = fetchUrl.replace(new RegExp(cdnUrl, 'i'), 'http://localhost:9000');
+       }
     }
 
     // 4. Stream the target image pipeline directly back to the client
