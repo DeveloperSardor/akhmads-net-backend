@@ -63,6 +63,29 @@ class DetailedStatsService {
 
       const total = await prisma.impression.count({ where });
 
+      // Enrich impressions missing user data from BotUser cache
+      const missing = impressions.filter(
+        imp => !imp.username && !imp.firstName && (!imp.country || imp.country === 'Unknown')
+      );
+      if (missing.length > 0) {
+        const pairs = missing.map(imp => ({ botId: imp.botId, telegramUserId: imp.telegramUserId }));
+        const botUsers = await prisma.botUser.findMany({
+          where: { OR: pairs },
+          select: { botId: true, telegramUserId: true, username: true, firstName: true, lastName: true, languageCode: true, country: true, city: true },
+        });
+        const buMap = Object.fromEntries(botUsers.map(bu => [`${bu.botId}:${bu.telegramUserId}`, bu]));
+        for (const imp of impressions) {
+          const bu = buMap[`${imp.botId}:${imp.telegramUserId}`];
+          if (!bu) continue;
+          if (!imp.username) imp.username = bu.username;
+          if (!imp.firstName) imp.firstName = bu.firstName;
+          if (!imp.lastName) imp.lastName = bu.lastName;
+          if (!imp.languageCode) imp.languageCode = bu.languageCode;
+          if (!imp.country || imp.country === 'Unknown') imp.country = bu.country;
+          if (!imp.city || imp.city === 'Unknown') imp.city = bu.city;
+        }
+      }
+
       return {
         impressions,
         total,
@@ -184,6 +207,29 @@ class DetailedStatsService {
       });
 
       const total = await prisma.clickEvent.count({ where });
+
+      // Enrich clicks missing user data from BotUser cache
+      const missingClicks = clicks.filter(
+        c => !c.username && !c.firstName
+      );
+      if (missingClicks.length > 0) {
+        const pairs = missingClicks.map(c => ({ botId: c.botId, telegramUserId: c.telegramUserId }));
+        const botUsers = await prisma.botUser.findMany({
+          where: { OR: pairs },
+          select: { botId: true, telegramUserId: true, username: true, firstName: true, lastName: true, languageCode: true, country: true, city: true },
+        });
+        const buMap = Object.fromEntries(botUsers.map(bu => [`${bu.botId}:${bu.telegramUserId}`, bu]));
+        for (const c of clicks) {
+          const bu = buMap[`${c.botId}:${c.telegramUserId}`];
+          if (!bu) continue;
+          if (!c.username) c.username = bu.username;
+          if (!c.firstName) c.firstName = bu.firstName;
+          if (!c.lastName) c.lastName = bu.lastName;
+          if (!c.languageCode) c.languageCode = bu.languageCode;
+          if (!c.country || c.country === 'Unknown') c.country = bu.country;
+          if (!c.city || c.city === 'Unknown') c.city = bu.city;
+        }
+      }
 
       return {
         clicks,
