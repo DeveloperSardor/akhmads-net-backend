@@ -375,6 +375,22 @@ class DistributionService {
         logger.error('Failed to update bot user:', userErr);
       }
 
+      // If this is a new user for this bot, increment the bot's member count
+      if (!existingBotUser) {
+        try {
+          await prisma.bot.update({
+            where: { id: botId },
+            data: {
+              totalMembers: { increment: 1 },
+              activeMembers: { increment: 1 },
+            },
+          });
+          logger.info(`Bot @${bot.username} member count incremented (+1 new user: ${telegramUserId})`);
+        } catch (botUpdateErr) {
+          logger.error('Failed to increment bot member count:', botUpdateErr);
+        }
+      }
+
       // Update ad stats
       await prisma.ad.update({
         where: { id: adId },

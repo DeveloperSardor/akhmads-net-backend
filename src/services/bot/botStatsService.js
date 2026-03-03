@@ -155,6 +155,21 @@ class BotStatsService {
       });
 
       if (!bot) return;
+      
+      // 1. Get internal count from BotUser table (Real users who interacted)
+      const internalTotal = await prisma.botUser.count({
+        where: { botId }
+      });
+      
+      // Update with internal count first as baseline
+      await prisma.bot.update({
+        where: { id: botId },
+        data: { 
+          // If the bot has no botstat sync or internal is higher, use internal
+          totalMembers: internalTotal,
+          activeMembers: internalTotal,
+        }
+      });
 
       const botstatKey = process.env.BOT_STAT_IO;
       if (!botstatKey) {

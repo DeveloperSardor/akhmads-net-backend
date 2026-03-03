@@ -8,7 +8,551 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
-// ==================== ENUMS ====================
+model User {
+  id                  String            @id @default(cuid())
+  telegramId          String?           @unique @map("telegram_id")
+  email               String?           @unique
+  username            String?
+  firstName           String?           @map("first_name")
+  lastName            String?           @map("last_name")
+  role                Role              @default(ADVERTISER)
+  avatarUrl           String?           @map("avatar_url")
+  locale              String            @default("uz")
+  isActive            Boolean           @default(true) @map("is_active")
+  isBanned            Boolean           @default(false) @map("is_banned")
+  banReason           String?           @map("ban_reason")
+  lastLoginAt         DateTime?         @map("last_login_at")
+  lastLoginIp         String?           @map("last_login_ip")
+  createdAt           DateTime          @default(now()) @map("created_at")
+  updatedAt           DateTime          @updatedAt @map("updated_at")
+  roles               Role[]
+  ads                 Ad[]
+  moderatedAds        Ad[]              @relation("ModeratedBy")
+  auditLogs           AuditLog[]
+  bots                Bot[]
+  broadcasts          Broadcast[]       @relation("AdvertiserBroadcasts")
+  clickEvents         ClickEvent[]
+  contactMessages     ContactMessage[]
+  ledgerEntries       LedgerEntry[]
+  savedAds            SavedAd[]
+  transactions        Transaction[]
+  wallet              Wallet?
+  approvedWithdrawals WithdrawRequest[] @relation("ApprovedBy")
+  withdrawRequests    WithdrawRequest[]
+
+  @@index([telegramId])
+  @@index([email])
+  @@index([role])
+  @@map("users")
+}
+
+model LoginSession {
+  id          String   @id @default(cuid())
+  token       String   @unique
+  telegramId  String?  @map("telegram_id")
+  correctCode String   @map("correct_code")
+  ipAddress   String   @map("ip_address")
+  userAgent   String?  @map("user_agent")
+  authorized  Boolean  @default(false)
+  expiresAt   DateTime @map("expires_at")
+  createdAt   DateTime @default(now()) @map("created_at")
+  codes       String   @default("[]")
+
+  @@index([token])
+  @@index([telegramId])
+  @@index([expiresAt])
+  @@map("login_sessions")
+}
+
+model Wallet {
+  id             String   @id @default(cuid())
+  userId         String   @unique @map("user_id")
+  available      Decimal  @default(0) @db.Decimal(12, 2)
+  reserved       Decimal  @default(0) @db.Decimal(12, 2)
+  pending        Decimal  @default(0) @db.Decimal(12, 2)
+  totalDeposited Decimal  @default(0) @map("total_deposited") @db.Decimal(12, 2)
+  totalWithdrawn Decimal  @default(0) @map("total_withdrawn") @db.Decimal(12, 2)
+  totalEarned    Decimal  @default(0) @map("total_earned") @db.Decimal(12, 2)
+  totalSpent     Decimal  @default(0) @map("total_spent") @db.Decimal(12, 2)
+  createdAt      DateTime @default(now()) @map("created_at")
+  updatedAt      DateTime @updatedAt @map("updated_at")
+  user           User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("wallets")
+}
+
+model Transaction {
+  id            String            @id @default(cuid())
+  userId        String            @map("user_id")
+  type          TransactionType
+  provider      PaymentProvider?
+  coin          String?
+  network       CryptoNetwork?
+  amount        Decimal           @db.Decimal(12, 2)
+  amountCrypto  Decimal?          @map("amount_crypto") @db.Decimal(18, 8)
+  fee           Decimal           @default(0) @db.Decimal(12, 2)
+  status        TransactionStatus @default(PENDING)
+  providerTxId  String?           @unique @map("provider_tx_id")
+  address       String?
+  txHash        String?           @map("tx_hash")
+  confirmations Int?              @default(0)
+  ipAddress     String?           @map("ip_address")
+  userAgent     String?           @map("user_agent")
+  metadata      Json?
+  createdAt     DateTime          @default(now()) @map("created_at")
+  updatedAt     DateTime          @updatedAt @map("updated_at")
+  user          User              @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, status])
+  @@index([providerTxId])
+  @@index([txHash])
+  @@index([createdAt])
+  @@map("transactions")
+}
+
+model WithdrawRequest {
+  id         String          @id @default(cuid())
+  userId     String          @map("user_id")
+  method     String
+  provider   PaymentProvider
+  coin       String?
+  network    CryptoNetwork?
+  address    String?
+  amount     Decimal         @db.Decimal(12, 2)
+  fee        Decimal         @db.Decimal(12, 2)
+  netAmount  Decimal         @map("net_amount") @db.Decimal(12, 2)
+  status     WithdrawStatus  @default(REQUESTED)
+  approvedBy String?         @map("approved_by")
+  approvedAt DateTime?       @map("approved_at")
+  txHash     String?         @map("tx_hash")
+  reason     String?
+  ipAddress  String?         @map("ip_address")
+  userAgent  String?         @map("user_agent")
+  metadata   Json?
+  createdAt  DateTime        @default(now()) @map("created_at")
+  updatedAt  DateTime        @updatedAt @map("updated_at")
+  approver   User?           @relation("ApprovedBy", fields: [approvedBy], references: [id])
+  user       User            @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, status])
+  @@index([status, createdAt])
+  @@map("withdraw_requests")
+}
+
+model LedgerEntry {
+  id          String     @id @default(cuid())
+  userId      String     @map("user_id")
+  type        LedgerType
+  amount      Decimal    @db.Decimal(12, 2)
+  balance     Decimal    @db.Decimal(12, 2)
+  refId       String?    @map("ref_id")
+  refType     String?    @map("ref_type")
+  description String?
+  metadata    Json?
+  createdAt   DateTime   @default(now()) @map("created_at")
+  user        User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, createdAt])
+  @@index([refId])
+  @@map("ledger_entries")
+}
+
+model PricingTier {
+  id          String   @id @default(cuid())
+  name        String
+  impressions Int      @unique
+  priceUsd    Decimal  @map("price_usd") @db.Decimal(10, 2)
+  isActive    Boolean  @default(true) @map("is_active")
+  sortOrder   Int      @default(0) @map("sort_order")
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+
+  @@index([isActive, sortOrder])
+  @@map("pricing_tiers")
+}
+
+model PlatformSettings {
+  id          String   @id @default(cuid())
+  key         String   @unique
+  value       String
+  description String?
+  valueType   String   @default("string") @map("value_type")
+  category    String   @default("general")
+  updatedBy   String?  @map("updated_by")
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+
+  @@index([category])
+  @@map("platform_settings")
+}
+
+model Bot {
+  id                String          @id @default(cuid())
+  ownerId           String          @map("owner_id")
+  telegramBotId     String          @unique @map("telegram_bot_id")
+  username          String          @unique
+  firstName         String          @map("first_name")
+  tokenEncrypted    String          @map("token_encrypted")
+  apiKey            String          @unique @map("api_key")
+  apiKeyHash        String          @map("api_key_hash")
+  shortDescription  String?         @map("short_description")
+  category          String
+  language          String          @default("uz")
+  totalMembers      Int             @default(0) @map("total_members")
+  activeMembers     Int             @default(0) @map("active_members")
+  lastStatsSync     DateTime?       @map("last_stats_sync")
+  monetized         Boolean         @default(false)
+  isPaused          Boolean         @default(false) @map("is_paused")
+  status            BotStatus       @default(PENDING)
+  postFilter        String          @default("all") @map("post_filter")
+  allowedCategories Json?           @map("allowed_categories")
+  blockedCategories Json?           @map("blocked_categories")
+  frequencyMinutes  Int             @default(5) @map("frequency_minutes")
+  totalEarnings     Decimal         @default(0) @map("total_earnings") @db.Decimal(12, 2)
+  pendingEarnings   Decimal         @default(0) @map("pending_earnings") @db.Decimal(12, 2)
+  currentEcpm       Decimal         @default(0) @map("current_ecpm") @db.Decimal(10, 4)
+  apiKeyRevoked     Boolean         @default(false) @map("api_key_revoked")
+  apiKeyLastUsed    DateTime?       @map("api_key_last_used")
+  verifiedAt        DateTime?       @map("verified_at")
+  createdAt         DateTime        @default(now()) @map("created_at")
+  updatedAt         DateTime        @updatedAt @map("updated_at")
+  avatarUrl         String?         @map("avatar_url")
+  blockedAdIds      Json?           @map("blocked_ad_ids")
+  botstatData       Json?           @map("botstat_data")
+  botStatistics     BotStatistics[]
+  botUsers          BotUser[]
+  owner             User            @relation(fields: [ownerId], references: [id], onDelete: Cascade)
+  broadcasts        Broadcast[]
+  clickEvents       ClickEvent[]
+  impressions       Impression[]
+
+  @@index([ownerId, status])
+  @@index([status, monetized])
+  @@index([apiKey])
+  @@map("bots")
+}
+
+model BotStatistics {
+  id          String   @id @default(cuid())
+  botId       String   @map("bot_id")
+  date        DateTime @db.Date
+  impressions Int      @default(0)
+  uniqueUsers Int      @default(0) @map("unique_users")
+  clicks      Int      @default(0)
+  revenue     Decimal  @default(0) @db.Decimal(10, 2)
+  ecpm        Decimal  @default(0) @db.Decimal(10, 4)
+  createdAt   DateTime @default(now()) @map("created_at")
+  bot         Bot      @relation(fields: [botId], references: [id], onDelete: Cascade)
+
+  @@unique([botId, date])
+  @@index([botId, date])
+  @@map("bot_statistics")
+}
+
+model Ad {
+  id                   String        @id @default(cuid())
+  advertiserId         String        @map("advertiser_id")
+  contentType          AdContentType @map("content_type")
+  title                String
+  text                 String
+  htmlContent          String?       @map("html_content")
+  markdownContent      String?       @map("markdown_content")
+  mediaUrl             String?       @map("media_url")
+  mediaType            String?       @map("media_type")
+  buttons              Json?
+  trackingEnabled      Boolean       @default(true) @map("tracking_enabled")
+  poll                 Json?
+  selectedTierId       String?       @map("selected_tier_id")
+  targetImpressions    Int           @default(0) @map("target_impressions")
+  customImpressions    Int?          @map("custom_impressions")
+  baseCpm              Decimal       @map("base_cpm") @db.Decimal(10, 4)
+  cpmBid               Decimal       @default(0) @map("cpm_bid") @db.Decimal(10, 4)
+  finalCpm             Decimal       @map("final_cpm") @db.Decimal(10, 4)
+  totalCost            Decimal       @map("total_cost") @db.Decimal(12, 2)
+  platformFee          Decimal       @map("platform_fee") @db.Decimal(12, 2)
+  botOwnerRevenue      Decimal       @map("bot_owner_revenue") @db.Decimal(12, 2)
+  remainingBudget      Decimal       @map("remaining_budget") @db.Decimal(12, 2)
+  status               AdStatus      @default(DRAFT)
+  deliveredImpressions Int           @default(0) @map("delivered_impressions")
+  uniqueViews          Int           @default(0) @map("unique_views")
+  clicks               Int           @default(0)
+  conversions          Int           @default(0)
+  ctr                  Decimal       @default(0) @db.Decimal(5, 2)
+  targeting            Json?
+  excludedUserIds      Json?         @map("excluded_user_ids")
+  specificBotIds       Json?         @map("specific_bot_ids")
+  promoCodeUsed        String?       @map("promo_code_used")
+  discount             Decimal       @default(0) @db.Decimal(12, 2)
+  rejectionReason      String?       @map("rejection_reason")
+  moderatedBy          String?       @map("moderated_by")
+  moderatedAt          DateTime?     @map("moderated_at")
+  aiSafetyCheck        Json?         @map("ai_safety_check")
+  scheduledAt          DateTime?     @map("scheduled_at")
+  startedAt            DateTime?     @map("started_at")
+  completedAt          DateTime?     @map("completed_at")
+  createdAt            DateTime      @default(now()) @map("created_at")
+  updatedAt            DateTime      @updatedAt @map("updated_at")
+  excludedBotIds       Json?         @map("excluded_bot_ids")
+  isArchived           Boolean       @default(false) @map("is_archived")
+  scheduleActiveDays   Json?         @map("schedule_active_days")
+  scheduleActiveHours  Json?         @map("schedule_active_hours")
+  scheduleEndDate      DateTime?     @map("schedule_end_date")
+  scheduleStartDate    DateTime?     @map("schedule_start_date")
+  scheduleTimezone     String?       @map("schedule_timezone")
+  advertiser           User          @relation(fields: [advertiserId], references: [id], onDelete: Cascade)
+  moderator            User?         @relation("ModeratedBy", fields: [moderatedBy], references: [id])
+  clickEvents          ClickEvent[]
+  impressions          Impression[]
+  savedBy              SavedAd[]
+
+  @@index([advertiserId, status])
+  @@index([status, createdAt])
+  @@index([status, startedAt])
+  @@index([isArchived])
+  @@index([scheduleStartDate, scheduleEndDate])
+  @@map("ads")
+}
+
+model SavedAd {
+  id        String   @id @default(cuid())
+  userId    String   @map("user_id")
+  adId      String   @map("ad_id")
+  createdAt DateTime @default(now()) @map("created_at")
+  ad        Ad       @relation(fields: [adId], references: [id], onDelete: Cascade)
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, adId])
+  @@index([userId])
+  @@map("saved_ads")
+}
+
+model Impression {
+  id             String   @id @default(cuid())
+  adId           String   @map("ad_id")
+  botId          String   @map("bot_id")
+  telegramUserId String?  @map("telegram_user_id")
+  firstName      String?  @map("first_name")
+  lastName       String?  @map("last_name")
+  username       String?
+  languageCode   String?  @map("language_code")
+  revenue        Decimal  @default(0) @db.Decimal(10, 4)
+  platformFee    Decimal  @default(0) @map("platform_fee") @db.Decimal(10, 4)
+  botOwnerEarns  Decimal  @default(0) @map("bot_owner_earns") @db.Decimal(10, 4)
+  messageId      String?  @map("message_id")
+  createdAt      DateTime @default(now()) @map("created_at")
+  city           String?  @default("Unknown")
+  country        String?  @default("Unknown")
+  ad             Ad       @relation(fields: [adId], references: [id], onDelete: Cascade)
+  bot            Bot      @relation(fields: [botId], references: [id], onDelete: Cascade)
+
+  @@index([adId, botId, createdAt])
+  @@index([telegramUserId, adId])
+  @@index([createdAt])
+  @@map("impressions")
+}
+
+model ClickEvent {
+  id             String    @id @default(cuid())
+  adId           String    @map("ad_id")
+  botId          String    @map("bot_id")
+  userId         String?   @map("user_id")
+  telegramUserId String?   @map("telegram_user_id")
+  trackingToken  String    @unique @map("tracking_token")
+  ipAddress      String?   @map("ip_address")
+  userAgent      String?   @map("user_agent")
+  referer        String?
+  country        String?
+  city           String?
+  originalUrl    String    @map("original_url")
+  clicked        Boolean   @default(false)
+  clickedAt      DateTime? @map("clicked_at")
+  createdAt      DateTime  @default(now()) @map("created_at")
+  firstName      String?   @map("first_name")
+  languageCode   String?   @map("language_code")
+  lastName       String?   @map("last_name")
+  username       String?
+  ad             Ad        @relation(fields: [adId], references: [id], onDelete: Cascade)
+  bot            Bot       @relation(fields: [botId], references: [id], onDelete: Cascade)
+  user           User?     @relation(fields: [userId], references: [id])
+
+  @@index([adId, botId, clicked])
+  @@index([trackingToken])
+  @@index([createdAt])
+  @@map("click_events")
+}
+
+model PromoCode {
+  id          String   @id @default(cuid())
+  code        String   @unique
+  discount    Decimal  @db.Decimal(5, 2)
+  type        String   @default("percentage")
+  maxUses     Int      @map("max_uses")
+  usedCount   Int      @default(0) @map("used_count")
+  validFrom   DateTime @map("valid_from")
+  expiresAt   DateTime @map("expires_at")
+  isActive    Boolean  @default(true) @map("is_active")
+  description String?
+  createdBy   String?  @map("created_by")
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+
+  @@index([code])
+  @@index([isActive, expiresAt])
+  @@map("promo_codes")
+}
+
+model AuditLog {
+  id         String   @id @default(cuid())
+  userId     String   @map("user_id")
+  action     String
+  entityType String   @map("entity_type")
+  entityId   String?  @map("entity_id")
+  ipAddress  String?  @map("ip_address")
+  userAgent  String?  @map("user_agent")
+  changes    Json?
+  metadata   Json?
+  createdAt  DateTime @default(now()) @map("created_at")
+  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, createdAt])
+  @@index([entityType, entityId])
+  @@index([createdAt])
+  @@map("audit_logs")
+}
+
+model RateLimit {
+  id        String   @id @default(cuid())
+  key       String   @unique
+  endpoint  String
+  attempts  Int      @default(0)
+  resetAt   DateTime @map("reset_at")
+  createdAt DateTime @default(now()) @map("created_at")
+
+  @@index([key, endpoint])
+  @@index([resetAt])
+  @@map("rate_limits")
+}
+
+model Faq {
+  id         String   @id @default(cuid())
+  category   String
+  question   Json
+  answer     Json
+  sortOrder  Int      @default(0) @map("sort_order")
+  isActive   Boolean  @default(true) @map("is_active")
+  views      Int      @default(0)
+  helpful    Int      @default(0)
+  notHelpful Int      @default(0) @map("not_helpful")
+  createdAt  DateTime @default(now()) @map("created_at")
+  updatedAt  DateTime @updatedAt @map("updated_at")
+
+  @@index([category, isActive])
+  @@map("faqs")
+}
+
+model ContactMessage {
+  id        String    @id @default(cuid())
+  userId    String?   @map("user_id")
+  name      String
+  email     String
+  subject   String
+  message   String
+  status    String    @default("new")
+  repliedAt DateTime? @map("replied_at")
+  repliedBy String?   @map("replied_by")
+  reply     String?
+  createdAt DateTime  @default(now()) @map("created_at")
+  user      User?     @relation(fields: [userId], references: [id])
+
+  @@index([status, createdAt])
+  @@index([email])
+  @@map("contact_messages")
+}
+
+model Category {
+  id        String   @id @default(cuid())
+  slug      String   @unique
+  nameUz    String   @map("name_uz")
+  nameRu    String   @map("name_ru")
+  nameEn    String   @map("name_en")
+  icon      String   @default("📌")
+  sortOrder Int      @default(0) @map("sort_order")
+  isActive  Boolean  @default(true) @map("is_active")
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  @@index([isActive, sortOrder])
+  @@map("categories")
+}
+
+model BotUser {
+  id                  String               @id @default(cuid())
+  botId               String               @map("bot_id")
+  telegramUserId      String               @map("telegram_user_id")
+  username            String?
+  firstName           String?              @map("first_name")
+  lastName            String?              @map("last_name")
+  languageCode        String?              @map("language_code")
+  isBot               Boolean              @default(false) @map("is_bot")
+  lastSeenIp          String?              @map("last_seen_ip")
+  country             String?              @default("Unknown")
+  city                String?              @default("Unknown")
+  lastSeenAt          DateTime             @default(now()) @map("last_seen_at")
+  createdAt           DateTime             @default(now()) @map("created_at")
+  bot                 Bot                  @relation(fields: [botId], references: [id], onDelete: Cascade)
+  broadcastRecipients BroadcastRecipient[]
+
+  @@unique([botId, telegramUserId])
+  @@index([botId])
+  @@index([telegramUserId])
+  @@index([lastSeenAt])
+  @@map("bot_users")
+}
+
+model Broadcast {
+  id           String               @id @default(cuid())
+  advertiserId String               @map("advertiser_id")
+  botId        String               @map("bot_id")
+  status       AdStatus             @default(DRAFT)
+  contentType  AdContentType        @map("content_type")
+  text         String
+  mediaUrl     String?              @map("media_url")
+  mediaType    String?              @map("media_type")
+  buttons      Json?
+  targetCount  Int                  @default(0) @map("target_count")
+  sentCount    Int                  @default(0) @map("sent_count")
+  failedCount  Int                  @default(0) @map("failed_count")
+  totalCost    Decimal              @map("total_cost") @db.Decimal(12, 2)
+  platformFee  Decimal              @map("platform_fee") @db.Decimal(12, 2)
+  botOwnerEarn Decimal              @map("bot_owner_earn") @db.Decimal(12, 2)
+  startedAt    DateTime?            @map("started_at")
+  completedAt  DateTime?            @map("completed_at")
+  createdAt    DateTime             @default(now()) @map("created_at")
+  updatedAt    DateTime             @updatedAt @map("updated_at")
+  recipients   BroadcastRecipient[]
+  advertiser   User                 @relation("AdvertiserBroadcasts", fields: [advertiserId], references: [id], onDelete: Cascade)
+  bot          Bot                  @relation(fields: [botId], references: [id], onDelete: Cascade)
+
+  @@index([advertiserId, status])
+  @@index([botId, status])
+  @@map("broadcasts")
+}
+
+model BroadcastRecipient {
+  id          String    @id @default(cuid())
+  broadcastId String    @map("broadcast_id")
+  botUserId   String    @map("bot_user_id")
+  status      String    @default("PENDING")
+  error       String?
+  sentAt      DateTime? @map("sent_at")
+  createdAt   DateTime  @default(now()) @map("created_at")
+  botUser     BotUser   @relation(fields: [botUserId], references: [id], onDelete: Cascade)
+  broadcast   Broadcast @relation(fields: [broadcastId], references: [id], onDelete: Cascade)
+
+  @@unique([broadcastId, botUserId])
+  @@index([broadcastId, status])
+  @@map("broadcast_recipients")
+}
 
 enum Role {
   ADVERTISER
@@ -42,9 +586,9 @@ enum WithdrawStatus {
   APPROVED
   SENT
   CONFIRMED
-  COMPLETED
   FAILED
   REJECTED
+  COMPLETED
   CANCELLED
 }
 
@@ -107,608 +651,4 @@ enum LedgerType {
   DEPOSIT_PENDING
   DEPOSIT_CANCELLED
   SPEND
-}
-
-// ==================== CORE MODELS ====================
-
-model User {
-  id         String  @id @default(cuid())
-  telegramId String? @unique @map("telegram_id")
-  email      String? @unique
-  username   String?
-  firstName  String? @map("first_name")
-  lastName   String? @map("last_name")
-  role       Role    @default(ADVERTISER)
-  roles      Role[]
-  avatarUrl  String? @map("avatar_url")
-  locale     String  @default("uz")
-  isActive   Boolean @default(true) @map("is_active")
-  isBanned   Boolean @default(false) @map("is_banned")
-  banReason  String? @map("ban_reason") @db.Text
-
-  lastLoginAt DateTime? @map("last_login_at")
-  lastLoginIp String?   @map("last_login_ip")
-
-  createdAt DateTime @default(now()) @map("created_at")
-  updatedAt DateTime @updatedAt @map("updated_at")
-
-  wallet           Wallet?
-  ads              Ad[]
-  bots             Bot[]
-  transactions     Transaction[]
-  withdrawRequests WithdrawRequest[]
-  ledgerEntries    LedgerEntry[]
-  auditLogs        AuditLog[]
-  clickEvents      ClickEvent[]
-  savedAds         SavedAd[]
-  contactMessages  ContactMessage[]
-
-  broadcasts       Broadcast[]       @relation("AdvertiserBroadcasts")
-
-  moderatedAds        Ad[]              @relation("ModeratedBy")
-  approvedWithdrawals WithdrawRequest[] @relation("ApprovedBy")
-
-  @@index([telegramId])
-  @@index([email])
-  @@index([role])
-  @@map("users")
-}
-
-model LoginSession {
-  id          String   @id @default(cuid())
-  token       String   @unique
-  telegramId  String?  @map("telegram_id")
-  correctCode String   @map("correct_code")
-  codes       String   @default("[]") @db.Text
-  ipAddress   String   @map("ip_address")
-  userAgent   String?  @map("user_agent")
-  authorized  Boolean  @default(false)
-  expiresAt   DateTime @map("expires_at")
-  createdAt   DateTime @default(now()) @map("created_at")
-
-  @@index([token])
-  @@index([telegramId])
-  @@index([expiresAt])
-  @@map("login_sessions")
-}
-
-model Wallet {
-  id        String  @id @default(cuid())
-  userId    String  @unique @map("user_id")
-  user      User    @relation(fields: [userId], references: [id], onDelete: Cascade)
-  available Decimal @default(0) @db.Decimal(12, 2)
-  reserved  Decimal @default(0) @db.Decimal(12, 2)
-  pending   Decimal @default(0) @db.Decimal(12, 2)
-
-  totalDeposited Decimal @default(0) @map("total_deposited") @db.Decimal(12, 2)
-  totalWithdrawn Decimal @default(0) @map("total_withdrawn") @db.Decimal(12, 2)
-  totalEarned    Decimal @default(0) @map("total_earned") @db.Decimal(12, 2)
-  totalSpent     Decimal @default(0) @map("total_spent") @db.Decimal(12, 2)
-
-  createdAt DateTime @default(now()) @map("created_at")
-  updatedAt DateTime @updatedAt @map("updated_at")
-
-  @@map("wallets")
-}
-
-model Transaction {
-  id           String            @id @default(cuid())
-  userId       String            @map("user_id")
-  user         User              @relation(fields: [userId], references: [id], onDelete: Cascade)
-  type         TransactionType
-  provider     PaymentProvider?
-  coin         String?
-  network      CryptoNetwork?
-  amount       Decimal           @db.Decimal(12, 2)
-  amountCrypto Decimal?          @map("amount_crypto") @db.Decimal(18, 8)
-  fee          Decimal           @default(0) @db.Decimal(12, 2)
-  status       TransactionStatus @default(PENDING)
-  providerTxId String?           @unique @map("provider_tx_id")
-
-  address       String?
-  txHash        String? @map("tx_hash")
-  confirmations Int?    @default(0)
-
-  ipAddress String? @map("ip_address")
-  userAgent String? @map("user_agent")
-
-  metadata  Json?
-  createdAt DateTime @default(now()) @map("created_at")
-  updatedAt DateTime @updatedAt @map("updated_at")
-
-  @@index([userId, status])
-  @@index([providerTxId])
-  @@index([txHash])
-  @@index([createdAt])
-  @@map("transactions")
-}
-
-model WithdrawRequest {
-  id        String          @id @default(cuid())
-  userId    String          @map("user_id")
-  user      User            @relation(fields: [userId], references: [id], onDelete: Cascade)
-  method    String
-  provider  PaymentProvider
-  coin      String?
-  network   CryptoNetwork?
-  address   String?
-  amount    Decimal         @db.Decimal(12, 2)
-  fee       Decimal         @db.Decimal(12, 2)
-  netAmount Decimal         @map("net_amount") @db.Decimal(12, 2)
-  status    WithdrawStatus  @default(REQUESTED)
-
-  approvedBy String?   @map("approved_by")
-  approver   User?     @relation("ApprovedBy", fields: [approvedBy], references: [id])
-  approvedAt DateTime? @map("approved_at")
-
-  txHash String? @map("tx_hash")
-  reason String? @db.Text
-
-  ipAddress String? @map("ip_address")
-  userAgent String? @map("user_agent")
-
-  metadata  Json?
-  createdAt DateTime @default(now()) @map("created_at")
-  updatedAt DateTime @updatedAt @map("updated_at")
-
-  @@index([userId, status])
-  @@index([status, createdAt])
-  @@map("withdraw_requests")
-}
-
-model LedgerEntry {
-  id          String     @id @default(cuid())
-  userId      String     @map("user_id")
-  user        User       @relation(fields: [userId], references: [id], onDelete: Cascade)
-  type        LedgerType
-  amount      Decimal    @db.Decimal(12, 2)
-  balance     Decimal    @db.Decimal(12, 2)
-  refId       String?    @map("ref_id")
-  refType     String?    @map("ref_type")
-  description String?    @db.Text
-  metadata    Json?
-  createdAt   DateTime   @default(now()) @map("created_at")
-
-  @@index([userId, createdAt])
-  @@index([refId])
-  @@map("ledger_entries")
-}
-
-model PricingTier {
-  id          String   @id @default(cuid())
-  name        String
-  impressions Int      @unique
-  priceUsd    Decimal  @map("price_usd") @db.Decimal(10, 2)
-  isActive    Boolean  @default(true) @map("is_active")
-  sortOrder   Int      @default(0) @map("sort_order")
-  createdAt   DateTime @default(now()) @map("created_at")
-  updatedAt   DateTime @updatedAt @map("updated_at")
-
-  @@index([isActive, sortOrder])
-  @@map("pricing_tiers")
-}
-
-model PlatformSettings {
-  id          String   @id @default(cuid())
-  key         String   @unique
-  value       String
-  description String?  @db.Text
-  valueType   String   @default("string") @map("value_type")
-  category    String   @default("general")
-  updatedBy   String?  @map("updated_by")
-  createdAt   DateTime @default(now()) @map("created_at")
-  updatedAt   DateTime @updatedAt @map("updated_at")
-
-  @@index([category])
-  @@map("platform_settings")
-}
-
-model Bot {
-  id      String @id @default(cuid())
-  ownerId String @map("owner_id")
-  owner   User   @relation(fields: [ownerId], references: [id], onDelete: Cascade)
-
-  telegramBotId  String @unique @map("telegram_bot_id")
-  username       String @unique
-  firstName      String @map("first_name")
-  tokenEncrypted String @map("token_encrypted") @db.Text
-  apiKey         String @unique @map("api_key") @db.Text
-  apiKeyHash     String @map("api_key_hash")
-
-  shortDescription String? @map("short_description") @db.Text
-  category         String
-  language         String  @default("uz")
-
-  totalMembers  Int       @default(0) @map("total_members")
-  activeMembers Int       @default(0) @map("active_members")
-  lastStatsSync DateTime? @map("last_stats_sync")
-
-  monetized Boolean   @default(false)
-  isPaused  Boolean   @default(false) @map("is_paused")
-  status    BotStatus @default(PENDING)
-
-  postFilter        String @default("all") @map("post_filter")
-  allowedCategories Json?  @map("allowed_categories")
-  blockedCategories Json?  @map("blocked_categories")
-  blockedAdIds      Json?  @map("blocked_ad_ids")
-  frequencyMinutes  Int    @default(5) @map("frequency_minutes")
-
-  avatarUrl   String? @map("avatar_url")
-  botstatData Json?   @map("botstat_data")
-
-  totalEarnings   Decimal @default(0) @map("total_earnings") @db.Decimal(12, 2)
-  pendingEarnings Decimal @default(0) @map("pending_earnings") @db.Decimal(12, 2)
-  currentEcpm     Decimal @default(0) @map("current_ecpm") @db.Decimal(10, 4)
-
-  apiKeyRevoked  Boolean   @default(false) @map("api_key_revoked")
-  apiKeyLastUsed DateTime? @map("api_key_last_used")
-
-  verifiedAt DateTime? @map("verified_at")
-  createdAt  DateTime  @default(now()) @map("created_at")
-  updatedAt  DateTime  @updatedAt @map("updated_at")
-
-  impressions   Impression[]
-  clickEvents   ClickEvent[]
-  botStatistics BotStatistics[]
-  botUsers      BotUser[]
-  broadcasts    Broadcast[]
-
-  @@index([ownerId, status])
-  @@index([status, monetized])
-  @@index([apiKey])
-  @@map("bots")
-}
-
-model BotStatistics {
-  id          String   @id @default(cuid())
-  botId       String   @map("bot_id")
-  bot         Bot      @relation(fields: [botId], references: [id], onDelete: Cascade)
-  date        DateTime @db.Date
-  impressions Int      @default(0)
-  uniqueUsers Int      @default(0) @map("unique_users")
-  clicks      Int      @default(0)
-  revenue     Decimal  @default(0) @db.Decimal(10, 2)
-  ecpm        Decimal  @default(0) @db.Decimal(10, 4)
-  createdAt   DateTime @default(now()) @map("created_at")
-
-  @@unique([botId, date])
-  @@index([botId, date])
-  @@map("bot_statistics")
-}
-
-model Ad {
-  id           String @id @default(cuid())
-  advertiserId String @map("advertiser_id")
-  advertiser   User   @relation(fields: [advertiserId], references: [id], onDelete: Cascade)
-
-  contentType     AdContentType @map("content_type")
-  title           String
-  text            String        @db.Text
-  htmlContent     String?       @map("html_content") @db.Text
-  markdownContent String?       @map("markdown_content") @db.Text
-  mediaUrl        String?       @map("media_url") @db.Text
-  mediaType       String?       @map("media_type")
-
-  buttons         Json?
-  trackingEnabled Boolean @default(true) @map("tracking_enabled")
-  poll            Json?
-
-  selectedTierId    String? @map("selected_tier_id")
-  targetImpressions Int     @default(0) @map("target_impressions")
-  customImpressions Int?    @map("custom_impressions")
-  baseCpm           Decimal @map("base_cpm") @db.Decimal(10, 4)
-  cpmBid            Decimal @default(0) @map("cpm_bid") @db.Decimal(10, 4)
-  finalCpm          Decimal @map("final_cpm") @db.Decimal(10, 4)
-  totalCost         Decimal @map("total_cost") @db.Decimal(12, 2)
-  platformFee       Decimal @map("platform_fee") @db.Decimal(12, 2)
-  botOwnerRevenue   Decimal @map("bot_owner_revenue") @db.Decimal(12, 2)
-  remainingBudget   Decimal @map("remaining_budget") @db.Decimal(12, 2)
-
-  status AdStatus @default(DRAFT)
-
-  deliveredImpressions Int     @default(0) @map("delivered_impressions")
-  uniqueViews          Int     @default(0) @map("unique_views")
-  clicks               Int     @default(0)
-  conversions          Int     @default(0)
-  ctr                  Decimal @default(0) @db.Decimal(5, 2)
-
-  targeting       Json?
-  excludedUserIds Json? @map("excluded_user_ids")
-  specificBotIds  Json? @map("specific_bot_ids")
-  excludedBotIds  Json? @map("excluded_bot_ids")
-
-  promoCodeUsed String? @map("promo_code_used")
-  discount      Decimal @default(0) @db.Decimal(12, 2)
-
-  rejectionReason String?   @map("rejection_reason") @db.Text
-  moderatedBy     String?   @map("moderated_by")
-  moderator       User?     @relation("ModeratedBy", fields: [moderatedBy], references: [id])
-  moderatedAt     DateTime? @map("moderated_at")
-
-  aiSafetyCheck       Json?   @map("ai_safety_check")
-  scheduleTimezone    String? @map("schedule_timezone")
-  scheduleActiveDays  Json?   @map("schedule_active_days") // [0,1,2,3,4,5,6]
-  scheduleActiveHours Json?   @map("schedule_active_hours") // [{start:9,end:18}]
-
-  // ✅ NEW FIELD - Archive
-  isArchived Boolean @default(false) @map("is_archived")
-
-  scheduledAt       DateTime? @map("scheduled_at")
-  startedAt         DateTime? @map("started_at")
-  completedAt       DateTime? @map("completed_at")
-  scheduleStartDate DateTime? @map("schedule_start_date")
-  scheduleEndDate   DateTime? @map("schedule_end_date")
-
-  createdAt DateTime @default(now()) @map("created_at")
-  updatedAt DateTime @updatedAt @map("updated_at")
-
-  impressions Impression[]
-  clickEvents ClickEvent[]
-  savedBy     SavedAd[]
-
-  @@index([advertiserId, status])
-  @@index([status, createdAt])
-  @@index([status, startedAt])
-  @@index([isArchived])
-  @@index([scheduleStartDate, scheduleEndDate])
-  @@map("ads")
-}
-
-model SavedAd {
-  id        String   @id @default(cuid())
-  userId    String   @map("user_id")
-  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
-  adId      String   @map("ad_id")
-  ad        Ad       @relation(fields: [adId], references: [id], onDelete: Cascade)
-  createdAt DateTime @default(now()) @map("created_at")
-
-  @@unique([userId, adId])
-  @@index([userId])
-  @@map("saved_ads")
-}
-
-model Impression {
-  id    String @id @default(cuid())
-  adId  String @map("ad_id")
-  ad    Ad     @relation(fields: [adId], references: [id], onDelete: Cascade)
-  botId String @map("bot_id")
-  bot   Bot    @relation(fields: [botId], references: [id], onDelete: Cascade)
-
-  telegramUserId String? @map("telegram_user_id")
-  firstName      String? @map("first_name")
-  lastName       String? @map("last_name")
-  username       String?
-  languageCode   String? @map("language_code")
-  
-  country        String? @default("Unknown")
-  city           String? @default("Unknown")
-
-  revenue       Decimal @default(0) @db.Decimal(10, 4)
-  platformFee   Decimal @default(0) @map("platform_fee") @db.Decimal(10, 4)
-  botOwnerEarns Decimal @default(0) @map("bot_owner_earns") @db.Decimal(10, 4)
-
-  messageId String? @map("message_id")
-
-  createdAt DateTime @default(now()) @map("created_at")
-
-  @@index([adId, botId, createdAt])
-  @@index([telegramUserId, adId])
-  @@index([createdAt])
-  @@map("impressions")
-}
-
-model ClickEvent {
-  id     String  @id @default(cuid())
-  adId   String  @map("ad_id")
-  ad     Ad      @relation(fields: [adId], references: [id], onDelete: Cascade)
-  botId  String  @map("bot_id")
-  bot    Bot     @relation(fields: [botId], references: [id], onDelete: Cascade)
-  userId String? @map("user_id")
-  user   User?   @relation(fields: [userId], references: [id])
-
-  telegramUserId String? @map("telegram_user_id")
-  firstName      String? @map("first_name")
-  lastName       String? @map("last_name")
-  username       String?
-  languageCode   String? @map("language_code")
-  
-  trackingToken  String  @unique @map("tracking_token")
-
-  ipAddress String? @map("ip_address")
-  userAgent String? @map("user_agent")
-  referer   String?
-  country   String?
-  city      String?
-
-  originalUrl String    @map("original_url") @db.Text
-  clicked     Boolean   @default(false)
-  clickedAt   DateTime? @map("clicked_at")
-
-  createdAt DateTime @default(now()) @map("created_at")
-
-  @@index([adId, botId, clicked])
-  @@index([trackingToken])
-  @@index([createdAt])
-  @@map("click_events")
-}
-
-model PromoCode {
-  id          String   @id @default(cuid())
-  code        String   @unique
-  discount    Decimal  @db.Decimal(5, 2)
-  type        String   @default("percentage")
-  maxUses     Int      @map("max_uses")
-  usedCount   Int      @default(0) @map("used_count")
-  validFrom   DateTime @map("valid_from")
-  expiresAt   DateTime @map("expires_at")
-  isActive    Boolean  @default(true) @map("is_active")
-  description String?  @db.Text
-  createdBy   String?  @map("created_by")
-  createdAt   DateTime @default(now()) @map("created_at")
-  updatedAt   DateTime @updatedAt @map("updated_at")
-
-  @@index([code])
-  @@index([isActive, expiresAt])
-  @@map("promo_codes")
-}
-
-model AuditLog {
-  id         String  @id @default(cuid())
-  userId     String  @map("user_id")
-  user       User    @relation(fields: [userId], references: [id], onDelete: Cascade)
-  action     String
-  entityType String  @map("entity_type")
-  entityId   String? @map("entity_id")
-
-  ipAddress String? @map("ip_address")
-  userAgent String? @map("user_agent")
-
-  changes   Json?
-  metadata  Json?
-  createdAt DateTime @default(now()) @map("created_at")
-
-  @@index([userId, createdAt])
-  @@index([entityType, entityId])
-  @@index([createdAt])
-  @@map("audit_logs")
-}
-
-model RateLimit {
-  id        String   @id @default(cuid())
-  key       String   @unique
-  endpoint  String
-  attempts  Int      @default(0)
-  resetAt   DateTime @map("reset_at")
-  createdAt DateTime @default(now()) @map("created_at")
-
-  @@index([key, endpoint])
-  @@index([resetAt])
-  @@map("rate_limits")
-}
-
-model Faq {
-  id         String   @id @default(cuid())
-  category   String
-  question   Json
-  answer     Json
-  sortOrder  Int      @default(0) @map("sort_order")
-  isActive   Boolean  @default(true) @map("is_active")
-  views      Int      @default(0)
-  helpful    Int      @default(0)
-  notHelpful Int      @default(0) @map("not_helpful")
-  createdAt  DateTime @default(now()) @map("created_at")
-  updatedAt  DateTime @updatedAt @map("updated_at")
-
-  @@index([category, isActive])
-  @@map("faqs")
-}
-
-model ContactMessage {
-  id        String    @id @default(cuid())
-  userId    String?   @map("user_id")
-  user      User?     @relation(fields: [userId], references: [id], onDelete: SetNull)
-  name      String
-  email     String
-  subject   String
-  message   String    @db.Text
-  status    String    @default("new")
-  repliedAt DateTime? @map("replied_at")
-  repliedBy String?   @map("replied_by")
-  reply     String?   @db.Text
-  createdAt DateTime  @default(now()) @map("created_at")
-
-  @@index([status, createdAt])
-  @@index([email])
-  @@map("contact_messages")
-}
-
-model Category {
-  id        String   @id @default(cuid())
-  slug      String   @unique
-  nameUz    String   @map("name_uz")
-  nameRu    String   @map("name_ru")
-  nameEn    String   @map("name_en")
-  icon      String   @default("📌")
-  sortOrder Int      @default(0) @map("sort_order")
-  isActive  Boolean  @default(true) @map("is_active")
-  createdAt DateTime @default(now()) @map("created_at")
-  updatedAt DateTime @updatedAt @map("updated_at")
-
-  @@index([isActive, sortOrder])
-  @@map("categories")
-}
-
-model BotUser {
-  id             String   @id @default(cuid())
-  botId          String   @map("bot_id")
-  bot            Bot      @relation(fields: [botId], references: [id], onDelete: Cascade)
-  telegramUserId String   @map("telegram_user_id")
-  username       String?
-  firstName      String?  @map("first_name")
-  lastName       String?  @map("last_name")
-  languageCode   String?  @map("language_code")
-  isBot          Boolean  @default(false) @map("is_bot")
-  
-  lastSeenIp     String?  @map("last_seen_ip")
-  country        String?  @default("Unknown")
-  city           String?  @default("Unknown")
-  lastSeenAt     DateTime @default(now()) @map("last_seen_at")
-  createdAt      DateTime @default(now()) @map("created_at")
-
-  broadcastRecipients BroadcastRecipient[]
-
-  @@unique([botId, telegramUserId])
-  @@index([botId])
-  @@index([telegramUserId])
-  @@index([lastSeenAt])
-  @@map("bot_users")
-}
-
-model Broadcast {
-  id           String    @id @default(cuid())
-  advertiserId String    @map("advertiser_id")
-  advertiser   User      @relation("AdvertiserBroadcasts", fields: [advertiserId], references: [id], onDelete: Cascade)
-  botId        String    @map("bot_id")
-  bot          Bot       @relation(fields: [botId], references: [id], onDelete: Cascade)
-  status       AdStatus  @default(DRAFT)
-  contentType  AdContentType @map("content_type")
-  text         String    @db.Text
-  mediaUrl     String?   @map("media_url") @db.Text
-  mediaType    String?   @map("media_type")
-  buttons      Json?
-  
-  targetCount  Int       @default(0) @map("target_count")
-  sentCount    Int       @default(0) @map("sent_count")
-  failedCount  Int       @default(0) @map("failed_count")
-  
-  totalCost    Decimal   @map("total_cost") @db.Decimal(12, 2)
-  platformFee  Decimal   @map("platform_fee") @db.Decimal(12, 2)
-  botOwnerEarn Decimal   @map("bot_owner_earn") @db.Decimal(12, 2)
-
-  startedAt    DateTime? @map("started_at")
-  completedAt  DateTime? @map("completed_at")
-  createdAt    DateTime  @default(now()) @map("created_at")
-  updatedAt    DateTime  @updatedAt @map("updated_at")
-
-  recipients   BroadcastRecipient[]
-
-  @@index([advertiserId, status])
-  @@index([botId, status])
-  @@map("broadcasts")
-}
-
-model BroadcastRecipient {
-  id          String    @id @default(cuid())
-  broadcastId String    @map("broadcast_id")
-  broadcast   Broadcast @relation(fields: [broadcastId], references: [id], onDelete: Cascade)
-  botUserId   String    @map("bot_user_id")
-  botUser     BotUser   @relation(fields: [botUserId], references: [id], onDelete: Cascade)
-  status      String    @default("PENDING") // PENDING, SENT, FAILED
-  error       String?   @db.Text
-  sentAt      DateTime? @map("sent_at")
-  createdAt   DateTime  @default(now()) @map("created_at")
-
-  @@unique([broadcastId, botUserId])
-  @@index([broadcastId, status])
-  @@map("broadcast_recipients")
 }
