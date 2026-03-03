@@ -114,6 +114,7 @@ class AdvertiserAnalytics {
           username: true,
           firstName: true,
           totalMembers: true,
+          avatarUrl: true,
         },
       });
 
