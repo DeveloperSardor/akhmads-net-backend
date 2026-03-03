@@ -295,33 +295,55 @@ class PricingService {
    */
   async getPricingStats() {
     try {
-      const [
-        totalTiers,
-        activeTiers,
-        platformFee,
-        avgAdCost,
-        totalRevenue,
-      ] = await Promise.all([
+      // 1. Get counts
+      const [totalTiers, activeTiers, platformFeePercent] = await Promise.all([
         prisma.pricingTier.count(),
         prisma.pricingTier.count({ where: { isActive: true } }),
         this.getPlatformFee(),
-        prisma.ad.aggregate({
-          where: { status: { in: ['RUNNING', 'COMPLETED'] } },
-          _avg: { totalCost: true },
-        }),
-        prisma.ad.aggregate({
-          where: { status: 'COMPLETED' },
-          _sum: { totalCost: true, platformFee: true },
-        }),
       ]);
+
+      // 2. AD REVENUE (Include all statuses where money is charged)
+      // Money is moved from reserved/available to spent when ad is approved
+      const adStats = await prisma.ad.aggregate({
+        where: { 
+          status: { in: ['APPROVED', 'SCHEDULED', 'RUNNING', 'PAUSED', 'COMPLETED', 'ARCHIVED'] },
+        },
+        _sum: { totalCost: true, platformFee: true },
+        _avg: { totalCost: true },
+      });
+
+      // 3. BROADCAST REVENUE
+      // Broadcasts charge upfront upon creation (except rejected/draft)
+      const broadcastStats = await prisma.broadcast.aggregate({
+        where: { 
+          status: { in: ['PENDING_REVIEW', 'APPROVED', 'RUNNING', 'COMPLETED', 'PAUSED'] } 
+        },
+        _sum: { totalCost: true, platformFee: true },
+      });
+      
+      // 4. Withdrawal Fees (Direct platform income from bot owners)
+      const withdrawalFees = await prisma.transaction.aggregate({
+        where: { type: 'WITHDRAW', status: 'SUCCESS' },
+        _sum: { fee: true },
+      });
+
+      // Calculate totals
+      const totalRevenueValue = 
+        parseFloat(adStats._sum.totalCost || 0) + 
+        parseFloat(broadcastStats._sum.totalCost || 0);
+      
+      const platformEarningsValue = 
+        parseFloat(adStats._sum.platformFee || 0) + 
+        parseFloat(broadcastStats._sum.platformFee || 0) + 
+        parseFloat(withdrawalFees._sum.fee || 0);
 
       return {
         totalTiers,
         activeTiers,
-        platformFeePercentage: platformFee,
-        averageAdCost: parseFloat(avgAdCost._avg.totalCost || 0).toFixed(2),
-        totalRevenue: parseFloat(totalRevenue._sum.totalCost || 0).toFixed(2),
-        platformEarnings: parseFloat(totalRevenue._sum.platformFee || 0).toFixed(2),
+        platformFeePercentage: platformFeePercent,
+        averageAdCost: parseFloat(adStats._avg.totalCost || 0).toFixed(2),
+        totalRevenue: totalRevenueValue.toFixed(2),
+        platformEarnings: platformEarningsValue.toFixed(2),
       };
     } catch (error) {
       logger.error('Get pricing stats failed:', error);

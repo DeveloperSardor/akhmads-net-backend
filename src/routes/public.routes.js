@@ -98,4 +98,27 @@ router.get('/categories', async (req, res) => {
   }
 });
 
+/**
+ * GET /api/settings
+ * Public - Get general platform settings (CPM, etc)
+ */
+router.get('/settings', async (req, res) => {
+  try {
+    const prisma = (await import('../config/database.js')).default;
+    const settings = await prisma.platformSettings.findMany({
+      where: { key: { in: ['ad_base_cpm', 'platform_fee_percentage'] } },
+    });
+
+    const data = {
+      baseCpm: settings.find(s => s.key === 'ad_base_cpm')?.value || '1.5',
+      platformFee: settings.find(s => s.key === 'platform_fee_percentage')?.value || '20',
+    };
+
+    res.json({ success: true, data });
+  } catch (error) {
+    logger.error('Get public settings error:', error);
+    res.status(500).json({ success: true, data: { baseCpm: '1.5', platformFee: '20' } }); // Fallback
+  }
+});
+
 export default router;

@@ -160,12 +160,6 @@ router.get("/frequency-limits", async (req, res, next) => {
   }
 });
 
-router.use(authenticate);
-
-/**
- * @route GET /api/v1/bots/public/search
- * @desc Search active bots for targeting
- */
 router.get(
   "/public/search",
   validate([query("q").isString().notEmpty()]),
@@ -194,6 +188,8 @@ router.get(
     }
   }
 );
+
+router.use(authenticate);
 
 /**
  * @route GET /api/v1/bots/verify-token
