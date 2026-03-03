@@ -38,31 +38,34 @@ router.get("/avatar/:username", async (req, res, next) => {
       });
 
       if (dbBot && dbBot.avatarUrl) {
-        targetUrl = dbBot.avatarUrl; // Will be minio / s3 url
-        await redis.set(cacheKey, targetUrl, 86400); // 24h cache
+        // If relative path, convert to full internal local URL
+        targetUrl = dbBot.avatarUrl.startsWith('http') 
+          ? dbBot.avatarUrl 
+          : `http://localhost:${process.env.PORT || 3000}${dbBot.avatarUrl}`;
+        await redis.set(cacheKey, targetUrl, 86400); 
       } else {
         // 2b. If legacy bot or missing avatar, scrape its public Telegram page
         try {
-          const htmlResponse = await axios.get(`https://t.me/${username}`, {
-            timeout: 3000,
+          const cleanUser = username.replace(/^@/, '');
+          const htmlResponse = await axios.get(`https://t.me/${cleanUser}`, {
+            timeout: 5000,
             headers: {
-              "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)",
+              "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36",
+              "Accept-Language": "en-US,en;q=0.9",
             },
           });
 
-          const match = htmlResponse.data.match(
-            /<meta property="?og:image"? content="?([^">]+)"?/i,
-          );
+          const match = htmlResponse.data.match(/<meta property="og:image" content="([^">]+)"/i);
 
           if (match && match[1] && match[1].includes("cdn")) {
-            targetUrl = match[1]; // Set to Telegram CDN URL
-            await redis.set(cacheKey, targetUrl, 21600); // 6h cache (Telegram CDN links change)
+            targetUrl = match[1];
+            await redis.set(cacheKey, targetUrl, 43200); // 12h cache
           } else {
             targetUrl = fallbackImage;
-            await redis.set(cacheKey, targetUrl, 86400); // 24h cache
+            await redis.set(cacheKey, targetUrl, 86400);
           }
         } catch (scrapeErr) {
-          // Scrape failed (e.g. timeout or deleted bot)
+          console.warn(`[AvatarProxy] Scrape failed for ${username}: ${scrapeErr.message}`);
           targetUrl = fallbackImage;
         }
       }
