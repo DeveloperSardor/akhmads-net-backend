@@ -55,7 +55,9 @@ router.get("/avatar/:username", async (req, res, next) => {
             },
           });
 
-          const match = htmlResponse.data.match(/<meta property="og:image" content="([^">]+)"/i);
+          // Flexible regex for Telegram's og:image meta tag
+          const match = htmlResponse.data.match(/<meta[^>]*?property=["']og:image["'][^>]*?content=["']([^"'>]+?)["']/i) || 
+                        htmlResponse.data.match(/<meta[^>]*?content=["']([^"'>]+?)["'][^>]*?property=["']og:image["']/i);
 
           if (match && match[1] && match[1].includes("cdn")) {
             targetUrl = match[1];
@@ -71,16 +73,21 @@ router.get("/avatar/:username", async (req, res, next) => {
       }
     }
 
-    // 3. Optimized: If the target url is our own local storage, fetch it internally
-    // to avoid potential loopback/firewall issues with the public IP
+    // 3. Optimized: Internal redirect for storage URLs to bypass loopback issues
     let fetchUrl = targetUrl;
     const publicIp = '176.222.52.47';
     const cdnUrl = process.env.CDN_URL || '';
 
+    // Handle internal routing for Minio/Storage
     if (fetchUrl.includes(publicIp) || (cdnUrl && fetchUrl.includes(cdnUrl))) {
-       // Replace public IP or public CDN URL with internal localhost:9000 for server-side fetch
-       fetchUrl = fetchUrl.replace(new RegExp(`http(s)?://${publicIp}/storage`, 'i'), 'http://localhost:9000');
-       if (cdnUrl) {
+       // regex to match IP/storage or simply IP/
+       const storagePattern = new RegExp(`http(s)?://${publicIp}(/storage)?/`, 'i');
+       if (storagePattern.test(fetchUrl)) {
+          // Point to internal minio container (stripping /storage prefix if present)
+          fetchUrl = fetchUrl.replace(storagePattern, 'http://localhost:9000/');
+       }
+       
+       if (cdnUrl && fetchUrl.includes(cdnUrl)) {
          fetchUrl = fetchUrl.replace(new RegExp(cdnUrl, 'i'), 'http://localhost:9000');
        }
     }
