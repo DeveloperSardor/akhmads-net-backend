@@ -1,4 +1,4 @@
-// src/services/payments/providers/cryptoPayService.js
+import axios from 'axios';
 import crypto from 'crypto';
 import logger from '../../../utils/logger.js';
 import { PaymentError } from '../../../utils/errors.js';
@@ -10,52 +10,80 @@ import { PaymentError } from '../../../utils/errors.js';
  */
 class CryptoPayService {
   constructor() {
-    this.apiToken = process.env.CRYPTOPAY_API_TOKEN;
+    this.apiToken = (process.env.CRYPTOPAY_API_TOKEN || '').trim();
     this.isTestnet = process.env.CRYPTOPAY_TESTNET === 'true';
     
     this.baseUrl = this.isTestnet
       ? 'https://testnet-pay.crypt.bot/api'
       : 'https://pay.crypt.bot/api';
+
+    if (!this.apiToken) {
+      logger.error('❌ CRYPTOPAY_API_TOKEN is missing in .env');
+    } else {
+      const masked = `${this.apiToken.substring(0, 6)}...${this.apiToken.substring(this.apiToken.length - 4)}`;
+      logger.info(`✅ CryptoPayService initialized (${this.isTestnet ? 'TESTNET' : 'MAINNET'}), Token: ${masked}`);
+      
+      // Perform background health check
+      this.validateToken();
+    }
+  }
+
+  /**
+   * Validate API Token
+   */
+  async validateToken() {
+    try {
+      const result = await this.makeRequest('getMe');
+      logger.info(`✅ CryptoPay Token is valid. Bot: ${result.name} (@${result.username})`);
+    } catch (error) {
+      logger.error('❌ CryptoPay Token validation failed:', error.message);
+    }
   }
 
   /**
    * Make API request to CryptoPay
-   * CryptoPay uses GET with query params
    */
   async makeRequest(method, params = {}) {
     try {
-      // Build query string
-      const queryParams = new URLSearchParams();
-      for (const [key, value] of Object.entries(params)) {
-        if (value !== undefined && value !== null) {
-          queryParams.append(key, value.toString());
-        }
-      }
-      
-      const queryString = queryParams.toString();
-      const url = queryString 
-        ? `${this.baseUrl}/${method}?${queryString}`
-        : `${this.baseUrl}/${method}`;
-      
-      logger.info(`CryptoPay API call: ${method}`, { url: `${this.baseUrl}/${method}` });
-      
-      const response = await fetch(url, {
-        method: 'GET',
+      // CryptoPay supports both GET and POST. 
+      // For createInvoice and similar, POST with JSON body is more reliable.
+      const response = await axios({
+        method: 'POST',
+        url: `${this.baseUrl}/${method}`,
+        data: params,
         headers: {
           'Crypto-Pay-API-Token': this.apiToken,
+          'Content-Type': 'application/json',
         },
+        timeout: 15000,
       });
 
-      const data = await response.json();
+      const data = response.data;
 
       if (!data.ok) {
-        logger.error(`CryptoPay ${method} error:`, data.error);
-        throw new PaymentError(data.error?.name || 'CryptoPay API error');
+        logger.error(`CryptoPay API Error (${method}):`, data.error);
+        
+        if (data.error?.name === 'UNAUTHORIZED') {
+          throw new PaymentError('CryptoPay error: UNAUTHORIZED. Please verify your CRYPTOPAY_API_TOKEN in .env and ensure CRYPTOPAY_TESTNET matches your token type.');
+        }
+        
+        throw new PaymentError(`CryptoPay error: ${data.error?.name || 'Unknown Error'}`);
       }
 
       return data.result;
     } catch (error) {
-      logger.error(`CryptoPay ${method} failed:`, error);
+      if (error.response) {
+        const errorData = error.response.data;
+        logger.error(`CryptoPay ${method} Failed (${error.response.status}):`, errorData);
+        
+        if (errorData?.error?.name === 'UNAUTHORIZED' || error.response.status === 401) {
+          throw new PaymentError('CryptoPay error: UNAUTHORIZED. Check your API Token and TESTNET setting.');
+        }
+        
+        throw new PaymentError(`CryptoPay error: ${errorData?.error?.name || error.message}`);
+      }
+      
+      logger.error(`CryptoPay ${method} network/system failed:`, error.message);
       throw new PaymentError(`CryptoPay error: ${error.message}`);
     }
   }

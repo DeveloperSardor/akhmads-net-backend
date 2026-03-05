@@ -5,6 +5,10 @@ import { authenticate } from '../../middleware/auth.js';
 import { authRateLimiter } from '../../middleware/rateLimiter.js';
 import response from '../../utils/response.js';
 import logger from '../../utils/logger.js';
+import twoFactorService from '../../services/auth/twoFactorService.js';
+import redis from '../../config/redis.js';
+import prisma from '../../config/database.js';
+import jwtUtil from '../../utils/jwt.js';
 
 const router = Router();
 
@@ -141,6 +145,105 @@ router.post('/telegram-widget', async (req, res, next) => {
     });
 
     response.success(res, result, 'Login successful');
+  } catch (error) {
+    next(error);
+  }
+});
+
+/**
+ * POST /api/v1/auth/2fa/setup
+ * Initialize 2FA setup
+ */
+router.post('/2fa/setup', authenticate, async (req, res, next) => {
+  try {
+    const result = await twoFactorService.setup(req.userId);
+    response.success(res, result, '2FA setup initiated');
+  } catch (error) {
+    next(error);
+  }
+});
+
+/**
+ * POST /api/v1/auth/2fa/confirm
+ * Confirm 2FA setup
+ */
+router.post('/2fa/confirm', authenticate, async (req, res, next) => {
+  try {
+    const { secret, code } = req.body;
+    if (!secret || !code) {
+      return response.validationError(res, [{ field: 'code', message: 'Secret and code are required' }]);
+    }
+    await twoFactorService.confirm(req.userId, secret, code);
+    response.success(res, null, '2FA enabled successfully');
+  } catch (error) {
+    next(error);
+  }
+});
+
+/**
+ * POST /api/v1/auth/2fa/verify
+ * Verify 2FA code during login
+ */
+router.post('/2fa/verify', async (req, res, next) => {
+  try {
+    const { twoFaToken, code } = req.body;
+    if (!twoFaToken || !code) {
+      return response.validationError(res, [{ field: 'code', message: 'Token and code are required' }]);
+    }
+
+    const preAuthData = await redis.get(`pre_auth_2fa:${twoFaToken}`);
+    if (!preAuthData) {
+      return response.error(res, '2FA session expired or invalid', 401);
+    }
+
+    const { userId } = JSON.parse(preAuthData);
+    
+    // Verify 2FA code
+    await twoFactorService.verify(userId, code);
+
+    // Get full user for tokens
+    const user = await prisma.user.findUnique({ where: { id: userId } });
+    
+    // Generate tokens
+    const tokens = jwtUtil.generateTokenPair(user);
+
+    // Store refresh token
+    const isAdmin = user.role === 'ADMIN' || (user.roles && user.roles.includes('ADMIN'));
+    await redis.set(
+      `refresh_token:${user.id}`,
+      tokens.refreshToken,
+      isAdmin ? 1 * 24 * 60 * 60 : 2 * 24 * 60 * 60
+    );
+
+    // Clean up
+    await redis.del(`pre_auth_2fa:${twoFaToken}`);
+
+    response.success(res, {
+      user: {
+        id: user.id,
+        telegramId: user.telegramId,
+        username: user.username,
+        firstName: user.firstName,
+        role: user.role,
+        roles: user.roles,
+        avatarUrl: user.avatarUrl,
+        locale: user.locale
+      },
+      tokens
+    }, '2FA verification successful');
+  } catch (error) {
+    next(error);
+  }
+});
+
+/**
+ * DELETE /api/v1/auth/2fa
+ * Disable 2FA
+ */
+router.delete('/2fa', authenticate, async (req, res, next) => {
+  try {
+    await twoFactorService.disable(req.userId);
+    response.success(res, null, '2FA disabled successfully');
   } catch (error) {
     next(error);
   }

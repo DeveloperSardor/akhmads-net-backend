@@ -23,7 +23,8 @@ class Tracking {
   generateToken(data) {
     try {
       const payload = {
-        adId: data.adId,
+        adId: data.adId || null,
+        broadcastId: data.broadcastId || null,
         botId: data.botId,
         originalUrl: data.originalUrl,
         telegramUserId: data.telegramUserId || null,
@@ -88,16 +89,19 @@ class Tracking {
    * @param {string} telegramUserId - Telegram user ID (optional)
    * @returns {array} - Buttons with tracking URLs
    */
-  wrapButtonsWithTracking(buttons, adId, botId, telegramUserId = null) {
+  wrapButtonsWithTracking(buttons, ids = {}, telegramUserId = null) {
     if (!buttons || !Array.isArray(buttons)) {
       return [];
     }
+
+    const { adId, botId, broadcastId } = ids;
 
     return buttons.map((button) => {
       if (!button.url) return button;
 
       const token = this.generateToken({
         adId,
+        broadcastId,
         botId,
         originalUrl: button.url,
         telegramUserId,

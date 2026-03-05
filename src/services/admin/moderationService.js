@@ -1,6 +1,7 @@
 import adModerationService from '../ad/adModerationService.js';
 import prisma from '../../config/database.js';
 import logger from '../../utils/logger.js';
+import autoBotManager from '../bot/autoBotManager.js';
 
 /**
  * Content Moderation Service
@@ -127,6 +128,11 @@ class ModerationService {
    */
   async approveBot(botId, adminId) {
     try {
+      const admin = await prisma.user.findUnique({
+        where: { id: adminId },
+        select: { firstName: true, username: true }
+      });
+
       const bot = await prisma.bot.update({
         where: { id: botId },
         data: {
@@ -146,7 +152,29 @@ class ModerationService {
         },
       });
 
+      // ✅ Telegram dagi xabarni yangilash
+      const { default: adminNotificationService } = await import('../telegram/adminNotificationService.js');
+      const resolverName = admin?.username || admin?.firstName || 'Admin';
+      adminNotificationService.markAsResolved('bot', botId, resolverName, '✅ TASDIQLANDI (SAYT)').catch(() => {});
+
       logger.info(`Bot approved: ${botId}`);
+
+      // Notify owner
+      const owner = await prisma.user.findUnique({ where: { id: bot.ownerId } });
+      if (owner) {
+        const { default: userNotificationService } = await import('../telegram/userNotificationService.js');
+        await userNotificationService.notifyBotApproved(owner, bot);
+      }
+      
+      // If AUTO mode, start it
+      if (bot.integrationMode === 'AUTO' && bot.status === 'ACTIVE' && !bot.isPaused) {
+        // We assume autoBotManager is imported
+        const autoBotManager = await import('../telegram/autoBotManager.js');
+        if (autoBotManager.default) {
+           autoBotManager.default.startBot(bot);
+        }
+      }
+
       return bot;
     } catch (error) {
       logger.error('Approve bot failed:', error);
@@ -159,6 +187,11 @@ class ModerationService {
    */
   async rejectBot(botId, adminId, reason) {
     try {
+      const admin = await prisma.user.findUnique({
+        where: { id: adminId },
+        select: { firstName: true, username: true }
+      });
+
       const bot = await prisma.bot.update({
         where: { id: botId },
         data: { status: 'REJECTED' },
@@ -175,7 +208,20 @@ class ModerationService {
         },
       });
 
-      logger.info(`Bot rejected: ${botId}`);
+      // ✅ Telegram dagi xabarni yangilash
+      const { default: adminNotificationService } = await import('../telegram/adminNotificationService.js');
+      const resolverName = admin?.username || admin?.firstName || 'Admin';
+      adminNotificationService.markAsResolved('bot', botId, resolverName, '❌ RAD ETILDI (SAYT)').catch(() => {});
+
+      logger.info(`Bot rejected: ${botId}, reason=${reason}`);
+
+      // Notify owner
+      const owner = await prisma.user.findUnique({ where: { id: bot.ownerId } });
+      if (owner) {
+        const { default: userNotificationService } = await import('../telegram/userNotificationService.js');
+        await userNotificationService.notifyBotRejected(owner, bot, reason);
+      }
+
       return bot;
     } catch (error) {
       logger.error('Reject bot failed:', error);

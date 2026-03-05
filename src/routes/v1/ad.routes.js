@@ -327,13 +327,16 @@ router.post(
   requireAdvertiser,
   validate([
     body("botId").isString(),
+    body("type").optional().isIn(["PDP", "POKAZ"]),
     body("contentType").isIn(["TEXT", "HTML", "MEDIA"]),
-    body("text").isString().isLength({ min: 10, max: 4096 }),
+    body("text").isString().isLength({ min: 5, max: 4096 }),
     body("mediaUrl").optional().isString(),
     body("mediaType").optional().isString(),
     body("buttons").optional().isArray(),
-    body("targetCount").isInt({ min: 1, max: 100000 }),
+    body("targetCount").isInt({ min: 1 }),
     body("activeDays").optional().isInt({ min: 1, max: 365 }),
+    body("language").optional().isString(),
+    body("scheduledAt").optional().isISO8601(),
   ]),
   async (req, res, next) => {
     try {

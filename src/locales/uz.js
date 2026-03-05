@@ -1,5 +1,5 @@
 export default {
-  welcome: "<tg-emoji emoji-id=\"5890925363067886150\">✨</tg-emoji> <b>AKHMADS.NET</b>\nTelegram Ad Network\n\n<tg-emoji emoji-id=\"5260399854500191689\">👤</tg-emoji> <b>{name}</b>\n<tg-emoji emoji-id=\"5904462880941545555\">💰</tg-emoji> Balans: <b>${balance}</b>",
+  welcome: "<tg-emoji emoji-id=\"5890925363067886150\">✨</tg-emoji> <b>AKHMADS.NET</b>\nTelegram Ad Network\n\n<tg-emoji emoji-id=\"5260399854500191689\">👤</tg-emoji> <b>{name}</b>\n<tg-emoji emoji-id=\"5904462880941545555\">💰</tg-emoji> Баланс: <b>${balance}</b>\n\n📁 <a href=\"https://t.me/akhmads_net\">Каналда янгиликларни кузатинг</a>",
   select_language: "Iltimos, tilni tanlang:",
   auth_web: "🌐 Avtorizatsiya",
   change_language: "🌐 Tilni o'zgartirish",

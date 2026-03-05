@@ -37,6 +37,8 @@ model User {
   savedAds            SavedAd[]
   transactions        Transaction[]
   wallet              Wallet?
+  twoFactorEnabled    Boolean           @default(false) @map("two_factor_enabled")
+  twoFactorSecret     String?           @map("two_factor_secret")
   approvedWithdrawals WithdrawRequest[] @relation("ApprovedBy")
   withdrawRequests    WithdrawRequest[]
 
@@ -214,6 +216,15 @@ model Bot {
   apiKeyRevoked     Boolean         @default(false) @map("api_key_revoked")
   apiKeyLastUsed    DateTime?       @map("api_key_last_used")
   verifiedAt        DateTime?       @map("verified_at")
+  integrationMode   IntegrationMode @default(MANUAL) @map("integration_mode")
+  
+  // Broadcast settings
+  pdpEnabled        Boolean         @default(false) @map("pdp_enabled")
+  pokazEnabled      Boolean         @default(false) @map("pokaz_enabled")
+  autoAcceptAds     Boolean         @default(false) @map("auto_accept_ads")
+  pricePerClick     Decimal         @default(0.01) @map("price_per_click") @db.Decimal(10, 4)
+  pricePerPokaz     Decimal         @default(0.001) @map("price_per_pokaz") @db.Decimal(10, 4)
+
   createdAt         DateTime        @default(now()) @map("created_at")
   updatedAt         DateTime        @updatedAt @map("updated_at")
   avatarUrl         String?         @map("avatar_url")
@@ -353,7 +364,8 @@ model Impression {
 
 model ClickEvent {
   id             String    @id @default(cuid())
-  adId           String    @map("ad_id")
+  adId           String?   @map("ad_id")
+  broadcastId    String?   @map("broadcast_id")
   botId          String    @map("bot_id")
   userId         String?   @map("user_id")
   telegramUserId String?   @map("telegram_user_id")
@@ -371,11 +383,13 @@ model ClickEvent {
   languageCode   String?   @map("language_code")
   lastName       String?   @map("last_name")
   username       String?
-  ad             Ad        @relation(fields: [adId], references: [id], onDelete: Cascade)
+  ad             Ad?       @relation(fields: [adId], references: [id], onDelete: Cascade)
+  broadcast      Broadcast? @relation(fields: [broadcastId], references: [id], onDelete: Cascade)
   bot            Bot       @relation(fields: [botId], references: [id], onDelete: Cascade)
   user           User?     @relation(fields: [userId], references: [id])
 
   @@index([adId, botId, clicked])
+  @@index([broadcastId, clicked])
   @@index([trackingToken])
   @@index([createdAt])
   @@map("click_events")
@@ -499,6 +513,7 @@ model BotUser {
   city                String?              @default("Unknown")
   lastSeenAt          DateTime             @default(now()) @map("last_seen_at")
   createdAt           DateTime             @default(now()) @map("created_at")
+  source              UserSource           @default(SYSTEM)
   bot                 Bot                  @relation(fields: [botId], references: [id], onDelete: Cascade)
   broadcastRecipients BroadcastRecipient[]
 
@@ -514,6 +529,7 @@ model Broadcast {
   advertiserId String               @map("advertiser_id")
   botId        String               @map("bot_id")
   status       AdStatus             @default(DRAFT)
+  type         BroadcastType        @default(POKAZ)
   contentType  AdContentType        @map("content_type")
   text         String
   mediaUrl     String?              @map("media_url")
@@ -521,15 +537,29 @@ model Broadcast {
   buttons      Json?
   targetCount  Int                  @default(0) @map("target_count")
   sentCount    Int                  @default(0) @map("sent_count")
+  successCount Int                  @default(0) @map("success_count")
   failedCount  Int                  @default(0) @map("failed_count")
+  blockedCount Int                  @default(0) @map("blocked_count")
+  clickCount   Int                  @default(0) @map("click_count")
+  
   totalCost    Decimal              @map("total_cost") @db.Decimal(12, 2)
   platformFee  Decimal              @map("platform_fee") @db.Decimal(12, 2)
   botOwnerEarn Decimal              @map("bot_owner_earn") @db.Decimal(12, 2)
+  
+  scheduledAt  DateTime?            @map("scheduled_at")
   startedAt    DateTime?            @map("started_at")
   completedAt  DateTime?            @map("completed_at")
+  
+  // Targeting
+  language     String?
+  
+  // Report data at launch
+  initialAudience Int?              @map("initial_audience")
+  
   createdAt    DateTime             @default(now()) @map("created_at")
   updatedAt    DateTime             @updatedAt @map("updated_at")
   recipients   BroadcastRecipient[]
+  clickEvents  ClickEvent[]
   advertiser   User                 @relation("AdvertiserBroadcasts", fields: [advertiserId], references: [id], onDelete: Cascade)
   bot          Bot                  @relation(fields: [botId], references: [id], onDelete: Cascade)
 
@@ -598,6 +628,16 @@ enum PaymentProvider {
   CRYPTO
 }
 
+enum BroadcastType {
+  PDP
+  POKAZ
+}
+
+enum UserSource {
+  SYSTEM
+  UPLOADED
+}
+
 enum CryptoNetwork {
   BTC
   ETH
@@ -626,6 +666,7 @@ enum AdStatus {
   COMPLETED
   ARCHIVED
   PENDING_REVIEW
+  PENDING_BOT_OWNER
 }
 
 enum BotStatus {
@@ -634,6 +675,11 @@ enum BotStatus {
   REJECTED
   BANNED
   PAUSED
+}
+
+enum IntegrationMode {
+  MANUAL
+  AUTO
 }
 
 enum LedgerType {

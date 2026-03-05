@@ -53,7 +53,8 @@ class AdTrackingService {
 
         clickEvent = await prisma.clickEvent.create({
           data: {
-            adId: data.adId,
+            adId: data.adId || null,
+            broadcastId: data.broadcastId || null,
             botId: data.botId,
             telegramUserId: data.telegramUserId,
             firstName: botUser?.firstName,
@@ -105,24 +106,28 @@ class AdTrackingService {
           }
         }
 
-        // Update ad click count
-        await prisma.ad.update({
-          where: { id: data.adId },
-          data: {
-            clicks: { increment: 1 },
-          },
-        });
-
-        // Recalculate CTR
-        const ad = await prisma.ad.findUnique({
-          where: { id: data.adId },
-        });
-
-        if (ad.deliveredImpressions > 0) {
-          const ctr = (ad.clicks / ad.deliveredImpressions) * 100;
+        // Update ad or broadcast click count
+        if (data.adId) {
           await prisma.ad.update({
             where: { id: data.adId },
-            data: { ctr: parseFloat(ctr.toFixed(2)) },
+            data: { clicks: { increment: 1 } },
+          });
+
+          // Recalculate Ad CTR
+          const ad = await prisma.ad.findUnique({ where: { id: data.adId } });
+          if (ad.deliveredImpressions > 0) {
+            const ctr = (ad.clicks / ad.deliveredImpressions) * 100;
+            await prisma.ad.update({
+              where: { id: data.adId },
+              data: { ctr: parseFloat(ctr.toFixed(2)) },
+            });
+          }
+        }
+
+        if (data.broadcastId) {
+          await prisma.broadcast.update({
+            where: { id: data.broadcastId },
+            data: { clickCount: { increment: 1 } },
           });
         }
       } else if (!clickEvent.clicked) {

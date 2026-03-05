@@ -3,8 +3,11 @@ import prisma from '../../config/database.js';
 import walletService from '../wallet/walletService.js';
 import telegramBot from '../../config/telegram.js';
 import logger from '../../utils/logger.js';
+import redis from '../../config/redis.js';
 import { InlineKeyboard } from 'grammy';
 import { InsufficientFundsError, ValidationError } from '../../utils/errors.js';
+import adminNotificationService from '../telegram/adminNotificationService.js';
+import userNotificationService from '../telegram/userNotificationService.js';
 
 // BEP-20 manzil formati: 0x + 40 hex belgi
 const BEP20_REGEX = /^0x[a-fA-F0-9]{40}$/;
@@ -158,10 +161,19 @@ class WithdrawService {
       },
     });
 
-    // User ga Telegram xabar
-    await this.notifyUserApproved(withdrawal);
+    // ✅ Telegram dagi xabarni yangilash
+    const admin = await prisma.user.findUnique({
+      where: { id: adminId },
+      select: { firstName: true, username: true }
+    });
+    const resolverName = admin?.username || admin?.firstName || 'Admin';
+    adminNotificationService.markAsResolved('withdraw', withdrawalId, resolverName, '✅ TASDIQLANDI (SAYT)').catch(() => {});
 
     logger.info(`Withdraw tasdiqlandi: ${withdrawalId} by admin ${adminId}`);
+
+    // Notify user
+    userNotificationService.notifyWithdrawalApproved(withdrawal.user, withdrawal).catch(() => {});
+
     return updated;
   }
 
@@ -218,10 +230,19 @@ class WithdrawService {
       },
     });
 
-    // User ga Telegram xabar
-    await this.notifyUserRejected(withdrawal, reason);
+    // ✅ Telegram dagi xabarni yangilash
+    const admin = await prisma.user.findUnique({
+      where: { id: adminId },
+      select: { firstName: true, username: true }
+    });
+    const resolverName = admin?.username || admin?.firstName || 'Admin';
+    adminNotificationService.markAsResolved('withdraw', withdrawalId, resolverName, '❌ RAD ETILDI (SAYT)').catch(() => {});
 
     logger.info(`Withdraw rad etildi: ${withdrawalId}, sabab: ${reason}`);
+
+    // Notify user
+    userNotificationService.notifyWithdrawalRejected(withdrawal.user, withdrawal, reason).catch(() => {});
+
     return updated;
   }
 
@@ -372,13 +393,23 @@ class WithdrawService {
         .text('✅ Tasdiqlash', `wd_approve_${withdrawal.id}`)
         .text('❌ Rad etish', `wd_reject_${withdrawal.id}`);
 
+      const messageIds = [];
       for (const admin of superAdmins) {
         if (admin.telegramId) {
-          await telegramBot.bot.api.sendMessage(admin.telegramId, message, {
-            parse_mode: 'HTML',
-            reply_markup: keyboard,
-          }).catch(e => logger.warn(`SuperAdmin ${admin.telegramId} ga xabar yuborilmadi: ${e.message}`));
+          try {
+            const msg = await telegramBot.bot.api.sendMessage(admin.telegramId, message, {
+              parse_mode: 'HTML',
+              reply_markup: keyboard,
+            });
+            messageIds.push({ chatId: admin.telegramId, messageId: msg.message_id });
+          } catch (e) {
+            logger.warn(`SuperAdmin ${admin.telegramId} ga xabar yuborilmadi: ${e.message}`);
+          }
         }
+      }
+
+      if (messageIds.length > 0) {
+        await redis.set(`admin_notify:withdraw:${withdrawal.id}`, JSON.stringify(messageIds), 'EX', 86400 * 7);
       }
     } catch (e) {
       logger.error('Admin notification xatosi:', e);

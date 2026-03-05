@@ -62,6 +62,13 @@ class LoginBotHandler {
           return;
         }
 
+        // Handle Broadcast Drafting
+        if (args && (args.startsWith('bcast_new_') || args.startsWith('broadcast_'))) {
+          const botId = args.replace('bcast_new_', '').replace('broadcast_', '');
+          await this.handleBroadcastStart(ctx, botId);
+          return;
+        }
+
         if (!user) {
           user = await prisma.user.create({
             data: {
@@ -114,7 +121,18 @@ class LoginBotHandler {
         if (!isAdvertiser) return;
 
         const sessionKey = `ad_session:${telegramId}`;
+        const bcastSessionKey = `bcast_session:${telegramId}`;
+        
         const sessionJson = await redis.get(sessionKey);
+        const bcastSessionJson = await redis.get(bcastSessionKey);
+
+        if (bcastSessionJson) {
+          const bcastSession = JSON.parse(bcastSessionJson);
+          if (bcastSession.step === 'AWAITING_POST') {
+             await this.handleBroadcastPost(ctx, bcastSession, bcastSessionKey);
+             return;
+          }
+        }
 
         if (sessionJson) {
           const session = JSON.parse(sessionJson);
@@ -507,6 +525,84 @@ class LoginBotHandler {
   }
 
   /**
+   * BROADCAST CREATION VIA BOT
+   */
+  async handleBroadcastStart(ctx, botId) {
+    const telegramId = ctx.from.id.toString();
+    const user = await prisma.user.findUnique({ where: { telegramId } });
+    if (!user) return;
+
+    const bot = await prisma.bot.findUnique({ where: { id: botId } });
+    if (!bot || bot.ownerId !== user.id) {
+       await ctx.reply("❌ Bot topilmadi yoki siz bu botning egasi emassiz.");
+       return;
+    }
+
+    const session = {
+      step: 'AWAITING_POST',
+      botId: botId,
+      ownerId: user.id,
+      locale: user.locale || 'uz'
+    };
+
+    await redis.set(`bcast_session:${telegramId}`, JSON.stringify(session), 1800); // 30 min
+    await ctx.reply(`<b>📢 Broadcast postini tayyorlash</b>\n\n@${bot.username} botingiz uchun reklama postini mana shu yerga yuboring (Matn, rasm yoki video).\n\n<i>Postni yuborganingizdan so'ng, saytga qaytib uni tahrirlashingiz mumkin.</i>`, { parse_mode: 'HTML' });
+  }
+
+  async handleBroadcastPost(ctx, session, sessionKey) {
+    const text = ctx.message.text || ctx.message.caption || '';
+    const entities = ctx.message.entities || ctx.message.caption_entities || [];
+    const htmlContent = messageToHtml(text, entities);
+
+    let mediaUrl = null;
+    let mediaType = 'NONE';
+    let fileId = null;
+
+    if (ctx.message.photo) {
+      const photo = ctx.message.photo[ctx.message.photo.length - 1];
+      const file = await ctx.api.getFile(photo.file_id);
+      fileId = photo.file_id;
+      mediaUrl = `https://api.telegram.org/file/bot${this.bot.token}/${file.file_path}`;
+      mediaType = 'IMAGE';
+    } else if (ctx.message.video) {
+      fileId = ctx.message.video.file_id;
+      mediaType = 'VIDEO';
+    }
+
+    // Capture buttons if present
+    const buttons = [];
+    if (ctx.message.reply_markup?.inline_keyboard) {
+      ctx.message.reply_markup.inline_keyboard.forEach(row => {
+        row.forEach(btn => {
+          if (btn.url) {
+            buttons.push({ text: btn.text, url: btn.url });
+          }
+        });
+      });
+    }
+
+    const bcastDraftData = {
+      botId: session.botId,
+      text: text,
+      htmlContent: htmlContent,
+      mediaUrl: mediaUrl,
+      mediaType: mediaType,
+      fileId: fileId,
+      buttons: buttons,
+      receivedAt: new Date()
+    };
+
+    // Save to redis for the web to fetch
+    await redis.set(`bcast_draft:${session.botId}`, JSON.stringify(bcastDraftData), 3600);
+    await redis.del(sessionKey);
+
+    await ctx.reply("✅ <b>Post qabul qilindi!</b>\n\nEndi saytga o'ting va broadcastni yakunlang.", {
+      parse_mode: 'HTML',
+      reply_markup: new InlineKeyboard().url("Saytga o'tish", `${this.getFrontendUrl()}/${session.locale || 'uz'}/broadcasts/new?bot_id=${session.botId}`)
+    });
+  }
+
+  /**
    * Get user's profile photo URL
    */
   async getUserPhotoUrl(userId) {
@@ -662,12 +758,17 @@ class LoginBotHandler {
       });
     }
 
-    // 2. Language change
+    // 2. Channel & Chat
+    keyboard.row()
+      .url(i18n.t(locale, 'channel'), 'https://t.me/akhmads_net')
+      .url(i18n.t(locale, 'chat'), 'https://t.me/akhmads_chat');
+
+    // 3. Language change
     keyboard.row()
       .text(i18n.t(locale, 'change_language'), 'change_lang');
 
     const __dirname = dirname(fileURLToPath(import.meta.url));
-    const gifPath = join(__dirname, '../../../main-gif-opt.mp4');
+    const gifPath = join(__dirname, '../../../main-gif.mov');
     
     try {
       if (options.edit) {

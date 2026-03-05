@@ -8,6 +8,7 @@ import { NotFoundError, ConflictError, ExternalServiceError } from '../../utils/
 import axios from 'axios';
 import storageService from '../storage/storageService.js';
 import { nanoid } from 'nanoid';
+import autoBotManager from './autoBotManager.js';
 
 /**
  * Bot Service
@@ -114,6 +115,7 @@ class BotService {
           category: data.category,
           language: data.language || 'uz',
           monetized: data.monetized !== undefined ? data.monetized : true,
+          integrationMode: data.integrationMode || 'MANUAL',
           status: 'PENDING',
           avatarUrl,
           botstatData,
@@ -140,6 +142,11 @@ class BotService {
       });
 
       logger.info(`Bot registered and token generated: ${bot.id}`);
+      
+      // If AUTO mode, start it
+      if (updatedBot.integrationMode === 'AUTO' && updatedBot.status === 'ACTIVE' && !updatedBot.isPaused) {
+        autoBotManager.startBot({ ...updatedBot, tokenEncrypted });
+      }
 
       // Sync member count immediately
       botStatsService.syncMemberCount(bot.id).catch(err => {
@@ -279,10 +286,24 @@ class BotService {
           blockedCategories: data.blockedCategories,
           blockedAdIds: data.blockedAdIds,
           frequencyMinutes: data.frequencyMinutes,
+          integrationMode: data.integrationMode,
+          pdpEnabled: data.pdpEnabled,
+          pokazEnabled: data.pokazEnabled,
+          autoAcceptAds: data.autoAcceptAds,
+          pricePerClick: data.pricePerClick,
+          pricePerPokaz: data.pricePerPokaz,
         },
       });
 
       logger.info(`Bot updated: ${botId}`);
+      
+      // Handle Auto Bot Manager sync
+      if (updated.integrationMode === 'AUTO' && updated.status === 'ACTIVE' && !updated.isPaused) {
+        autoBotManager.startBot(updated);
+      } else {
+        autoBotManager.stopBot(updated.id);
+      }
+
       return updated;
     } catch (error) {
       logger.error('Update bot failed:', error);
@@ -301,6 +322,14 @@ class BotService {
       });
 
       logger.info(`Bot ${isPaused ? 'paused' : 'resumed'}: ${botId}`);
+      
+      // Sync with Auto Bot Manager
+      if (!bot.isPaused && bot.integrationMode === 'AUTO' && bot.status === 'ACTIVE') {
+        autoBotManager.startBot(bot);
+      } else {
+        autoBotManager.stopBot(bot.id);
+      }
+
       return bot;
     } catch (error) {
       logger.error('Toggle bot pause failed:', error);
@@ -371,6 +400,12 @@ class BotService {
       });
 
       logger.info(`Bot token updated: ${botId}`);
+
+      // Sync with Auto Bot Manager
+      if (updated.integrationMode === 'AUTO' && updated.status === 'ACTIVE' && !updated.isPaused) {
+        await autoBotManager.restartBot(updated.id);
+      }
+
       return updated;
     } catch (error) {
       logger.error('Update bot token failed:', error);
@@ -388,6 +423,10 @@ class BotService {
       });
 
       logger.info(`Bot deleted: ${botId}`);
+      
+      // Stop in Auto Bot Manager
+      autoBotManager.stopBot(botId).catch(() => {});
+
       return true;
     } catch (error) {
       logger.error('Delete bot failed:', error);
@@ -542,13 +581,68 @@ class BotService {
           activeUsers3d: c3d,
           activeUsers7d: c7d,
           activeUsers30d: c30d,
-          broadcastPricePerUser: 0.05,
+          pricePerClick: parseFloat(bot.pricePerClick || 0.05),
+          pricePerPokaz: parseFloat(bot.pricePerPokaz || 0.005),
+          pdpEnabled: bot.pdpEnabled,
+          pokazEnabled: bot.pokazEnabled
         };
       }));
 
       return enrichedBots;
     } catch (error) {
       logger.error('Get public bots failed:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * Bulk upload user IDs for a bot
+   * Mark them with UserSource.UPLOADED
+   */
+  async uploadUsers(botId, ownerId, userIds) {
+    try {
+      const bot = await this.getBotById(botId);
+      if (bot.ownerId !== ownerId) {
+        throw new NotFoundError('Bot not found');
+      }
+
+      logger.info(`Processing ${userIds.length} user IDs for bot ${botId}`);
+
+      // Filter and unique
+      const uniqueIds = [...new Set(userIds.filter(id => id && !isNaN(id)))];
+      
+      const operations = uniqueIds.map(userId => 
+        prisma.botUser.upsert({
+          where: {
+            botId_telegramUserId: {
+              botId,
+              telegramUserId: userId.toString()
+            }
+          },
+          update: {
+            source: 'UPLOADED' // Mark as uploaded if it already existed as system
+          },
+          create: {
+            botId,
+            telegramUserId: userId.toString(),
+            source: 'UPLOADED'
+          }
+        })
+      );
+
+      // Batch processing to prevent memory issues or DB locks
+      const batchSize = 500;
+      for (let i = 0; i < operations.length; i += batchSize) {
+        await Promise.all(operations.slice(i, i + batchSize));
+      }
+
+      logger.info(`Successfully processed ${uniqueIds.length} users for bot ${botId}`);
+      return { 
+        totalInFile: userIds.length,
+        processed: uniqueIds.length 
+      };
+    } catch (error) {
+      logger.error('Bulk user upload failed:', error);
       throw error;
     }
   }

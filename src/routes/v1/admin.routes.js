@@ -11,6 +11,7 @@ import adminAnalytics from '../../services/analytics/adminAnalytics.js';
 import categoryService from '../../services/category/categoryService.js';
 import detailedStatsService from '../../services/admin/detailedStatsService.js';
 import broadcastService from '../../services/admin/broadcastService.js';
+import autoBotManager from '../../services/bot/autoBotManager.js';
 import { authenticate } from '../../middleware/auth.js';
 import { requireAdmin, requireModerator, requireSuperAdmin } from '../../middleware/rbac.js';
 import { validate } from '../../middleware/validate.js';
@@ -74,6 +75,97 @@ router.get(
         page: Math.floor(offset / limit) + 1,
         limit: parseInt(limit),
         total,
+      });
+    } catch (error) {
+      next(error);
+    }
+  }
+);
+
+/**
+ * GET /api/v1/admin/moderation/campaigns/all
+ * Combined Ads and Broadcasts with filters
+ */
+router.get(
+  '/moderation/campaigns/all',
+  requireModerator,
+  validate([
+    query('status').optional().isString(),
+    query('type').optional().isIn(['all', 'AD', 'BROADCAST']),
+    query('limit').optional().isInt({ min: 1, max: 100 }),
+    query('offset').optional().isInt({ min: 0 }),
+  ]),
+  async (req, res, next) => {
+    try {
+      const { status, type = 'all', limit = 20, offset = 0 } = req.query;
+      const take = parseInt(limit);
+      const skip = parseInt(offset);
+
+      const where = {};
+      if (status && status !== 'all') where.status = status;
+
+      let ads = [];
+      let broadcasts = [];
+      
+      const selectUser = {
+        select: {
+          id: true,
+          firstName: true,
+          lastName: true,
+          username: true,
+        }
+      };
+
+      if (type === 'all' || type === 'AD') {
+        ads = await prisma.ad.findMany({
+          where,
+          include: { advertiser: selectUser },
+          orderBy: { createdAt: 'desc' },
+          take: type === 'AD' ? take : 100,
+          skip: type === 'AD' ? skip : 0
+        });
+      }
+
+      if (type === 'all' || type === 'BROADCAST') {
+        broadcasts = await prisma.broadcast.findMany({
+          where,
+          include: { advertiser: selectUser },
+          orderBy: { createdAt: 'desc' },
+          take: type === 'BROADCAST' ? take : 100,
+          skip: type === 'BROADCAST' ? skip : 0
+        });
+      }
+
+      // Normalize
+      let campaigns = [
+        ...ads.map(ad => ({ 
+          ...ad, 
+          campaignType: 'AD' 
+        })),
+        ...broadcasts.map(b => ({ 
+          ...b, 
+          campaignType: 'BROADCAST',
+          targetImpressions: b.targetCount,
+          deliveredImpressions: b.sentCount,
+          ctr: b.sentCount > 0 ? parseFloat(((b.clickCount / b.sentCount) * 100).toFixed(2)) : 0
+        }))
+      ];
+
+      // Sort by date
+      campaigns.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+
+      // Slice if mixed
+      if (type === 'all') {
+        campaigns = campaigns.slice(0, take);
+      }
+
+      const totalAds = (type === 'all' || type === 'AD') ? await prisma.ad.count({ where }) : 0;
+      const totalBroadcasts = (type === 'all' || type === 'BROADCAST') ? await prisma.broadcast.count({ where }) : 0;
+
+      response.paginated(res, campaigns, {
+        page: Math.floor(offset / limit) + 1,
+        limit: take,
+        total: totalAds + totalBroadcasts,
       });
     } catch (error) {
       next(error);
@@ -389,6 +481,38 @@ router.post(
     try {
       const bot = await moderationService.rejectBot(req.params.id, req.userId, req.body.reason);
       response.success(res, { bot }, 'Bot rejected');
+    } catch (error) {
+      next(error);
+    }
+  }
+);
+
+/**
+ * POST /api/v1/admin/moderation/bots/:id/integration-mode
+ * Change bot integration mode (MANUAL/AUTO)
+ */
+router.post(
+  '/moderation/bots/:id/integration-mode',
+  requireModerator,
+  validate([
+    param('id').isString(),
+    body('integrationMode').isIn(['MANUAL', 'AUTO']).withMessage('Invalid integration mode'),
+  ]),
+  async (req, res, next) => {
+    try {
+      const bot = await prisma.bot.update({
+        where: { id: req.params.id },
+        data: { integrationMode: req.body.integrationMode },
+      });
+
+      // Sync with Auto Bot Manager
+      if (bot.integrationMode === 'AUTO' && bot.status === 'ACTIVE' && !bot.isPaused) {
+        autoBotManager.startBot(bot);
+      } else {
+        autoBotManager.stopBot(bot.id);
+      }
+
+      response.success(res, { bot }, `Bot integration mode updated to ${req.body.integrationMode}`);
     } catch (error) {
       next(error);
     }
@@ -1247,6 +1371,147 @@ router.post(
     try {
       const broadcast = await broadcastService.requestBroadcastEdit(req.params.id, req.userId, req.body.feedback);
       response.success(res, { broadcast }, 'Edit requested');
+    } catch (error) {
+      next(error);
+    }
+  }
+);
+
+
+// ==================== LIVE UPDATES ====================
+/**
+ * GET /api/v1/admin/live-updates
+ * Fetches the latest global activity (Ads, Bots, Users, Broadcasts, Withdrawals)
+ */
+router.get(
+  '/live-updates',
+  requireAdmin,
+  async (req, res, next) => {
+    try {
+      const { limit = 50 } = req.query;
+      const takeLimit = parseInt(limit);
+
+      // Fetch parallel latest records
+      const [ads, bots, users, broadcasts, withdrawals, transactions, auditLogs] = await Promise.all([
+        prisma.ad.findMany({
+          take: takeLimit,
+          orderBy: { createdAt: 'desc' },
+          include: { advertiser: { select: { firstName: true, username: true } } }
+        }),
+        prisma.bot.findMany({
+          take: takeLimit,
+          orderBy: { createdAt: 'desc' },
+          include: { owner: { select: { firstName: true, username: true } } }
+        }),
+        prisma.user.findMany({
+          take: takeLimit,
+          orderBy: { createdAt: 'desc' },
+        }),
+        prisma.broadcast.findMany({
+          take: takeLimit,
+          orderBy: { createdAt: 'desc' },
+          include: { advertiser: { select: { firstName: true, username: true } } }
+        }),
+        prisma.withdrawRequest.findMany({
+          take: takeLimit,
+          orderBy: { createdAt: 'desc' },
+          include: { user: { select: { firstName: true, username: true } } }
+        }),
+        prisma.transaction.findMany({
+          where: { type: 'DEPOSIT', status: 'SUCCESS' },
+          take: takeLimit,
+          orderBy: { createdAt: 'desc' },
+          include: { user: { select: { firstName: true, username: true } } }
+        }),
+        prisma.auditLog.findMany({
+          take: takeLimit,
+          orderBy: { createdAt: 'desc' },
+          include: { user: { select: { firstName: true, username: true } } }
+        }),
+      ]);
+
+      // Normalize into a single feed
+      const feed = [
+        ...ads.map(ad => ({
+          id: ad.id,
+          type: 'AD',
+          action: ad.status === 'PENDING_REVIEW' ? 'NEW_AD' : 'AD_UPDATE',
+          status: ad.status,
+          title: ad.title,
+          user: ad.advertiser?.firstName || ad.advertiser?.username || 'User',
+          date: ad.createdAt,
+          details: ad.status === 'PENDING_REVIEW' 
+            ? `yangi reklama yaratdi: "${ad.title}"` 
+            : `reklama holatini o'zgartirdi: "${ad.title}" (${ad.status})`
+        })),
+        ...bots.map(bot => ({
+          id: bot.id,
+          type: 'BOT',
+          action: bot.status === 'PENDING' ? 'NEW_BOT' : 'BOT_UPDATE',
+          status: bot.status,
+          title: bot.firstName,
+          user: bot.owner?.firstName || bot.owner?.username || 'User',
+          date: bot.createdAt,
+          details: bot.status === 'PENDING' 
+            ? `yangi bot qo'shdi: @${bot.username}` 
+            : `bot sozlamalarini yangiladi: @${bot.username}`
+        })),
+        ...users.map(u => ({
+          id: u.id,
+          type: 'USER',
+          action: 'NEW_USER',
+          status: u.isActive ? 'ACTIVE' : 'INACTIVE',
+          title: u.firstName || u.telegramId,
+          user: u.username ? `@${u.username}` : u.telegramId,
+          date: u.createdAt,
+          details: `platformaga qo'shildi (ID: ${u.telegramId})`
+        })),
+        ...broadcasts.map(b => ({
+          id: b.id,
+          type: 'BROADCAST',
+          action: b.status === 'DRAFT' ? 'NEW_BROADCAST' : 'BROADCAST_UPDATE',
+          status: b.status,
+          title: 'Broadcast',
+          user: b.advertiser?.firstName || b.advertiser?.username || 'User',
+          date: b.createdAt,
+          details: `rassilka yaratdi (${b.status})`
+        })),
+        ...withdrawals.map(w => ({
+          id: w.id,
+          type: 'WITHDRAWAL',
+          action: 'WITHDRAW_REQUEST',
+          status: w.status,
+          title: 'Withdrawal',
+          user: w.user?.firstName || w.user?.username || 'User',
+          date: w.createdAt,
+          details: `${parseFloat(w.amount)} ${w.coin || 'USDT'} yechib olish so'rovini yubordi`
+        })),
+        ...transactions.map(tx => ({
+          id: tx.id,
+          type: 'PAYMENT',
+          action: 'DEPOSIT',
+          status: tx.status,
+          title: 'To\'lov',
+          user: tx.user?.firstName || tx.user?.username || 'User',
+          date: tx.createdAt,
+          details: `hisobini ${parseFloat(tx.amount)} USD ga to'ldirdi (${tx.provider})`
+        })),
+        ...auditLogs.map(log => ({
+          id: log.id,
+          type: 'ADMIN',
+          action: log.action,
+          status: 'LOGGED',
+          title: log.entityType,
+          user: log.user?.firstName || log.user?.username || 'Admin',
+          date: log.createdAt,
+          details: `${log.action.toLowerCase().replace(/_/g, ' ')} amalini bajardi: ${log.entityType}`
+        })),
+      ];
+
+      // Sort globally by date descending
+      feed.sort((a, b) => new Date(b.date) - new Date(a.date));
+
+      response.success(res, { updates: feed.slice(0, takeLimit) });
     } catch (error) {
       next(error);
     }

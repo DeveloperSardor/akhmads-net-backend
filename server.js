@@ -5,6 +5,8 @@ import telegramBotService from './src/services/telegram/telegramBotService.js';
 import storageClient from './src/config/s3.js';
 import { initCronJobs } from './src/jobs/cronJobs.js';
 import { seedInitialData } from './src/jobs/seedData.js';
+import autoBotManager from './src/services/bot/autoBotManager.js';
+import socketService from './src/services/socket/socketService.js';
 import logger from './src/utils/logger.js';
 
 const PORT = process.env.PORT || 3000;
@@ -63,9 +65,20 @@ async function startServer() {
     } catch (error) {
       logger.warn('⚠️ Cron jobs failed to initialize:', error.message);
     }
+    
+    // 6. Initialize Auto Bot Manager
+    try {
+      await autoBotManager.init();
+      logger.info('✅ Auto Bot Manager initialized');
+    } catch (error) {
+      logger.error('❌ Auto Bot Manager failed to initialize:', error.message);
+    }
 
     // 6. Start HTTP server - THIS IS CRITICAL!
     server = app.listen(PORT, '0.0.0.0', () => {
+      // 7. Initialize Socket.io after server started
+      socketService.init(server);
+
       logger.info(`
 ╔════════════════════════════════════════╗
 ║   🚀 AKHMADS.NET API Server Started   ║
@@ -118,6 +131,14 @@ async function gracefulShutdown(signal) {
           logger.info('Telegram bot stopped');
         } catch (error) {
           logger.warn('Telegram bot stop error:', error.message);
+        }
+
+        // Stop Auto Bot Manager
+        try {
+          await autoBotManager.stopAll();
+          logger.info('Auto Bot Manager stopped');
+        } catch (error) {
+          logger.warn('Auto Bot Manager stop error:', error.message);
         }
 
         // Disconnect database

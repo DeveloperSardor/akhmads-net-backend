@@ -7,6 +7,7 @@ import { NotFoundError, InsufficientFundsError, ValidationError } from '../../ut
 import encryption from '../../utils/encryption.js';
 import telegramAPI from '../../utils/telegram-api.js';
 import telegramPreviewService from '../telegram/telegramPreviewService.js';
+import userNotificationService from '../telegram/userNotificationService.js';
 
 /**
  * Ad Service
@@ -228,8 +229,8 @@ class AdService {
 
       logger.info(`✅ Ad approved: ${adId}, status=${newStatus}`);
 
-      // TODO: Send notification to advertiser
-      // await notificationService.send(ad.advertiserId, 'AD_APPROVED', { adId, title: ad.title });
+      // ✅ Send notification to advertiser via Telegram Bot
+      await userNotificationService.notifyAdApproved(ad.advertiser, ad);
 
       return updated;
     } catch (error) {
@@ -273,10 +274,10 @@ class AdService {
         },
       });
 
-      logger.info(`❌ Ad rejected: ${adId}, reason: ${reason}`);
+      logger.info(`Ad rejected: ${adId}, reason=${reason}`);
 
-      // TODO: Send notification to advertiser
-      // await notificationService.send(ad.advertiserId, 'AD_REJECTED', { adId, title: ad.title, reason });
+      // ✅ Send notification to advertiser via Telegram Bot
+      await userNotificationService.notifyAdRejected(ad.advertiser, ad, reason);
 
       return updated;
     } catch (error) {

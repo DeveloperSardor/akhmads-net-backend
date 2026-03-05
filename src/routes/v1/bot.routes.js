@@ -12,9 +12,17 @@ import redis from "../../config/redis.js";
 import axios from "axios";
 import adminNotificationService from "../../services/telegram/adminNotificationService.js";
 import detailedStatsService from "../../services/admin/detailedStatsService.js";
-import broadcastService from "../../services/admin/broadcastService.js"; // Added broadcastService
+import broadcastService from "../../services/admin/broadcastService.js";
+import multer from "multer";
 
 const router = Router();
+
+const upload = multer({
+  storage: multer.memoryStorage(),
+  limits: {
+    fileSize: 10 * 1024 * 1024, // 10MB list
+  },
+});
 
 /**
  * @route GET /api/v1/bots/avatar/:username
@@ -234,6 +242,7 @@ router.post(
     body("category").isString().notEmpty(),
     body("language").optional().isIn(["uz", "ru", "en"]),
     body("monetized").optional().isBoolean(),
+    body("integrationMode").optional().isIn(["MANUAL", "AUTO"]),
   ]),
   async (req, res, next) => {
     try {
@@ -345,12 +354,18 @@ router.put(
     param("id").isString(),
     body("shortDescription").optional().isString().isLength({ max: 500 }),
     body("category").optional().isString(),
-    body("language").optional().isIn(["uz", "ru", "en"]),
+    body("language").optional().isIn(["uz", "ru", "en", "tr", "ar", "de", "fr", "es", "it", "pt", "hi", "zh", "ja", "ko", "uk", "kk", "az", "fa", "id", "ms", "nl", "pl", "ro", "cs", "sv", "th", "vi"]),
     body("postFilter").optional().isIn(["all", "not_mine", "only_mine"]),
     body("allowedCategories").optional().isArray(),
     body("blockedCategories").optional().isArray(),
     body("frequencyMinutes").optional().isInt({ min: 0, max: 10080 }),
     body("monetized").optional().isBoolean(),
+    body("integrationMode").optional().isIn(["MANUAL", "AUTO"]),
+    body("pdpEnabled").optional().isBoolean(),
+    body("pokazEnabled").optional().isBoolean(),
+    body("autoAcceptAds").optional().isBoolean(),
+    body("pricePerClick").optional().isFloat({ min: 0.0001 }),
+    body("pricePerPokaz").optional().isFloat({ min: 0.0001 }),
   ]),
   async (req, res, next) => {
     try {
@@ -606,6 +621,135 @@ router.get(
 
       const data = await detailedStatsService.getExportData(req.params.id, req.query);
       response.success(res, data, "Export data generated");
+    } catch (error) {
+      next(error);
+    }
+  }
+);
+
+/**
+ * POST /api/v1/bots/:id/upload-users
+ * Upload bulk user IDs (supports .txt or .csv)
+ */
+router.post(
+  "/:id/upload-users",
+  requireBotOwner,
+  upload.single("file"),
+  validate([param("id").isString()]),
+  async (req, res, next) => {
+    try {
+      if (!req.file) {
+        return response.error(res, "No file uploaded", 400);
+      }
+
+      // Read file content
+      const content = req.file.buffer.toString("utf-8");
+      
+      // Extract numbers (Telegram User IDs)
+      // Supports newline, comma, semicolon separated
+      const userIds = content
+        .split(/[\n,;\s]+/)
+        .map(id => id.trim())
+        .filter(id => id.length > 0 && /^\d+$/.test(id))
+        .map(id => parseInt(id));
+
+      if (userIds.length === 0) {
+        return response.error(res, "No valid user IDs found in file", 400);
+      }
+
+      const result = await botService.uploadUsers(
+        req.params.id,
+        req.userId,
+        userIds
+      );
+
+      response.success(res, result, "User list processed successfully");
+    } catch (error) {
+      next(error);
+    }
+  }
+);
+
+/**
+ * GET /api/v1/bots/:id/broadcast-draft
+ * Fetch draft previously sent to Bot
+ */
+router.get(
+  "/:id/broadcast-draft",
+  requireBotOwner,
+  async (req, res, next) => {
+    try {
+      const draft = await redis.get(`bcast_draft:${req.params.id}`);
+      if (!draft) {
+        return response.error(res, "Broadcast draft not found. Please send post to bot first.", 404);
+      }
+      response.success(res, JSON.parse(draft));
+    } catch (error) {
+      next(error);
+    }
+  }
+);
+
+// ==================== BROADCAST MODERATION (BOT OWNER) ====================
+
+/**
+ * GET /api/v1/bots/broadcasts/pending
+ * Get broadcasts awaiting bot owner approval
+ */
+router.get(
+  "/broadcasts/pending",
+  requireBotOwner,
+  async (req, res, next) => {
+    try {
+      const broadcasts = await prisma.broadcast.findMany({
+        where: {
+          bot: { ownerId: req.userId },
+          status: 'PENDING_BOT_OWNER'
+        },
+        include: {
+          bot: { select: { username: true, id: true } },
+          advertiser: { select: { firstName: true, username: true } }
+        },
+        orderBy: { createdAt: 'desc' }
+      });
+      response.success(res, { broadcasts });
+    } catch (error) {
+      next(error);
+    }
+  }
+);
+
+/**
+ * POST /api/v1/bots/broadcasts/:id/approve
+ */
+router.post(
+  "/broadcasts/:id/approve",
+  requireBotOwner,
+  validate([param("id").isString()]),
+  async (req, res, next) => {
+    try {
+      const broadcast = await broadcastService.botOwnerApproveBroadcast(req.params.id, req.userId);
+      response.success(res, { broadcast }, "Broadcast approved by bot owner");
+    } catch (error) {
+      next(error);
+    }
+  }
+);
+
+/**
+ * POST /api/v1/bots/broadcasts/:id/reject
+ */
+router.post(
+  "/broadcasts/:id/reject",
+  requireBotOwner,
+  validate([
+    param("id").isString(),
+    body("reason").optional().isString()
+  ]),
+  async (req, res, next) => {
+    try {
+      const broadcast = await broadcastService.botOwnerRejectBroadcast(req.params.id, req.userId, req.body.reason);
+      response.success(res, { broadcast }, "Broadcast rejected by bot owner");
     } catch (error) {
       next(error);
     }

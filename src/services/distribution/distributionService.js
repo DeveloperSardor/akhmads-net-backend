@@ -1,4 +1,3 @@
-// src/services/distribution/distributionService.js
 import prisma from '../../config/database.js';
 import encryption from '../../utils/encryption.js';
 import telegramAPI from '../../utils/telegram-api.js';
@@ -7,6 +6,7 @@ import logger from '../../utils/logger.js';
 import walletService from '../wallet/walletService.js';
 import redis from '../../config/redis.js';
 import { MINIMUM_FREQUENCY_MINUTES, MAX_IMPRESSIONS_PER_BOT_HOUR } from '../../config/constants.js';
+import socketService from '../socket/socketService.js';
 
 /**
  * Distribution Service
@@ -213,6 +213,8 @@ class DistributionService {
 
         // Record impression (pass botToken for Telegram user info lookup)
         await this.recordImpression(ad.id, botId, telegramUserId, sentMessage.message_id, userInfo, userLanguageCode, botToken);
+ 
+        socketService.terminalLog(`Ad delivered: ${ad.title || ad.id} via @${bot.username} to ${telegramUserId}`, 'ad');
 
         return { success: true, code: 1 };
       } catch (error) {

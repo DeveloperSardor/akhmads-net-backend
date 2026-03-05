@@ -175,6 +175,31 @@ class TelegramAuthService {
         },
       });
 
+      // 2FA check
+      if (user.twoFactorEnabled && user.twoFactorSecret) {
+        const twoFaToken = nanoid(32);
+        // Store pre-auth user data in Redis
+        await redis.set(
+          `pre_auth_2fa:${twoFaToken}`,
+          JSON.stringify({ userId: user.id, telegramId }),
+          300 // 5 minutes
+        );
+
+        logger.info(`2FA required for user: ${user.id}`);
+        return {
+          requires2fa: true,
+          twoFaToken,
+          user: {
+            id: user.id,
+            username: user.username,
+            firstName: user.firstName,
+            role: user.role,
+            roles: user.roles,
+            avatarUrl: user.avatarUrl
+          }
+        };
+      }
+
       // Generate JWT tokens
       const tokens = jwtUtil.generateTokenPair(user);
 
@@ -275,6 +300,30 @@ class TelegramAuthService {
         data: { lastLoginAt: new Date() },
       });
 
+      // 2FA check for widget login
+      if (user.twoFactorEnabled && user.twoFactorSecret) {
+        const twoFaToken = nanoid(32);
+        await redis.set(
+          `pre_auth_2fa:${twoFaToken}`,
+          JSON.stringify({ userId: user.id, telegramId }),
+          300
+        );
+
+        logger.info(`2FA required (widget) for user: ${user.id}`);
+        return {
+          requires2fa: true,
+          twoFaToken,
+          user: {
+            id: user.id,
+            username: user.username,
+            firstName: user.firstName,
+            role: user.role,
+            roles: user.roles,
+            avatarUrl: user.avatarUrl
+          }
+        };
+      }
+
       const tokens = jwtUtil.generateTokenPair(user);
       const isAdminWidget = user.role === 'ADMIN' || (user.roles && user.roles.includes('ADMIN'));
       await redis.set(`refresh_token:${user.id}`, tokens.refreshToken, isAdminWidget ? 1 * 24 * 60 * 60 : 2 * 24 * 60 * 60);
@@ -332,6 +381,30 @@ class TelegramAuthService {
 
       if (!user) {
         throw new NotFoundError('User not found');
+      }
+
+      // 2FA check (polling login)
+      if (user.twoFactorEnabled && user.twoFactorSecret) {
+        const twoFaToken = nanoid(32);
+        await redis.set(
+          `pre_auth_2fa:${twoFaToken}`,
+          JSON.stringify({ userId: user.id, telegramId: session.telegramId }),
+          300
+        );
+
+        logger.info(`2FA required (polling) for user: ${user.id}`);
+        return {
+          requires2fa: true,
+          twoFaToken,
+          user: {
+            id: user.id,
+            username: user.username,
+            firstName: user.firstName,
+            role: user.role,
+            roles: user.roles,
+            avatarUrl: user.avatarUrl
+          }
+        };
       }
 
       // Generate tokens

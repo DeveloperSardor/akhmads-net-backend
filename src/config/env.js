@@ -40,6 +40,9 @@ const envSchema = Joi.object({
   LOG_LEVEL: Joi.string()
     .valid('error', 'warn', 'info', 'debug')
     .default('info'),
+
+  CRYPTOPAY_API_TOKEN: Joi.string().required(),
+  CRYPTOPAY_TESTNET: Joi.string().valid('true', 'false').default('false'),
 }).unknown(true); // Allow other env vars
 
 /**
