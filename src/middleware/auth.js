@@ -12,14 +12,20 @@ import logger from '../utils/logger.js';
  */
 export const authenticate = async (req, res, next) => {
   try {
-    // Extract token from header
-    const authHeader = req.headers.authorization;
-    
-    if (!authHeader || !authHeader.startsWith('Bearer ')) {
-      throw new AuthenticationError('No token provided');
+    let token = null;
+
+    if (req.cookies && req.cookies.accessToken) {
+      token = req.cookies.accessToken;
+    } else {
+      const authHeader = req.headers.authorization;
+      if (authHeader && authHeader.startsWith('Bearer ')) {
+        token = authHeader.substring(7);
+      }
     }
 
-    const token = authHeader.substring(7); // Remove "Bearer "
+    if (!token) {
+      throw new AuthenticationError('No token provided');
+    }
 
     // Verify token
     let decoded;
@@ -88,13 +94,20 @@ export const authenticate = async (req, res, next) => {
  */
 export const optionalAuthenticate = async (req, res, next) => {
   try {
-    const authHeader = req.headers.authorization;
-    
-    if (!authHeader || !authHeader.startsWith('Bearer ')) {
-      return next();
+    let token = null;
+
+    if (req.cookies && req.cookies.accessToken) {
+      token = req.cookies.accessToken;
+    } else {
+      const authHeader = req.headers.authorization;
+      if (authHeader && authHeader.startsWith('Bearer ')) {
+        token = authHeader.substring(7);
+      }
     }
 
-    const token = authHeader.substring(7);
+    if (!token) {
+      return next();
+    }
 
     try {
       const decoded = jwtUtil.verify(token);

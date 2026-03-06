@@ -12,6 +12,30 @@ import jwtUtil from '../../utils/jwt.js';
 
 const router = Router();
 
+const setTokenCookies = (res, tokens) => {
+  if (!tokens) return;
+  const cookieOptions = {
+    httpOnly: true,
+    secure: process.env.NODE_ENV === 'production',
+    sameSite: process.env.NODE_ENV === 'production' ? 'lax' : 'lax', 
+    domain: process.env.NODE_ENV === 'production' ? '.akhmads.net' : undefined,
+  };
+  
+  if (tokens.accessToken) {
+    res.cookie('accessToken', tokens.accessToken, {
+      ...cookieOptions,
+      maxAge: 1 * 60 * 60 * 1000, 
+    });
+  }
+  
+  if (tokens.refreshToken) {
+    res.cookie('refreshToken', tokens.refreshToken, {
+      ...cookieOptions,
+      maxAge: 7 * 24 * 60 * 60 * 1000, 
+    });
+  }
+};
+
 /**
  * POST /api/v1/auth/login/initiate
  * Initiate Telegram login
@@ -43,6 +67,9 @@ router.get('/login/status/:token', async (req, res, next) => {
     const result = await telegramAuthService.checkLoginStatus(token);
 
     if (result.authorized) {
+      if (result.tokens) {
+        setTokenCookies(res, result.tokens);
+      }
       response.success(res, result, 'Login successful');
     } else if (result.expired) {
       response.error(res, 'Login session expired', 401);
@@ -60,7 +87,7 @@ router.get('/login/status/:token', async (req, res, next) => {
  */
 router.post('/refresh', async (req, res, next) => {
   try {
-    const { refreshToken } = req.body;
+    const refreshToken = req.body.refreshToken || req.cookies?.refreshToken;
 
     if (!refreshToken) {
       return response.validationError(res, [{ field: 'refreshToken', message: 'Required' }]);
@@ -68,6 +95,7 @@ router.post('/refresh', async (req, res, next) => {
 
     const tokens = await authService.refreshAccessToken(refreshToken);
 
+    setTokenCookies(res, tokens);
     response.success(res, { tokens }, 'Token refreshed');
   } catch (error) {
     next(error);
@@ -81,6 +109,16 @@ router.post('/refresh', async (req, res, next) => {
 router.post('/logout', authenticate, async (req, res, next) => {
   try {
     await authService.logout(req.userId);
+
+    const cookieOptions = {
+      httpOnly: true,
+      secure: process.env.NODE_ENV === 'production',
+      sameSite: process.env.NODE_ENV === 'production' ? 'lax' : 'lax', 
+      domain: process.env.NODE_ENV === 'production' ? '.akhmads.net' : undefined,
+    };
+
+    res.clearCookie('accessToken', cookieOptions);
+    res.clearCookie('refreshToken', cookieOptions);
 
     response.success(res, null, 'Logged out successfully');
   } catch (error) {
@@ -143,6 +181,10 @@ router.post('/telegram-widget', async (req, res, next) => {
       photo_url,
       language_code: 'en',
     });
+
+    if (result.tokens) {
+      setTokenCookies(res, result.tokens);
+    }
 
     response.success(res, result, 'Login successful');
   } catch (error) {
@@ -218,6 +260,7 @@ router.post('/2fa/verify', async (req, res, next) => {
     // Clean up
     await redis.del(`pre_auth_2fa:${twoFaToken}`);
 
+    setTokenCookies(res, tokens);
     response.success(res, {
       user: {
         id: user.id,

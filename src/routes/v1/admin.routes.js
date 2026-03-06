@@ -1378,6 +1378,38 @@ router.post(
 );
 
 
+/**
+ * POST /api/v1/admin/broadcasts/:id/pause
+ */
+router.post(
+  '/broadcasts/:id/pause',
+  requireAdmin,
+  async (req, res, next) => {
+    try {
+      const broadcast = await broadcastService.pauseBroadcast(req.params.id, req.userId, true);
+      response.success(res, { broadcast }, 'Broadcast paused by admin');
+    } catch (error) {
+      next(error);
+    }
+  }
+);
+
+/**
+ * POST /api/v1/admin/broadcasts/:id/resume
+ */
+router.post(
+  '/broadcasts/:id/resume',
+  requireAdmin,
+  async (req, res, next) => {
+    try {
+      const broadcast = await broadcastService.resumeBroadcast(req.params.id, req.userId, true);
+      response.success(res, { broadcast }, 'Broadcast resumed by admin');
+    } catch (error) {
+      next(error);
+    }
+  }
+);
+
 // ==================== LIVE UPDATES ====================
 /**
  * GET /api/v1/admin/live-updates

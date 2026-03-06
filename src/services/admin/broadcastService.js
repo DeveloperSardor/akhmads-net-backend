@@ -191,12 +191,12 @@ class BroadcastService {
         include: { bot: true }
       });
 
-      if (!broadcast || broadcast.status !== 'APPROVED') return;
+      if (!broadcast || !['APPROVED', 'RUNNING'].includes(broadcast.status)) return;
 
-      // Update status to RUNNING
+      // Update status to RUNNING (handles both fresh start and resume)
       await prisma.broadcast.update({
         where: { id: broadcastId },
-        data: { status: 'RUNNING', startedAt: new Date() }
+        data: { status: 'RUNNING', startedAt: broadcast.startedAt || new Date() }
       });
 
       socketService.terminalLog(`Broadcast ${broadcastId} started! Type: ${broadcast.type}`, 'broadcast', { id: broadcastId });
@@ -212,11 +212,17 @@ class BroadcastService {
       logger.info(`Starting broadcast ${broadcastId} (${broadcast.type}) to ${recipients.length} users`);
 
       for (const recipient of recipients) {
+        // Check if broadcast was paused mid-run
+        const currentState = await prisma.broadcast.findUnique({
+          where: { id: broadcastId },
+          select: { status: true }
+        });
+        if (currentState?.status === 'PAUSED') {
+          logger.info(`Broadcast ${broadcastId} paused mid-run. Stopping loop.`);
+          return;
+        }
+
         try {
-          // Check if it's PDP and target clicks already reached?
-          // Actually for PDP we send to EVERYONE and then count clicks.
-          // The advertiser paid for X clicks.
-          
           // Send message
           await this.sendTGMessage(botToken, recipient.botUser.telegramUserId, broadcast);
 
@@ -489,6 +495,42 @@ class BroadcastService {
     } catch (e) {
       logger.warn('Failed to notify advertiser on broadcast edit request:', e.message);
     }
+
+    return await prisma.broadcast.findUnique({ where: { id: broadcastId } });
+  }
+
+  async pauseBroadcast(broadcastId, userId, isAdmin = false) {
+    const broadcast = await prisma.broadcast.findUnique({ where: { id: broadcastId }, include: { bot: true } });
+    if (!broadcast) throw new Error('Broadcast not found');
+    if (!isAdmin && broadcast.advertiserId !== userId) throw new Error('Not authorized');
+    if (broadcast.status !== 'RUNNING') throw new Error('Broadcast is not running');
+
+    await prisma.broadcast.update({
+      where: { id: broadcastId },
+      data: { status: 'PAUSED' }
+    });
+
+    socketService.terminalLog(`Broadcast ${broadcastId} PAUSED by ${isAdmin ? 'admin' : 'advertiser'}`, 'warning', { id: broadcastId });
+    return await prisma.broadcast.findUnique({ where: { id: broadcastId } });
+  }
+
+  async resumeBroadcast(broadcastId, userId, isAdmin = false) {
+    const broadcast = await prisma.broadcast.findUnique({ where: { id: broadcastId }, include: { bot: true } });
+    if (!broadcast) throw new Error('Broadcast not found');
+    if (!isAdmin && broadcast.advertiserId !== userId) throw new Error('Not authorized');
+    if (broadcast.status !== 'PAUSED') throw new Error('Broadcast is not paused');
+
+    await prisma.broadcast.update({
+      where: { id: broadcastId },
+      data: { status: 'RUNNING' }
+    });
+
+    socketService.terminalLog(`Broadcast ${broadcastId} RESUMED by ${isAdmin ? 'admin' : 'advertiser'}`, 'broadcast', { id: broadcastId });
+
+    // Continue sending remaining PENDING recipients
+    this.processBroadcast(broadcastId).catch(err => {
+      logger.error(`Broadcast resume process failed: ${broadcastId}`, err);
+    });
 
     return await prisma.broadcast.findUnique({ where: { id: broadcastId } });
   }

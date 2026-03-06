@@ -758,17 +758,12 @@ class LoginBotHandler {
       });
     }
 
-    // 2. Channel & Chat
-    keyboard.row()
-      .url(i18n.t(locale, 'channel'), 'https://t.me/akhmads_net')
-      .url(i18n.t(locale, 'chat'), 'https://t.me/akhmads_chat');
-
     // 3. Language change
     keyboard.row()
       .text(i18n.t(locale, 'change_language'), 'change_lang');
 
     const __dirname = dirname(fileURLToPath(import.meta.url));
-    const gifPath = join(__dirname, '../../../main-gif.mov');
+    const gifPath = join(__dirname, '../../../main-gif-hq.mp4');
     
     try {
       if (options.edit) {
@@ -778,7 +773,7 @@ class LoginBotHandler {
         });
       } else {
         // ✅ OPTIMIZATION: Use file_id from Redis if available
-        const cachedFileId = await redis.get('main_gif_file_id');
+        const cachedFileId = await redis.get('main_gif_hq_file_id');
         
         if (cachedFileId) {
           await ctx.replyWithAnimation(cachedFileId, {
@@ -795,7 +790,7 @@ class LoginBotHandler {
           
           // Save file_id for future use
           if (msg.animation?.file_id) {
-            await redis.set('main_gif_file_id', msg.animation.file_id);
+            await redis.set('main_gif_hq_file_id', msg.animation.file_id);
           }
         }
       }

@@ -43,8 +43,10 @@ app.use(corsErrorHandler);
 app.use(addSecurityHeaders);
 
 // ==================== BODY PARSING ====================
+import cookieParser from 'cookie-parser';
 app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true, limit: '10mb' }));
+app.use(cookieParser());
 
 
 // ==================== STATIC FILES ====================

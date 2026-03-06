@@ -357,6 +357,38 @@ router.post(
 );
 
 /**
+ * POST /api/v1/ads/broadcasts/:id/pause
+ */
+router.post(
+  "/broadcasts/:id/pause",
+  requireAdvertiser,
+  async (req, res, next) => {
+    try {
+      const broadcast = await broadcastService.pauseBroadcast(req.params.id, req.userId, false);
+      response.success(res, { broadcast }, "Broadcast paused");
+    } catch (error) {
+      next(error);
+    }
+  }
+);
+
+/**
+ * POST /api/v1/ads/broadcasts/:id/resume
+ */
+router.post(
+  "/broadcasts/:id/resume",
+  requireAdvertiser,
+  async (req, res, next) => {
+    try {
+      const broadcast = await broadcastService.resumeBroadcast(req.params.id, req.userId, false);
+      response.success(res, { broadcast }, "Broadcast resumed");
+    } catch (error) {
+      next(error);
+    }
+  }
+);
+
+/**
  * GET /api/v1/ads/:id
  * Get ad details
  */
