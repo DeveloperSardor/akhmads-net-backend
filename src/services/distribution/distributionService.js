@@ -296,14 +296,32 @@ class DistributionService {
    */
   async recordImpression(adId, botId, telegramUserId, messageId, userInfo = {}, languageCode = null, botToken = null) {
     try {
+      // Fetch ad with advertiser and bot with owner to check roles
       const ad = await prisma.ad.findUnique({
         where: { id: adId },
+        include: { advertiser: true }
       });
 
+      const bot = await prisma.bot.findUnique({
+        where: { id: botId },
+        include: { owner: true }
+      });
+
+      if (!ad || !bot) return;
+
+      // 1. Skip if viewing user is the bot owner (for testing)
+      if (bot.owner.telegramId === telegramUserId.toString()) {
+        logger.info(`Test mode: Skipping impression record for bot owner (${telegramUserId})`);
+        return;
+      }
+
+      // Check if advertiser is Superadmin
+      const isSuperAdmin = ad.advertiser.role === 'SUPER_ADMIN' || ad.advertiser.roles?.includes('SUPER_ADMIN');
+
       // Calculate revenue (70/30 split)
-      const revenuePerImpression = parseFloat(ad.finalCpm) / 1000;
-      const platformFee = revenuePerImpression * 0.30; // 30% platform
-      const botOwnerEarns = revenuePerImpression * 0.70; // 70% bot owner
+      const revenuePerImpression = isSuperAdmin ? 0 : (parseFloat(ad.finalCpm) / 1000);
+      const platformFee = isSuperAdmin ? 0 : (revenuePerImpression * 0.30); // 30% platform
+      const botOwnerEarns = isSuperAdmin ? 0 : (revenuePerImpression * 0.70); // 70% bot owner
 
       // Look up existing BotUser first to enrich user data (fallback for missing fields)
       let existingBotUser = null;
@@ -393,23 +411,25 @@ class DistributionService {
         }
       }
 
-      // Update ad stats
+      // Update ad stats (only if not Superadmin)
       await prisma.ad.update({
         where: { id: adId },
         data: {
           deliveredImpressions: { increment: 1 },
-          remainingBudget: { decrement: revenuePerImpression },
+          remainingBudget: isSuperAdmin ? undefined : { decrement: revenuePerImpression },
         },
       });
 
-      // Update bot earnings
-      await prisma.bot.update({
-        where: { id: botId },
-        data: {
-          totalEarnings: { increment: botOwnerEarns },
-          pendingEarnings: { increment: botOwnerEarns },
-        },
-      });
+      // Update bot earnings (only if not Superadmin)
+      if (!isSuperAdmin) {
+        await prisma.bot.update({
+          where: { id: botId },
+          data: {
+            totalEarnings: { increment: botOwnerEarns },
+            pendingEarnings: { increment: botOwnerEarns },
+          },
+        });
+      }
 
       // Check if ad completed
       const updatedAd = await prisma.ad.findUnique({
@@ -418,7 +438,7 @@ class DistributionService {
 
       if (
         updatedAd.deliveredImpressions >= updatedAd.targetImpressions ||
-        updatedAd.remainingBudget <= 0
+        (!isSuperAdmin && updatedAd.remainingBudget <= 0)
       ) {
         await prisma.ad.update({
           where: { id: adId },
@@ -433,14 +453,15 @@ class DistributionService {
 
       logger.info(`Impression recorded: ad=${adId}, bot=${botId}, user=${telegramUserId}`);
 
-      // Credit bot owner's wallet
-      try {
-        const bot = await prisma.bot.findUnique({ where: { id: botId } });
-        if (bot && bot.ownerId) {
-          await walletService.credit(bot.ownerId, botOwnerEarns, 'EARNINGS', adId);
+      // Credit bot owner's wallet (only if not Superadmin)
+      if (!isSuperAdmin) {
+        try {
+          if (bot && bot.ownerId) {
+            await walletService.credit(bot.ownerId, botOwnerEarns, 'EARNINGS', adId);
+          }
+        } catch (creditErr) {
+          logger.error('Failed to credit bot owner wallet:', creditErr);
         }
-      } catch (creditErr) {
-        logger.error('Failed to credit bot owner wallet:', creditErr);
       }
     } catch (error) {
       logger.error('Record impression failed:', error);

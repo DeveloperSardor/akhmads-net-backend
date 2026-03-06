@@ -150,19 +150,25 @@ class AdService {
         throw new ValidationError('Only draft ads can be submitted');
       }
 
-      // Check wallet balance
-      const wallet = await walletService.getWallet(advertiserId);
-      const available = parseFloat(wallet.available);
-      const cost = parseFloat(ad.totalCost);
+      // Check if advertiser is Superadmin to bypass payment
+      const user = await prisma.user.findUnique({ where: { id: advertiserId } });
+      const isSuperAdmin = user?.role === 'SUPER_ADMIN' || user?.roles?.includes('SUPER_ADMIN');
 
-      if (available < cost) {
-        throw new InsufficientFundsError(
-          `Insufficient balance. Available: $${available.toFixed(2)}, Required: $${cost.toFixed(2)}`
-        );
+      if (!isSuperAdmin) {
+        // Check wallet balance
+        const wallet = await walletService.getWallet(advertiserId);
+        const available = parseFloat(wallet.available);
+        const cost = parseFloat(ad.totalCost);
+
+        if (available < cost) {
+          throw new InsufficientFundsError(
+            `Insufficient balance. Available: $${available.toFixed(2)}, Required: $${cost.toFixed(2)}`
+          );
+        }
+
+        // Reserve funds
+        await walletService.reserveForAd(advertiserId, adId, cost);
       }
-
-      // Reserve funds
-      await walletService.reserveForAd(advertiserId, adId, cost);
 
       // Update ad status to PENDING_REVIEW and clear rejection reason
       const updated = await prisma.ad.update({
@@ -208,10 +214,13 @@ class AdService {
         throw new ValidationError('Only pending ads can be approved');
       }
 
-      const cost = parseFloat(ad.totalCost);
+      const isSuperAdmin = ad.advertiser.role === 'SUPER_ADMIN' || ad.advertiser.roles?.includes('SUPER_ADMIN');
 
-      // Confirm reserved funds (reserved → totalSpent)
-      await walletService.confirmAdReserve(ad.advertiserId, adId, cost);
+      if (!isSuperAdmin) {
+        const cost = parseFloat(ad.totalCost);
+        // Confirm reserved funds (reserved → totalSpent)
+        await walletService.confirmAdReserve(ad.advertiserId, adId, cost);
+      }
 
       // Update ad status
       const newStatus = scheduledStart ? 'SCHEDULED' : 'RUNNING';
@@ -258,10 +267,13 @@ class AdService {
         throw new ValidationError('Only pending ads can be rejected');
       }
 
-      const cost = parseFloat(ad.totalCost);
+      const isSuperAdmin = ad.advertiser.role === 'SUPER_ADMIN' || ad.advertiser.roles?.includes('SUPER_ADMIN');
 
-      // Refund reserved funds (reserved → available)
-      await walletService.refundAdReserve(ad.advertiserId, adId, cost);
+      if (!isSuperAdmin) {
+        const cost = parseFloat(ad.totalCost);
+        // Refund reserved funds (reserved → available)
+        await walletService.refundAdReserve(ad.advertiserId, adId, cost);
+      }
 
       // Update ad status
       const updated = await prisma.ad.update({
@@ -498,9 +510,14 @@ class AdService {
 
       // Refund if in PENDING_REVIEW (funds still reserved)
       if (ad.status === 'PENDING_REVIEW') {
-        const cost = parseFloat(ad.totalCost);
-        await walletService.refundAdReserve(ad.advertiserId, adId, cost);
-        logger.info(`💰 Refunded $${cost} for deleted ad ${adId}`);
+        const advertiser = await prisma.user.findUnique({ where: { id: ad.advertiserId } });
+        const isSuperAdmin = advertiser?.role === 'SUPER_ADMIN' || advertiser?.roles?.includes('SUPER_ADMIN');
+        
+        if (!isSuperAdmin) {
+          const cost = parseFloat(ad.totalCost);
+          await walletService.refundAdReserve(ad.advertiserId, adId, cost);
+          logger.info(`💰 Refunded $${cost} for deleted ad ${adId}`);
+        }
       }
 
       await prisma.ad.delete({
