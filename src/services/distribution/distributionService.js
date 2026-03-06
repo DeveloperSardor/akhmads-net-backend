@@ -74,6 +74,7 @@ class DistributionService {
       // - Teng CPM'larda deliveredImpressions ASC: kamroq ko'rsatilgan reklama avval chiqadi (fair rotation)
       const ads = await prisma.ad.findMany({
         where,
+        include: { advertiser: true },
         orderBy: [
           { finalCpm: 'desc' },
           { deliveredImpressions: 'asc' },
@@ -82,14 +83,29 @@ class DistributionService {
         take: 50,
       });
 
+      // Get user role once to optimize
+      const viewingUser = await prisma.user.findUnique({
+        where: { telegramId: telegramUserId.toString() },
+        select: { role: true, roles: true }
+      });
+      const isBotOwner = viewingUser?.role === 'BOT_OWNER' || viewingUser?.roles?.includes('BOT_OWNER');
+
       for (const ad of ads) {
+        // 1. Check if advertiser is Superadmin
+        const isSuperAdminAd = ad.advertiser.role === 'SUPER_ADMIN' || ad.advertiser.roles?.includes('SUPER_ADMIN');
+
+        // 2. Filter: If it's a Superadmin ad, don't show it to Bot Owners (User's request)
+        if (isSuperAdminAd && isBotOwner) {
+          continue;
+        }
+
         // deliveredImpressions < targetImpressions tekshiruvi
         if (ad.deliveredImpressions >= ad.targetImpressions) {
           continue;
         }
 
         // Excluded userlar
-        const excludedUsers = ad.excludedUserIds || [];
+        const excludedUsers = ad.excludedUserIds ? JSON.parse(ad.excludedUserIds) : [];
         if (excludedUsers.includes(telegramUserId)) {
           continue;
         }
@@ -212,9 +228,11 @@ class DistributionService {
         }
 
         // Record impression (pass botToken for Telegram user info lookup)
-        await this.recordImpression(ad.id, botId, telegramUserId, sentMessage.message_id, userInfo, userLanguageCode, botToken);
+        const recordResult = await this.recordImpression(ad.id, botId, telegramUserId, sentMessage.message_id, userInfo, userLanguageCode, botToken);
  
-        socketService.terminalLog(`Ad delivered: ${ad.title || ad.id} via @${bot.username} to ${telegramUserId}`, 'ad');
+        if (recordResult && recordResult.success && !recordResult.skipped) {
+          socketService.terminalLog(`Ad delivered: ${ad.title || ad.id} via @${bot.username} to ${telegramUserId}`, 'ad');
+        }
 
         return { success: true, code: 1 };
       } catch (error) {
@@ -307,12 +325,12 @@ class DistributionService {
         include: { owner: true }
       });
 
-      if (!ad || !bot) return;
+      if (!ad || !bot) return { success: false };
 
       // 1. Skip if viewing user is the bot owner (for testing)
       if (bot.owner.telegramId === telegramUserId.toString()) {
         logger.info(`Test mode: Skipping impression record for bot owner (${telegramUserId})`);
-        return;
+        return { success: true, skipped: true };
       }
 
       // Check if advertiser is Superadmin
@@ -463,6 +481,8 @@ class DistributionService {
           logger.error('Failed to credit bot owner wallet:', creditErr);
         }
       }
+
+      return { success: true, skipped: false };
     } catch (error) {
       logger.error('Record impression failed:', error);
       throw error;
