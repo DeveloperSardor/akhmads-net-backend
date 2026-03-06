@@ -180,7 +180,11 @@ process.on('uncaughtException', (error) => {
 
 process.on('unhandledRejection', (reason, promise) => {
   logger.error('💥 Unhandled Rejection at:', promise, 'reason:', reason);
-  gracefulShutdown('unhandledRejection');
+  // Don't shut down the whole server for unhandled rejections in production
+  // as it might be a single bot error or intermittent issue.
+  if (process.env.NODE_ENV !== 'production') {
+    gracefulShutdown('unhandledRejection');
+  }
 });
 
 // Start server
