@@ -312,6 +312,7 @@ model Bot {
   monetized Boolean   @default(false)
   isPaused  Boolean   @default(false) @map("is_paused")
   status    BotStatus @default(PENDING)
+  integrationMode String @default("MANUAL") @map("integration_mode")
 
   postFilter        String @default("all") @map("post_filter")
   allowedCategories Json?  @map("allowed_categories")
