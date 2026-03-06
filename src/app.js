@@ -42,6 +42,32 @@ app.use(getCorsMiddleware());
 app.use(corsErrorHandler);
 app.use(addSecurityHeaders);
 
+// ==================== GLOBAL DATA CLEANUP ====================
+// Professional interceptor to ensure NO response ever contains the hardcoded server IP
+app.use((req, res, next) => {
+  const originalJson = res.json;
+  const publicIp = '176.222.52.47';
+  const domain = 'akhmads.net';
+
+  res.json = function(data) {
+    if (data && typeof data === 'object') {
+      try {
+        // Deep string replacement in the entire JSON object
+        const stringified = JSON.stringify(data);
+        if (stringified.includes(publicIp)) {
+          const cleanedString = stringified.replace(new RegExp(`http://${publicIp}`, 'g'), `https://${domain}`);
+          const cleanedData = JSON.parse(cleanedString);
+          return originalJson.call(this, cleanedData);
+        }
+      } catch (err) {
+        // Fallback to original if parsing fails
+      }
+    }
+    return originalJson.call(this, data);
+  };
+  next();
+});
+
 // ==================== BODY PARSING ====================
 import cookieParser from 'cookie-parser';
 app.use(express.json({ limit: '10mb' }));
