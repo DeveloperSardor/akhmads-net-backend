@@ -106,7 +106,10 @@ class TelegramPreviewService {
       let sentMessage;
 
       if (mediaUrl) {
-        const isLocalUrl = mediaUrl.includes('localhost') || mediaUrl.includes('127.0.0.1') || mediaUrl.includes('176.222.52.47');
+        const isLocalUrl = mediaUrl.includes('localhost') || 
+                          mediaUrl.includes('127.0.0.1') || 
+                          mediaUrl.includes('176.222.52.47') || 
+                          mediaUrl.includes('akhmads.net');
         let photoSource;
 
         if (isLocalUrl) {

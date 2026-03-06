@@ -84,12 +84,14 @@ router.get("/avatar/:username", async (req, res, next) => {
     // 3. Optimized: Internal redirect for storage URLs to bypass loopback issues
     let fetchUrl = targetUrl;
     const publicIp = '176.222.52.47';
+    const appUrl = process.env.APP_URL || 'https://akhmads.net';
     const cdnUrl = process.env.CDN_URL || '';
 
     // Handle internal routing for Minio/Storage
-    if (fetchUrl.includes(publicIp) || (cdnUrl && fetchUrl.includes(cdnUrl))) {
+    // We check for both hardcoded IP (legacy/local) and the configured appUrl/cdnUrl
+    if (fetchUrl.includes(publicIp) || fetchUrl.includes(appUrl.replace('https://', '').replace('http://', '')) || (cdnUrl && fetchUrl.includes(cdnUrl))) {
        // regex to match IP/storage or simply IP/
-       const storagePattern = new RegExp(`http(s)?://${publicIp}(/storage)?/`, 'i');
+       const storagePattern = new RegExp(`http(s)?://(${publicIp}|${appUrl.replace('https://', '').replace('http://', '')})(/storage)?/`, 'i');
        if (storagePattern.test(fetchUrl)) {
           // Point to internal minio container (stripping /storage prefix if present)
           fetchUrl = fetchUrl.replace(storagePattern, 'http://localhost:9000/');
