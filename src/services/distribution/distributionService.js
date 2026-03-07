@@ -263,6 +263,10 @@ class DistributionService {
           inline_keyboard: [
             processedButtons.map(btn => {
               const button = { text: btn.text, url: btn.url };
+              // Map color to Telegram button style (primary/danger/success)
+              const colorToStyle = { green: 'success', red: 'danger', blue: 'primary', purple: 'primary', orange: 'primary' };
+              const style = btn.style || colorToStyle[btn.color];
+              if (style) button.style = style;
               if (btn.icon_custom_emoji_id) button.icon_custom_emoji_id = btn.icon_custom_emoji_id;
               return button;
             }),
