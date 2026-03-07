@@ -101,6 +101,9 @@ class ResponseFormatter {
     return res.status(200).json({
       success: true,
       data,
+      total: pagination.total,
+      limit: pagination.limit,
+      page: pagination.page,
       pagination: {
         page: pagination.page,
         limit: pagination.limit,
