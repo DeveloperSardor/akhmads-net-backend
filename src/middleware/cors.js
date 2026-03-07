@@ -172,15 +172,34 @@ export const adminCors = cors({
  * Development CORS (permissive)
  * Only for development environment
  */
-export const devCors = cors({
-  origin: true, // Allow all
+const baseDevCors = cors({
+  origin: true, 
   credentials: true,
   methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS', 'HEAD'],
-  allowedHeaders: '*',
-  exposedHeaders: '*',
+  allowedHeaders: [
+    'Content-Type',
+    'Authorization',
+    'X-Requested-With',
+    'Accept',
+    'Origin',
+  ],
+  exposedHeaders: [
+    'X-Total-Count',
+    'X-Page',
+    'X-Per-Page',
+    'X-Total-Pages',
+    'X-Response-Time',
+  ],
   maxAge: 86400,
   optionsSuccessStatus: 204,
 });
+
+export const devCors = (req, res, next) => {
+  if (req.method === 'OPTIONS') {
+    logger.debug(`[CORS Preflight] Origin: ${req.headers.origin}, Method: ${req.headers['access-control-request-method']}`);
+  }
+  return baseDevCors(req, res, next);
+};
 
 /**
  * Get CORS middleware based on environment

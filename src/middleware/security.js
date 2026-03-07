@@ -11,27 +11,33 @@ import compression from 'compression';
 /**
  * Helmet - Security headers
  */
-export const helmetConfig = helmet({
-  contentSecurityPolicy: {
-    directives: {
-      defaultSrc: ["'self'"],
-      styleSrc: ["'self'", "'unsafe-inline'"],
-      scriptSrc: ["'self'"],
-      imgSrc: ["'self'", 'data:', 'https:', 'http:', 'blob:'],
+export const helmetConfig = (req, res, next) => {
+  if (process.env.NODE_ENV === 'development') {
+    return next();
+  }
+  
+  return helmet({
+    contentSecurityPolicy: {
+      directives: {
+        defaultSrc: ["'self'"],
+        styleSrc: ["'self'", "'unsafe-inline'"],
+        scriptSrc: ["'self'"],
+        imgSrc: ["'self'", 'data:', 'https:', 'http:', 'blob:'],
+      },
     },
-  },
-  hsts: {
-    maxAge: 31536000,
-    includeSubDomains: true,
-    preload: true, 
-  },
-  referrerPolicy: {
-    policy: 'strict-origin-when-cross-origin',
-  },
-  crossOriginResourcePolicy: { 
-    policy: "cross-origin" 
-  },
-});
+    hsts: {
+      maxAge: 31536000,
+      includeSubDomains: true,
+      preload: true, 
+    },
+    referrerPolicy: {
+      policy: 'strict-origin-when-cross-origin',
+    },
+    crossOriginResourcePolicy: { 
+      policy: "cross-origin" 
+    },
+  })(req, res, next);
+};
 
 /**
  * CORS Configuration
@@ -116,7 +122,9 @@ export const preventMimeSniffing = (req, res, next) => {
  */
 export const addSecurityHeaders = (req, res, next) => {
   res.setHeader('X-XSS-Protection', '1; mode=block');
-  res.setHeader('Strict-Transport-Security', 'max-age=31536000; includeSubDomains');
+  if (process.env.NODE_ENV !== 'development') {
+    res.setHeader('Strict-Transport-Security', 'max-age=31536000; includeSubDomains');
+  }
   res.setHeader('X-Permitted-Cross-Domain-Policies', 'none');
   next();
 };

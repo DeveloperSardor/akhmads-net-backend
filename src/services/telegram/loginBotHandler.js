@@ -820,11 +820,14 @@ class LoginBotHandler {
 
   /**
    * Handle login start
+   * ✅ ROBUST: Added DB fallback for codes + enhanced logging
    */
   async handleLoginStart(ctx, loginToken) {
     try {
       const token = loginToken.substring(6);
       const telegramId = ctx.from.id.toString();
+
+      logger.info(`🔍 Login attempt started. User: ${telegramId}, Token: ${token}`);
 
       // Get user for locale
       const user = await prisma.user.findUnique({ where: { telegramId } });
@@ -836,34 +839,44 @@ class LoginBotHandler {
       });
 
       if (!session) {
+        logger.warn(`❌ Login session not found in DB: ${token}`);
         await ctx.reply(i18n.t(locale, 'login_session_not_found'));
         return;
       }
 
       if (new Date() > session.expiresAt) {
+        logger.warn(`⚠️ Login session expired: ${token}`);
         await ctx.reply(i18n.t(locale, 'login_session_expired'));
         return;
       }
 
       if (session.authorized) {
+        logger.warn(`⚠️ Login session already authorized: ${token}`);
         await ctx.reply(i18n.t(locale, 'already_logged_in'));
         return;
       }
 
-      // Get codes from Redis
+      // Get codes from Redis (primary) or DB (fallback)
+      let codes = [];
       const codesJson = await redis.get(`login_codes:${token}`);
+      
+      if (codesJson) {
+        codes = JSON.parse(codesJson);
+        logger.debug(`✅ Loaded codes from Redis for ${token}`);
+      } else if (session.codes && session.codes !== '[]') {
+        codes = JSON.parse(session.codes);
+        logger.debug(`✅ Loaded codes from DB fallback for ${token}`);
+      }
 
-      if (!codesJson) {
+      if (!codes || codes.length === 0) {
+        logger.error(`❌ No codes found for session ${token} even in DB`);
         await ctx.reply(i18n.t(locale, 'codes_not_found'));
         return;
       }
 
-      const codes = JSON.parse(codesJson);
       const correctCode = session.correctCode;
 
-      console.log('🔍 Bot handler codes:', { codes, correctCode });
-
-      // Store in memory
+      // Store in memory for immediate callback handling
       this.sessions.set(telegramId, {
         loginToken: token,
         correctCode: correctCode,
@@ -879,13 +892,20 @@ class LoginBotHandler {
       });
 
       const loginText = i18n.t(locale, 'backup_login_method');
+      logger.info(`📡 Sending login keyboard to user ${telegramId}`);
 
-      await ctx.reply(loginText, { reply_markup: keyboard });
+      await ctx.reply(loginText, { 
+        parse_mode: 'HTML',
+        reply_markup: keyboard 
+      });
 
-      logger.info(`Login initiated for user ${telegramId}`);
     } catch (error) {
       logger.error('Handle login start error:', error);
-      await ctx.reply('❌ Error occurred.');
+      try {
+        await ctx.reply('❌ Xatolik yuz berdi. Iltimos qaytadan urinib ko\'ring.');
+      } catch (e) {
+        logger.error('Failed to send error reply:', e);
+      }
     }
   }
 

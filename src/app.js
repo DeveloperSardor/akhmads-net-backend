@@ -37,8 +37,8 @@ const app = express();
 app.set('trust proxy', 1);
 
 // ==================== SECURITY MIDDLEWARE ====================
-app.use(helmetConfig);
 app.use(getCorsMiddleware());
+app.use(helmetConfig);
 app.use(corsErrorHandler);
 app.use(addSecurityHeaders);
 
