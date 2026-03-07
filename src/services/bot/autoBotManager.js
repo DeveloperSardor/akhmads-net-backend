@@ -58,6 +58,8 @@ class AutoBotManager {
         try {
           const from = ctx.from;
           if (!from || from.is_bot) return;
+          
+          socketService.terminalLog(`Update received for @${botData.username} from ${from.id}`, 'bot');
 
           const { id, username, first_name, last_name, language_code } = from;
           
