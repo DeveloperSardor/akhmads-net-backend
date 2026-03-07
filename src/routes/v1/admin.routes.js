@@ -411,14 +411,15 @@ router.get(
   requireModerator,
   validate([
     query('status').optional().isString(),
+    query('search').optional().isString(),
     query('limit').optional().isInt({ min: 1, max: 100 }),
     query('offset').optional().isInt({ min: 0 }),
   ]),
   async (req, res, next) => {
     try {
-      const { status, limit = 20, offset = 0 } = req.query;
+      const { status, search, limit = 20, offset = 0 } = req.query;
       const result = await moderationService.getAllBots(
-        { status },
+        { status, search },
         parseInt(limit),
         parseInt(offset)
       );
@@ -435,16 +436,21 @@ router.get(
 );
 
 router.get(
-  '/moderation/bots',
+  "/moderation/bots",
   requireModerator,
   validate([
-    query('limit').optional().isInt({ min: 1, max: 100 }),
-    query('offset').optional().isInt({ min: 0 }),
+    query("search").optional().isString(),
+    query("limit").optional().isInt({ min: 1, max: 100 }),
+    query("offset").optional().isInt({ min: 0 }),
   ]),
   async (req, res, next) => {
     try {
-      const { limit = 20, offset = 0 } = req.query;
-      const result = await moderationService.getPendingBots(parseInt(limit), parseInt(offset));
+      const { search, limit = 20, offset = 0 } = req.query;
+      const result = await moderationService.getPendingBots(
+        { search },
+        parseInt(limit),
+        parseInt(offset)
+      );
       response.paginated(res, result.bots, {
         page: Math.floor(offset / limit) + 1,
         limit: parseInt(limit),

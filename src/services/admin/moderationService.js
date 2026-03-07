@@ -38,10 +38,18 @@ class ModerationService {
    */
   async getAllBots(filters = {}, limit = 20, offset = 0) {
     try {
-      const { status } = filters;
+      const { status, search } = filters;
 
       const where = {};
       if (status) where.status = status;
+
+      if (search) {
+        where.OR = [
+          { username: { contains: search, mode: 'insensitive' } },
+          { firstName: { contains: search, mode: 'insensitive' } },
+          { telegramBotId: { contains: search, mode: 'insensitive' } },
+        ];
+      }
 
       const bots = await prisma.bot.findMany({
         where,
@@ -92,10 +100,24 @@ class ModerationService {
   /**
    * Get pending bots
    */
-  async getPendingBots(limit = 20, offset = 0) {
+  /**
+   * Get pending bots
+   */
+  async getPendingBots(filters = {}, limit = 20, offset = 0) {
     try {
+      const { search } = filters;
+      const where = { status: "PENDING" };
+
+      if (search) {
+        where.OR = [
+          { username: { contains: search, mode: "insensitive" } },
+          { firstName: { contains: search, mode: "insensitive" } },
+          { telegramBotId: { contains: search, mode: "insensitive" } },
+        ];
+      }
+
       const bots = await prisma.bot.findMany({
-        where: { status: 'PENDING' },
+        where,
         include: {
           owner: {
             select: {
@@ -107,18 +129,16 @@ class ModerationService {
             },
           },
         },
-        orderBy: { createdAt: 'asc' },
+        orderBy: { createdAt: "asc" },
         take: limit,
         skip: offset,
       });
 
-      const total = await prisma.bot.count({
-        where: { status: 'PENDING' },
-      });
+      const total = await prisma.bot.count({ where });
 
       return { bots, total };
     } catch (error) {
-      logger.error('Get pending bots failed:', error);
+      logger.error("Get pending bots failed:", error);
       throw error;
     }
   }
