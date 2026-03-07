@@ -206,9 +206,7 @@ class DistributionService {
             chat_id: chatId,
             text: message.text,
             parse_mode: message.parseMode,
-            reply_markup: message.replyMarkup
-              ? JSON.stringify(message.replyMarkup)
-              : undefined,
+            reply_markup: message.replyMarkup || undefined,
           });
         }
 
