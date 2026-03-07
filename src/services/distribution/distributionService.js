@@ -260,9 +260,11 @@ class DistributionService {
       let replyMarkup = null;
       if (ad.buttons) {
         const buttons = ad.buttons;
-        const processedButtons = ad.trackingEnabled
-          ? tracking.wrapButtonsWithTracking(buttons, { adId: ad.id, botId }, telegramUserId)
-          : buttons;
+        // TODO: tracking URL vaqtincha ochirildi, togri ishlagandan song qayta yoqiladi
+        // const processedButtons = ad.trackingEnabled
+        //   ? tracking.wrapButtonsWithTracking(buttons, { adId: ad.id, botId }, telegramUserId)
+        //   : buttons;
+        const processedButtons = buttons;
 
         replyMarkup = {
           inline_keyboard: [

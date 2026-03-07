@@ -160,8 +160,6 @@ class LoginBotHandler {
               .add({ text: '🔵 Ko\'k', callback_data: 'draft_btn_color_blue' })
               .add({ text: '🟢 Yashil', callback_data: 'draft_btn_color_green' }).row()
               .add({ text: '🔴 Qizil', callback_data: 'draft_btn_color_red' })
-              .add({ text: '🟣 Binafsha', callback_data: 'draft_btn_color_violet' }).row()
-              .add({ text: '🟠 To\'q sariq', callback_data: 'draft_btn_color_orange' })
               .add({ text: '⚪ Oddiy (standart)', callback_data: 'draft_btn_color_default' });
 
             await ctx.reply("<b>🎨 Tugma rangini tanlang:</b>", { parse_mode: 'HTML', reply_markup: colorKb });
@@ -209,12 +207,12 @@ class LoginBotHandler {
           media_file_id: mediaUrl,
           buttons: [],
           targetImpressions: 1000,
-          targeting: { aiSegments: [] }
+          targeting: { aiSegments: [], languages: [] }
         };
 
-        const session = { step: 'AWAITING_CATEGORIES', draft: draft };
+        const session = { step: 'AWAITING_LANGUAGE', draft: draft };
         await redis.set(sessionKey, JSON.stringify(session), 3600);
-        await this.renderCategoryMenu(ctx, telegramId, draft, true);
+        await this.renderLanguageMenu(ctx, telegramId, draft, true);
 
       } catch (error) {
         logger.error('Message handler error:', error);
@@ -282,6 +280,46 @@ class LoginBotHandler {
     logger.info('Login bot handlers setup complete');
   }
 
+  async renderLanguageMenu(ctx, telegramId, draft, isNew = false) {
+    const user = await prisma.user.findUnique({ where: { telegramId } });
+    const locale = user?.locale || 'uz';
+
+    const LANGS = [
+      { code: 'all', label: locale === 'ru' ? '🌍 Все языки' : '🌍 Barcha tillar' },
+      { code: 'uz', label: '🇺🇿 O\'zbek' },
+      { code: 'ru', label: '🇷🇺 Русский' },
+      { code: 'en', label: '🇺🇸 English' },
+      { code: 'tr', label: '🇹🇷 Türkçe' },
+      { code: 'ar', label: '🇸🇦 عربي' },
+    ];
+
+    const selectedLangs = draft.targeting?.languages || [];
+    const kb = new InlineKeyboard();
+
+    for (let i = 0; i < LANGS.length; i += 2) {
+      const lang1 = LANGS[i];
+      const isSelected1 = lang1.code === 'all' ? selectedLangs.length === 0 : selectedLangs.includes(lang1.code);
+      kb.add({ text: `${isSelected1 ? '✅' : '⬜️'} ${lang1.label}`, callback_data: `draft_lang_${lang1.code}` });
+
+      if (i + 1 < LANGS.length) {
+        const lang2 = LANGS[i + 1];
+        const isSelected2 = selectedLangs.includes(lang2.code);
+        kb.add({ text: `${isSelected2 ? '✅' : '⬜️'} ${lang2.label}`, callback_data: `draft_lang_${lang2.code}` });
+      }
+      kb.row();
+    }
+
+    kb.add({ text: i18n.t(locale, 'next_categories'), callback_data: 'draft_next_categories', style: 'primary' });
+
+    const text = i18n.t(locale, 'choose_language_targeting');
+
+    if (isNew) {
+      await ctx.reply(text, { parse_mode: 'HTML', reply_markup: kb });
+    } else {
+      await ctx.editMessageText(text, { parse_mode: 'HTML', reply_markup: kb });
+    }
+  }
+
   async renderCategoryMenu(ctx, telegramId, draft, isNew = false) {
     const user = await prisma.user.findUnique({ where: { telegramId } });
     const locale = user?.locale || 'uz';
@@ -314,8 +352,9 @@ class LoginBotHandler {
       kb.row();
     }
     
-    kb.add({ text: i18n.t(locale, 'next_impressions'), callback_data: "draft_next_impressions", style: "primary" });
-    
+    kb.add({ text: i18n.t(locale, 'back_to_language'), callback_data: "draft_back_language" })
+      .add({ text: i18n.t(locale, 'next_impressions'), callback_data: "draft_next_impressions", style: "primary" });
+
     const text = i18n.t(locale, 'choose_audience');
     
     if (isNew) {
@@ -359,7 +398,7 @@ class LoginBotHandler {
       .add({ text: i18n.t(locale, 'buy_and_save', { cost: cost.toFixed(2) }), callback_data: "draft_submit", style: "success" }).row()
       .add({ text: i18n.t(locale, 'cancel_btn'), callback_data: "draft_cancel", style: "danger" });
 
-    const colorEmojis = { blue: '🔵', green: '🟢', red: '🔴', violet: '🟣', orange: '🟠', default: '⚪' };
+    const colorEmojis = { blue: '🔵', green: '🟢', red: '🔴', default: '⚪' };
     const btnList = (draft.buttons || []).map((b, i) => {
       const ce = colorEmojis[b.color] || '⚪';
       return `  ${i + 1}. ${ce} ${b.text}`;
@@ -376,10 +415,14 @@ class LoginBotHandler {
     });
     const audienceDisplay = cats.length > 0 ? cats.map(c => catMap[c] || c).join(', ') : i18n.t(locale, 'draft_all_users');
 
+    const selectedLangs = draft.targeting?.languages || [];
+    const langDisplay = selectedLangs.length > 0 ? selectedLangs.join(', ').toUpperCase() : i18n.t(locale, 'draft_all_languages');
+
     const messageText = `${i18n.t(locale, 'draft_summary_title')}\n\n` +
       `${draft.mediaType !== 'NONE' ? `${i18n.t(locale, 'draft_media', { type: draft.mediaType })}\n` : ''}` +
       `${i18n.t(locale, 'draft_buttons', { n: draft.buttons?.length || 0 })}\n` +
       `${btnList ? btnList + '\n' : ''}` +
+      `${i18n.t(locale, 'draft_language', { langs: langDisplay })}\n` +
       `${i18n.t(locale, 'draft_audience', { cats: audienceDisplay })}\n` +
       `${i18n.t(locale, 'draft_impressions_total', { n: draft.targetImpressions })}\n` +
       `${i18n.t(locale, 'draft_total_cost', { cost: cost.toFixed(2) })}\n\n` +
@@ -409,6 +452,38 @@ class LoginBotHandler {
       const session = JSON.parse(sessionJson);
       await ctx.answerCallbackQuery();
 
+      if (data.startsWith('draft_lang_')) {
+        const langCode = data.replace('draft_lang_', '');
+        if (!session.draft.targeting) session.draft.targeting = {};
+        if (!session.draft.targeting.languages) session.draft.targeting.languages = [];
+
+        if (langCode === 'all') {
+          session.draft.targeting.languages = [];
+        } else {
+          const idx = session.draft.targeting.languages.indexOf(langCode);
+          if (idx > -1) session.draft.targeting.languages.splice(idx, 1);
+          else session.draft.targeting.languages.push(langCode);
+        }
+
+        await redis.set(sessionKey, JSON.stringify(session), 3600);
+        await this.renderLanguageMenu(ctx, telegramId, session.draft, false);
+        return;
+      }
+
+      if (data === 'draft_next_categories') {
+        session.step = 'AWAITING_CATEGORIES';
+        await redis.set(sessionKey, JSON.stringify(session), 3600);
+        await this.renderCategoryMenu(ctx, telegramId, session.draft, false);
+        return;
+      }
+
+      if (data === 'draft_back_language') {
+        session.step = 'AWAITING_LANGUAGE';
+        await redis.set(sessionKey, JSON.stringify(session), 3600);
+        await this.renderLanguageMenu(ctx, telegramId, session.draft, false);
+        return;
+      }
+
       if (data.startsWith('draft_toggle_cat_')) {
         const catId = data.replace('draft_toggle_cat_', '');
         if (!session.draft.targeting.aiSegments) session.draft.targeting.aiSegments = [];
@@ -429,9 +504,9 @@ class LoginBotHandler {
       }
       
       if (data === 'draft_back_categories') {
-        session.step = 'AWAITING_CATEGORIES';
+        session.step = 'AWAITING_LANGUAGE';
         await redis.set(sessionKey, JSON.stringify(session), 3600);
-        await this.renderCategoryMenu(ctx, telegramId, session.draft, false);
+        await this.renderLanguageMenu(ctx, telegramId, session.draft, false);
         return;
       }
       
@@ -445,7 +520,7 @@ class LoginBotHandler {
       }
 
       if (data === 'draft_preview') {
-        const colorEmojis = { blue: '🔵', green: '🟢', red: '🔴', violet: '🟣', orange: '🟠', default: '' };
+        const colorEmojis = { blue: '🔵', green: '🟢', red: '🔴', default: '' };
         const keyboard = new InlineKeyboard();
         if (session.draft.buttons && session.draft.buttons.length > 0) {
           session.draft.buttons.forEach(btn => {
@@ -487,13 +562,11 @@ class LoginBotHandler {
         session.temp = null;
         session.step = 'DRAFT_MENU';
         await redis.set(sessionKey, JSON.stringify(session), 3600);
-        const colorNames = { 
-          blue: i18n.t(locale, 'color_blue'), 
-          green: i18n.t(locale, 'color_green'), 
-          red: i18n.t(locale, 'color_red'), 
-          violet: i18n.t(locale, 'color_violet'), 
-          orange: i18n.t(locale, 'color_orange'), 
-          default: i18n.t(locale, 'color_default') 
+        const colorNames = {
+          blue: i18n.t(locale, 'color_blue'),
+          green: i18n.t(locale, 'color_green'),
+          red: i18n.t(locale, 'color_red'),
+          default: i18n.t(locale, 'color_default')
         };
         await ctx.editMessageText(`${i18n.t(locale, 'btn_added')} ${colorNames[color] || color}`, { parse_mode: 'HTML' });
         await this.renderDraftMenu(ctx, telegramId, session.draft, true);
@@ -1094,7 +1167,11 @@ class LoginBotHandler {
           contentType: 'HTML',
           status: 'PENDING_REVIEW',
           buttons: draft.buttons || [],
-          targeting: draft.targeting || {},
+          targeting: {
+            ...(draft.targeting || {}),
+            languages: draft.targeting?.languages || [],
+            aiSegments: draft.targeting?.aiSegments || [],
+          },
           targetImpressions: targetImpressions, 
           totalCost: totalCost, 
           remainingBudget: totalCost,
