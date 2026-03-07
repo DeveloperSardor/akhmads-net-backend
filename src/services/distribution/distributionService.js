@@ -83,22 +83,7 @@ class DistributionService {
         take: 50,
       });
 
-      // Get user role once to optimize
-      const viewingUser = await prisma.user.findUnique({
-        where: { telegramId: telegramUserId.toString() },
-        select: { role: true, roles: true }
-      });
-      const isBotOwner = viewingUser?.role === 'BOT_OWNER' || viewingUser?.roles?.includes('BOT_OWNER');
-
       for (const ad of ads) {
-        // 1. Check if advertiser is Superadmin
-        const isSuperAdminAd = ad.advertiser.role === 'SUPER_ADMIN' || ad.advertiser.roles?.includes('SUPER_ADMIN');
-
-        // 2. Filter: If it's a Superadmin ad, don't show it to Bot Owners (User's request)
-        if (isSuperAdminAd && isBotOwner) {
-          continue;
-        }
-
         // deliveredImpressions < targetImpressions tekshiruvi
         if (ad.deliveredImpressions >= ad.targetImpressions) {
           continue;
@@ -327,9 +312,16 @@ class DistributionService {
 
       if (!ad || !bot) return { success: false };
 
-      // 1. Skip if viewing user is the bot owner (for testing)
-      if (bot.owner.telegramId === telegramUserId.toString()) {
-        logger.info(`Test mode: Skipping impression record for bot owner (${telegramUserId})`);
+      // Skip impression + earnings for bot owner or superadmin (test/preview mode)
+      const viewingUser = await prisma.user.findUnique({
+        where: { telegramId: telegramUserId.toString() },
+        select: { role: true, roles: true }
+      });
+      const isViewerSuperAdmin = viewingUser?.role === 'SUPER_ADMIN' || viewingUser?.roles?.includes('SUPER_ADMIN');
+      const isViewerBotOwner = bot.owner.telegramId === telegramUserId.toString();
+
+      if (isViewerBotOwner || isViewerSuperAdmin) {
+        logger.info(`Preview mode: Skipping impression record for ${isViewerSuperAdmin ? 'superadmin' : 'bot owner'} (${telegramUserId})`);
         return { success: true, skipped: true };
       }
 
