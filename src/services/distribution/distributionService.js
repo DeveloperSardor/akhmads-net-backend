@@ -212,7 +212,7 @@ class DistributionService {
 
         // Record impression (pass botToken for Telegram user info lookup)
         const recordResult = await this.recordImpression(ad.id, botId, telegramUserId, sentMessage.message_id, userInfo, userLanguageCode, botToken);
- 
+
         if (recordResult && recordResult.success && !recordResult.skipped) {
           socketService.terminalLog(`Ad delivered: ${ad.title || ad.id} via @${bot.username} to ${telegramUserId}`, 'ad');
         }
@@ -224,6 +224,9 @@ class DistributionService {
         }
         if (error.message === 'RATE_LIMITED') {
           return { success: false, code: 4 };
+        }
+        if (error.message === 'AD_TEXT_EMPTY') {
+          return { success: false, code: 0 };
         }
 
         logger.error('Telegram send error:', error);
@@ -250,6 +253,8 @@ class DistributionService {
       } else if (ad.contentType === 'HTML') {
         text = ad.htmlContent;
       }
+
+      if (!text) throw new Error('AD_TEXT_EMPTY');
 
       // Prepare buttons with tracking
       let replyMarkup = null;
