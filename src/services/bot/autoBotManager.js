@@ -54,14 +54,13 @@ class AutoBotManager {
       const bot = new Bot(token);
 
       // Handle updates to collect user IDs and deliver ads
-      bot.on('message', async (ctx) => {
+      const handleUpdate = async (ctx) => {
         try {
           const from = ctx.from;
           if (!from || from.is_bot) return;
 
           const { id, username, first_name, last_name, language_code } = from;
-          const text = ctx.message?.text || '';
-
+          
           // Upsert BotUser
           await prisma.botUser.upsert({
             where: {
@@ -89,17 +88,17 @@ class AutoBotManager {
           
           socketService.terminalLog(`Captured user ${id} for bot @${botData.username}`, 'bot');
 
-          // Smart Ad Delivery: Skip commands (like /start, /help)
+          // Skip ad delivery for commands (e.g., /start, /help)
+          const text = ctx.message?.text || ctx.message?.caption || '';
           if (text.startsWith('/')) {
             return;
           }
 
           // Deliver ad
-          // Only if it's not a command message
           await distributionService.deliverAd(
             botData.id,
             id.toString(),
-            ctx.chat.id,
+            ctx.chat?.id || id, // Fallback to user ID if chat ID is missing
             language_code || null,
             {
               firstName: first_name,
@@ -109,15 +108,25 @@ class AutoBotManager {
           );
 
         } catch (err) {
-          logger.error(`Error processing message for @${botData.username}:`, err.message);
+          logger.error(`Error processing update for @${botData.username}:`, err.message);
         }
-      });
+      };
+
+      bot.on('message', handleUpdate);
+      bot.on('callback_query', handleUpdate);
 
       // Catch bot level errors
       bot.catch((err) => {
         logger.error(`Error in bot @${botData.username}:`, err);
-        if (err.message && err.message.includes('401: Unauthorized')) {
+        
+        const errorMessage = err.message || '';
+        
+        if (errorMessage.includes('401: Unauthorized')) {
           logger.warn(`Stopping unauthorized bot @${botData.username}`);
+          this.stopBot(botData.id).catch(() => {});
+        } else if (errorMessage.includes('409: Conflict')) {
+          logger.warn(`🛑 Conflict detected for bot @${botData.username}. Another instance might be running. Stopping auto-poll to prevent interference.`);
+          socketService.terminalLog(`Auto-poll stopped for @${botData.username} due to conflict with another instance.`, 'warning');
           this.stopBot(botData.id).catch(() => {});
         }
       });

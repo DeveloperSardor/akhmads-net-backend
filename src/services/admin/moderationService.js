@@ -188,11 +188,7 @@ class ModerationService {
       
       // If AUTO mode, start it
       if (bot.integrationMode === 'AUTO' && bot.status === 'ACTIVE' && !bot.isPaused) {
-        // We assume autoBotManager is imported
-        const autoBotManager = await import('../telegram/autoBotManager.js');
-        if (autoBotManager.default) {
-           autoBotManager.default.startBot(bot);
-        }
+        autoBotManager.startBot(bot);
       }
 
       return bot;
