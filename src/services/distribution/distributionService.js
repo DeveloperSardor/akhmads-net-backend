@@ -117,10 +117,19 @@ class DistributionService {
 
         // Language filtri: reklama muayyan tillarga mo'ljallangan bo'lsa,
         // faqat shu tildagi userlarga ko'rsatiladi.
-        // LanguageCode yuborilmagan bo'lsa (eski botlar) — o'tkazib yuboriladi.
         const adLanguages = targeting.languages || [];
-        if (adLanguages.length > 0 && userLanguageCode) {
-          if (!adLanguages.includes(userLanguageCode)) {
+        if (adLanguages.length > 0) {
+          // Foydalanuvchi tili bazada mavjud emas bo'lishi mumkin
+          if (!userLanguageCode) {
+            // Agar foydalanuvchi tili noma'lum bo'lsa, xavfsizlik uchun bu reklamani ko'rsatmaymiz
+            // chunki maqsadli auditoriyani buzishimiz mumkin
+            continue;
+          }
+
+          // Normalizatsiya: 'ru-RU' -> 'ru'
+          const normalizedUserLang = userLanguageCode.split('-')[0].toLowerCase();
+          
+          if (!adLanguages.some(lang => lang.toLowerCase() === normalizedUserLang)) {
             continue;
           }
         }
@@ -259,26 +268,43 @@ class DistributionService {
       // Prepare buttons with tracking
       let replyMarkup = null;
       if (ad.buttons) {
-        const buttons = ad.buttons;
-        // TODO: tracking URL vaqtincha ochirildi, togri ishlagandan song qayta yoqiladi
-        // const processedButtons = ad.trackingEnabled
-        //   ? tracking.wrapButtonsWithTracking(buttons, { adId: ad.id, botId }, telegramUserId)
-        //   : buttons;
-        const processedButtons = buttons;
+        let buttons = ad.buttons;
 
-        replyMarkup = {
-          inline_keyboard: [
-            processedButtons.map(btn => {
-              const button = { text: btn.text, url: btn.url };
-              // Map color to Telegram button style (primary/danger/success)
-              const colorToStyle = { green: 'success', red: 'danger', blue: 'primary', purple: 'primary', orange: 'primary' };
-              const style = btn.style || colorToStyle[btn.color];
-              if (style) button.style = style;
-              if (btn.icon_custom_emoji_id) button.icon_custom_emoji_id = btn.icon_custom_emoji_id;
-              return button;
-            }),
-          ],
-        };
+        // Ensure buttons is an array even if stored as string
+        if (typeof buttons === 'string') {
+          try {
+            buttons = JSON.parse(buttons);
+          } catch (e) {
+            buttons = [];
+          }
+        }
+
+        // Enable tracking if ad has it enabled
+        const processedButtons = ad.trackingEnabled && telegramUserId
+          ? tracking.wrapButtonsWithTracking(buttons, { adId: ad.id, botId }, telegramUserId)
+          : buttons;
+
+        if (Array.isArray(processedButtons)) {
+          replyMarkup = {
+            inline_keyboard: [
+              processedButtons.map(btn => {
+                const button = { text: btn.text, url: btn.url };
+                // Map color to Telegram button style (primary/danger/success)
+                const colorToStyle = {
+                  green: 'success',
+                  red: 'danger',
+                  blue: 'primary',
+                  purple: 'primary',
+                  orange: 'primary',
+                };
+                const style = btn.style || colorToStyle[btn.color];
+                if (style) button.style = style;
+                if (btn.icon_custom_emoji_id) button.icon_custom_emoji_id = btn.icon_custom_emoji_id;
+                return button;
+              }),
+            ],
+          };
+        }
       }
 
       return {
