@@ -331,13 +331,11 @@ class DistributionService {
         return { success: true, skipped: true };
       }
 
-      // Check if advertiser is Superadmin
-      const isSuperAdmin = ad.advertiser.role === 'SUPER_ADMIN' || ad.advertiser.roles?.includes('SUPER_ADMIN');
-
       // Calculate revenue (70/30 split)
-      const revenuePerImpression = isSuperAdmin ? 0 : (parseFloat(ad.finalCpm) / 1000);
-      const platformFee = isSuperAdmin ? 0 : (revenuePerImpression * 0.30); // 30% platform
-      const botOwnerEarns = isSuperAdmin ? 0 : (revenuePerImpression * 0.70); // 70% bot owner
+      const cpm = parseFloat(ad.finalCpm) || 0;
+      const revenuePerImpression = cpm / 1000;
+      const platformFee = revenuePerImpression * 0.30; // 30% platform
+      const botOwnerEarns = revenuePerImpression * 0.70; // 70% bot owner
 
       // Look up existing BotUser first to enrich user data (fallback for missing fields)
       let existingBotUser = null;
@@ -427,17 +425,17 @@ class DistributionService {
         }
       }
 
-      // Update ad stats (only if not Superadmin)
+      // Update ad stats
       await prisma.ad.update({
         where: { id: adId },
         data: {
           deliveredImpressions: { increment: 1 },
-          remainingBudget: isSuperAdmin ? undefined : { decrement: revenuePerImpression },
+          remainingBudget: { decrement: revenuePerImpression },
         },
       });
 
-      // Update bot earnings (only if not Superadmin)
-      if (!isSuperAdmin) {
+      // Update bot earnings (if any)
+      if (botOwnerEarns > 0) {
         await prisma.bot.update({
           where: { id: botId },
           data: {
@@ -454,7 +452,7 @@ class DistributionService {
 
       if (
         updatedAd.deliveredImpressions >= updatedAd.targetImpressions ||
-        (!isSuperAdmin && updatedAd.remainingBudget <= 0)
+        updatedAd.remainingBudget <= 0
       ) {
         await prisma.ad.update({
           where: { id: adId },
@@ -469,8 +467,8 @@ class DistributionService {
 
       logger.info(`Impression recorded: ad=${adId}, bot=${botId}, user=${telegramUserId}`);
 
-      // Credit bot owner's wallet (only if not Superadmin)
-      if (!isSuperAdmin) {
+      // Credit bot owner's wallet (if any)
+      if (botOwnerEarns > 0) {
         try {
           if (bot && bot.ownerId) {
             await walletService.credit(bot.ownerId, botOwnerEarns, 'EARNINGS', adId);
