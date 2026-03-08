@@ -18,11 +18,27 @@ class DistributionService {
    */
   async selectAdsForUser(botId, telegramUserId, userLanguageCode = null, limit = 2) {
     try {
+      // Skip ad selection if viewer is SuperAdmin or Bot Owner (requested by user: impressionsda chiqmasligi kerak)
+      const viewingUser = await prisma.user.findUnique({
+        where: { telegramId: telegramUserId.toString() },
+        select: { id: true, role: true, roles: true }
+      });
+
+      const isSuperAdmin = viewingUser?.role === 'SUPER_ADMIN' || viewingUser?.roles?.includes('SUPER_ADMIN');
+      
       const bot = await prisma.bot.findUnique({
         where: { id: botId },
+        include: { owner: true }
       });
 
       if (!bot || bot.status !== 'ACTIVE' || bot.isPaused) {
+        return [];
+      }
+
+      const isBotOwner = bot.owner.telegramId === telegramUserId.toString();
+
+      if (isSuperAdmin || isBotOwner) {
+        logger.info(`Skipping ad selection for ${isSuperAdmin ? 'superadmin' : 'bot owner'} (${telegramUserId})`);
         return [];
       }
 
@@ -92,7 +108,7 @@ class DistributionService {
         }
 
         // Kategoriya filtri
-        const targeting = ad.targeting || {};
+        const targeting = typeof ad.targeting === 'string' ? JSON.parse(ad.targeting) : (ad.targeting || {});
         const adCategories = targeting.categories || [];
 
         // Bot faqat muayyan kategoriyalarga ruxsat bergan bo'lsa
@@ -113,9 +129,10 @@ class DistributionService {
 
         // Language filtri: reklama muayyan tillarga mo'ljallangan bo'lsa
         const adLanguages = targeting.languages || [];
+        
         if (adLanguages.length > 0) {
           if (!userLanguageCode) {
-            continue;
+            continue; // Til noma'lum bo'lsa, maqsadli reklamani ko'rsatmaymiz
           }
           const normalizedUserLang = userLanguageCode.split('-')[0].toLowerCase();
           if (!adLanguages.some(lang => lang.toLowerCase() === normalizedUserLang)) {
@@ -153,8 +170,8 @@ class DistributionService {
    */
   async deliverAd(botId, telegramUserId, chatId, userLanguageCode = null, userInfo = {}) {
     try {
-      // Select multiple ads if available (requested by user)
-      const ads = await this.selectAdsForUser(botId, telegramUserId, userLanguageCode, 2);
+      // Select best ad for user (limit back to 1 as requested)
+      const ads = await this.selectAdsForUser(botId, telegramUserId, userLanguageCode, 1);
 
       if (!ads || ads.length === 0) {
         return { success: false, code: 0 }; // No ads available
