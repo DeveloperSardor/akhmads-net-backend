@@ -127,7 +127,7 @@ export const LIMITS = {
 };
 
 // Anti-abuse: minimum gap enforced regardless of bot's frequencyMinutes setting
-export const MINIMUM_FREQUENCY_MINUTES = 5;
+export const MINIMUM_FREQUENCY_MINUTES = 1;
 // Anti-abuse: max impressions one bot can record in 1 hour
 export const MAX_IMPRESSIONS_PER_BOT_HOUR = 500;
 

@@ -14,19 +14,19 @@ import socketService from '../socket/socketService.js';
  */
 class DistributionService {
   /**
-   * Select best ad for bot/user combination
+   * Select best ads for bot/user combination
    */
-  async selectAdForUser(botId, telegramUserId, userLanguageCode = null) {
+  async selectAdsForUser(botId, telegramUserId, userLanguageCode = null, limit = 2) {
     try {
       const bot = await prisma.bot.findUnique({
         where: { id: botId },
       });
 
       if (!bot || bot.status !== 'ACTIVE' || bot.isPaused) {
-        return null;
+        return [];
       }
 
-      // Bot sozlamalari (Json? fieldlar Prisma tomonidan avtomatik parse qilinadi)
+      // Bot sozlamalari
       const allowedCategories = bot.allowedCategories || [];
       const blockedCategories = bot.blockedCategories || [];
 
@@ -42,7 +42,7 @@ class DistributionService {
         const effectiveMinutes = Math.max(bot.frequencyMinutes, MINIMUM_FREQUENCY_MINUTES);
         const minInterval = effectiveMinutes * 60 * 1000;
         if (timeSince < minInterval) {
-          return null; // Hali erta
+          return []; // Hali erta
         }
       }
 
@@ -52,26 +52,21 @@ class DistributionService {
         where: { botId, createdAt: { gte: hourAgo } },
       });
       if (hourlyCount >= MAX_IMPRESSIONS_PER_BOT_HOUR) {
-        return null;
+        return [];
       }
 
-      // Asosiy query — deliveredImpressions < targetImpressions ni Prisma field
-      // comparison qilib bo'lmaydi, shuning uchun loop ichida tekshiramiz
       const where = {
         status: 'RUNNING',
         remainingBudget: { gt: 0 },
       };
 
       // postFilter sozlamasi
-      if (bot.postFilter === 'not_mine') {
+      if (bot.postFilter === 'not_mine' && bot.ownerId) {
         where.advertiserId = { not: bot.ownerId };
-      } else if (bot.postFilter === 'only_mine') {
+      } else if (bot.postFilter === 'only_mine' && bot.ownerId) {
         where.advertiserId = bot.ownerId;
       }
 
-      // Reklamalarni olish:
-      // - finalCpm bo'yicha (cpmBid emas, chunki default 0 bo'lishi mumkin)
-      // - Teng CPM'larda deliveredImpressions ASC: kamroq ko'rsatilgan reklama avval chiqadi (fair rotation)
       const ads = await prisma.ad.findMany({
         where,
         include: { advertiser: true },
@@ -83,6 +78,7 @@ class DistributionService {
         take: 50,
       });
 
+      const selectedAds = [];
       for (const ad of ads) {
         // deliveredImpressions < targetImpressions tekshiruvi
         if (ad.deliveredImpressions >= ad.targetImpressions) {
@@ -115,20 +111,13 @@ class DistributionService {
           if (hasBlockedCategory) continue;
         }
 
-        // Language filtri: reklama muayyan tillarga mo'ljallangan bo'lsa,
-        // faqat shu tildagi userlarga ko'rsatiladi.
+        // Language filtri: reklama muayyan tillarga mo'ljallangan bo'lsa
         const adLanguages = targeting.languages || [];
         if (adLanguages.length > 0) {
-          // Foydalanuvchi tili bazada mavjud emas bo'lishi mumkin
           if (!userLanguageCode) {
-            // Agar foydalanuvchi tili noma'lum bo'lsa, xavfsizlik uchun bu reklamani ko'rsatmaymiz
-            // chunki maqsadli auditoriyani buzishimiz mumkin
             continue;
           }
-
-          // Normalizatsiya: 'ru-RU' -> 'ru'
           const normalizedUserLang = userLanguageCode.split('-')[0].toLowerCase();
-          
           if (!adLanguages.some(lang => lang.toLowerCase() === normalizedUserLang)) {
             continue;
           }
@@ -148,25 +137,26 @@ class DistributionService {
           if (alreadyShown) continue;
         }
 
-        return ad;
+        selectedAds.push(ad);
+        if (selectedAds.length >= limit) break;
       }
 
-      return null;
+      return selectedAds;
     } catch (error) {
-      logger.error('Select ad for user failed:', error);
-      return null;
+      logger.error('Select ads for user failed:', error);
+      return [];
     }
   }
 
   /**
-   * Deliver ad to user
+   * Deliver ads to user
    */
   async deliverAd(botId, telegramUserId, chatId, userLanguageCode = null, userInfo = {}) {
     try {
-      // Select ad
-      const ad = await this.selectAdForUser(botId, telegramUserId, userLanguageCode);
+      // Select multiple ads if available (requested by user)
+      const ads = await this.selectAdsForUser(botId, telegramUserId, userLanguageCode, 2);
 
-      if (!ad) {
+      if (!ads || ads.length === 0) {
         return { success: false, code: 0 }; // No ads available
       }
 
@@ -177,72 +167,64 @@ class DistributionService {
 
       // Decrypt bot token
       const botToken = encryption.decrypt(bot.tokenEncrypted);
+      let successCount = 0;
 
-      // Prepare message
-      const message = await this.prepareAdMessage(ad, botId, telegramUserId);
+      for (const ad of ads) {
+        try {
+          // Prepare message
+          const message = await this.prepareAdMessage(ad, botId, telegramUserId);
+          let sentMessage;
 
-      // Send via Telegram bot token (always use the registered bot)
-      try {
-        let sentMessage;
-
-        if (ad.contentType === 'MEDIA' && ad.mediaUrl) {
-          if (ad.mediaType?.startsWith('image')) {
-            sentMessage = await telegramAPI.sendPhoto(botToken, {
+          if (ad.contentType === 'MEDIA' && ad.mediaUrl) {
+            if (ad.mediaType?.startsWith('image')) {
+              sentMessage = await telegramAPI.sendPhoto(botToken, {
+                chat_id: chatId,
+                photo: ad.mediaUrl,
+                caption: message.text,
+                parse_mode: message.parseMode,
+                reply_markup: message.replyMarkup,
+              });
+            } else if (ad.mediaType?.startsWith('video')) {
+              sentMessage = await telegramAPI.sendVideo(botToken, {
+                chat_id: chatId,
+                video: ad.mediaUrl,
+                caption: message.text,
+                parse_mode: message.parseMode,
+                reply_markup: message.replyMarkup,
+              });
+            }
+          } else if (ad.contentType === 'POLL' && ad.poll) {
+            const poll = JSON.parse(ad.poll);
+            sentMessage = await telegramAPI.sendPoll(botToken, {
               chat_id: chatId,
-              photo: ad.mediaUrl,
-              caption: message.text,
-              parse_mode: message.parseMode,
-              reply_markup: message.replyMarkup,
+              question: poll.question,
+              options: poll.options,
             });
-          } else if (ad.mediaType?.startsWith('video')) {
-            sentMessage = await telegramAPI.sendVideo(botToken, {
+          } else {
+            sentMessage = await telegramAPI.sendMessage(botToken, {
               chat_id: chatId,
-              video: ad.mediaUrl,
-              caption: message.text,
+              text: message.text,
               parse_mode: message.parseMode,
-              reply_markup: message.replyMarkup,
+              reply_markup: message.replyMarkup || undefined,
             });
           }
-        } else if (ad.contentType === 'POLL' && ad.poll) {
-          const poll = JSON.parse(ad.poll);
-          sentMessage = await telegramAPI.sendPoll(botToken, {
-            chat_id: chatId,
-            question: poll.question,
-            options: poll.options,
-          });
-        } else {
-          sentMessage = await telegramAPI.sendMessage(botToken, {
-            chat_id: chatId,
-            text: message.text,
-            parse_mode: message.parseMode,
-            reply_markup: message.replyMarkup || undefined,
-          });
-        }
 
-        // Record impression (pass botToken for Telegram user info lookup)
-        const recordResult = await this.recordImpression(ad.id, botId, telegramUserId, sentMessage.message_id, userInfo, userLanguageCode, botToken);
-
-        if (recordResult && recordResult.success && !recordResult.skipped) {
+          // Record impression
+          await this.recordImpression(ad.id, botId, telegramUserId, sentMessage.message_id, userInfo, userLanguageCode, botToken);
+          
           socketService.terminalLog(`Ad delivered: ${ad.title || ad.id} via @${bot.username} to ${telegramUserId}`, 'ad');
+          successCount++;
+        } catch (itemError) {
+          logger.error(`Failed to deliver individual ad ${ad.id}:`, itemError.message);
+          if (itemError.message === 'USER_BLOCKED_BOT') {
+             return { success: false, code: 3 };
+          }
         }
-
-        return { success: true, code: 1 };
-      } catch (error) {
-        if (error.message === 'USER_BLOCKED_BOT') {
-          return { success: false, code: 3 };
-        }
-        if (error.message === 'RATE_LIMITED') {
-          return { success: false, code: 4 };
-        }
-        if (error.message === 'AD_TEXT_EMPTY') {
-          return { success: false, code: 0 };
-        }
-
-        logger.error('Telegram send error:', error);
-        return { success: false, code: 5 };
       }
+
+      return { success: successCount > 0, code: successCount > 0 ? 1 : 5 };
     } catch (error) {
-      logger.error('Deliver ad failed:', error);
+      logger.error('Deliver ads failed:', error);
       return { success: false, code: 6 };
     }
   }
