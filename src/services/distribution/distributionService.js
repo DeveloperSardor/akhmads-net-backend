@@ -331,6 +331,9 @@ class DistributionService {
         return { success: true, skipped: true };
       }
 
+      // Check if advertiser is Superadmin (for free admin ads rule)
+      const isAdvertiserSuperAdmin = ad.advertiser.role === 'SUPER_ADMIN' || ad.advertiser.roles?.includes('SUPER_ADMIN');
+
       // Calculate revenue (70/30 split)
       const cpm = parseFloat(ad.finalCpm) || 0;
       const revenuePerImpression = cpm / 1000;
@@ -430,7 +433,8 @@ class DistributionService {
         where: { id: adId },
         data: {
           deliveredImpressions: { increment: 1 },
-          remainingBudget: { decrement: revenuePerImpression },
+          // Skip budget decrement for SuperAdmin ads (tekinga tushishi kerak)
+          remainingBudget: isAdvertiserSuperAdmin ? undefined : { decrement: revenuePerImpression },
         },
       });
 
@@ -452,7 +456,7 @@ class DistributionService {
 
       if (
         updatedAd.deliveredImpressions >= updatedAd.targetImpressions ||
-        updatedAd.remainingBudget <= 0
+        (!isAdvertiserSuperAdmin && updatedAd.remainingBudget <= 0)
       ) {
         await prisma.ad.update({
           where: { id: adId },
@@ -468,6 +472,7 @@ class DistributionService {
       logger.info(`Impression recorded: ad=${adId}, bot=${botId}, user=${telegramUserId}`);
 
       // Credit bot owner's wallet (if any)
+      // Note: Bot owner gets paid even if it's an admin ad (to keep them happy)
       if (botOwnerEarns > 0) {
         try {
           if (bot && bot.ownerId) {
