@@ -18,27 +18,12 @@ class DistributionService {
    */
   async selectAdsForUser(botId, telegramUserId, userLanguageCode = null, limit = 2) {
     try {
-      // Skip ad selection if viewer is SuperAdmin or Bot Owner (requested by user: impressionsda chiqmasligi kerak)
-      const viewingUser = await prisma.user.findUnique({
-        where: { telegramId: telegramUserId.toString() },
-        select: { id: true, role: true, roles: true }
-      });
-
-      const isSuperAdmin = viewingUser?.role === 'SUPER_ADMIN' || viewingUser?.roles?.includes('SUPER_ADMIN');
-      
       const bot = await prisma.bot.findUnique({
         where: { id: botId },
         include: { owner: true }
       });
 
       if (!bot || bot.status !== 'ACTIVE' || bot.isPaused) {
-        return [];
-      }
-
-      const isBotOwner = bot.owner.telegramId === telegramUserId.toString();
-
-      if (isSuperAdmin || isBotOwner) {
-        logger.info(`Skipping ad selection for ${isSuperAdmin ? 'superadmin' : 'bot owner'} (${telegramUserId})`);
         return [];
       }
 
