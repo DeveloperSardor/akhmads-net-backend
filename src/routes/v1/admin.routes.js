@@ -525,6 +525,40 @@ router.post(
   }
 );
 
+/**
+ * POST /api/v1/admin/moderation/bots/:id/pause
+ */
+router.post(
+  '/moderation/bots/:id/pause',
+  requireModerator,
+  validate([param('id').isString()]),
+  async (req, res, next) => {
+    try {
+      const bot = await moderationService.pauseBot(req.params.id, req.userId);
+      response.success(res, { bot }, 'Bot paused by admin');
+    } catch (error) {
+      next(error);
+    }
+  }
+);
+
+/**
+ * POST /api/v1/admin/moderation/bots/:id/resume
+ */
+router.post(
+  '/moderation/bots/:id/resume',
+  requireModerator,
+  validate([param('id').isString()]),
+  async (req, res, next) => {
+    try {
+      const bot = await moderationService.resumeBot(req.params.id, req.userId);
+      response.success(res, { bot }, 'Bot resumed by admin');
+    } catch (error) {
+      next(error);
+    }
+  }
+);
+
 // ==================== WITHDRAWALS ====================
 
 /**

@@ -246,6 +246,72 @@ class ModerationService {
   }
 
   /**
+   * Pause bot by admin
+   */
+  async pauseBot(botId, adminId) {
+    try {
+      const bot = await prisma.bot.update({
+        where: { id: botId },
+        data: { isPaused: true },
+      });
+
+      // Create audit log
+      await prisma.auditLog.create({
+        data: {
+          userId: adminId,
+          action: 'BOT_PAUSED_BY_ADMIN',
+          entityType: 'bot',
+          entityId: botId,
+          metadata: { botUsername: bot.username },
+        },
+      });
+
+      // Stop Auto Bot Manager if needed
+      autoBotManager.stopBot(botId);
+
+      logger.info(`Bot paused by admin: ${botId}`);
+      return bot;
+    } catch (error) {
+      logger.error('Pause bot failed:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * Resume bot by admin
+   */
+  async resumeBot(botId, adminId) {
+    try {
+      const bot = await prisma.bot.update({
+        where: { id: botId },
+        data: { isPaused: false },
+      });
+
+      // Create audit log
+      await prisma.auditLog.create({
+        data: {
+          userId: adminId,
+          action: 'BOT_RESUMED_BY_ADMIN',
+          entityType: 'bot',
+          entityId: botId,
+          metadata: { botUsername: bot.username },
+        },
+      });
+
+      // Start Auto Bot Manager if needed
+      if (bot.integrationMode === 'AUTO' && bot.status === 'ACTIVE') {
+        autoBotManager.startBot(bot);
+      }
+
+      logger.info(`Bot resumed by admin: ${botId}`);
+      return bot;
+    } catch (error) {
+      logger.error('Resume bot failed:', error);
+      throw error;
+    }
+  }
+
+  /**
    * Get moderation history
    */
   async getModerationHistory(moderatorId, limit = 50) {

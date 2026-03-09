@@ -205,6 +205,7 @@ model Bot {
   lastStatsSync     DateTime?       @map("last_stats_sync")
   monetized         Boolean         @default(false)
   isPaused          Boolean         @default(false) @map("is_paused")
+  pauseReason       String?         @map("pause_reason")
   status            BotStatus       @default(PENDING)
   postFilter        String          @default("all") @map("post_filter")
   allowedCategories Json?           @map("allowed_categories")
