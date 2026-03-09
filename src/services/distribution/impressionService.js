@@ -45,14 +45,21 @@ class ImpressionService {
         },
       });
 
-      // Update ad stats
-      await prisma.ad.update({
-        where: { id: adId },
-        data: {
-          deliveredImpressions: { increment: 1 },
-          remainingBudget: { decrement: revenuePerImpression },
-        },
-      });
+      // Credit bot owner wallet
+      if (botOwnerEarns > 0) {
+        await walletService.credit(bot.ownerId, botOwnerEarns, 'EARNINGS', adId);
+      }
+
+      // Credit platform wallet
+      if (platformFee > 0) {
+        const platformUser = await prisma.user.findFirst({
+          where: { role: 'SUPER_ADMIN' },
+          select: { id: true }
+        });
+        if (platformUser) {
+          await walletService.credit(platformUser.id, platformFee, 'FEE', adId);
+        }
+      }
 
       // Check if ad completed
       const updatedAd = await prisma.ad.findUnique({

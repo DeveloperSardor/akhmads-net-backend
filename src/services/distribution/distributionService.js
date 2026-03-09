@@ -336,11 +336,19 @@ class DistributionService {
       // Check if advertiser is Superadmin (for free admin ads rule)
       const isAdvertiserSuperAdmin = ad.advertiser.role === 'SUPER_ADMIN' || ad.advertiser.roles?.includes('SUPER_ADMIN');
 
-      // Calculate revenue (70/30 split)
+      // Calculate revenue using ad-defined fees (locked at creation)
       const cpm = parseFloat(ad.finalCpm) || 0;
+      const totalCampaignCost = parseFloat(ad.totalCost) || 1; // Avoid division by zero
+      const botRevenuePart = parseFloat(ad.botOwnerRevenue) || 0;
+      const platformFeePart = parseFloat(ad.platformFee) || 0;
+
+      // Use the ratio from the ad definition
+      const botOwnerRatio = botRevenuePart / totalCampaignCost;
+      const platformRatio = platformFeePart / totalCampaignCost;
+
       const revenuePerImpression = cpm / 1000;
-      const platformFee = revenuePerImpression * 0.30; // 30% platform
-      const botOwnerEarns = revenuePerImpression * 0.70; // 70% bot owner
+      const platformFee = revenuePerImpression * platformRatio;
+      const botOwnerEarns = revenuePerImpression * botOwnerRatio;
 
       // Look up existing BotUser first to enrich user data (fallback for missing fields)
       let existingBotUser = null;
@@ -482,6 +490,23 @@ class DistributionService {
           }
         } catch (creditErr) {
           logger.error('Failed to credit bot owner wallet:', creditErr);
+        }
+      }
+
+      // Credit platform wallet (if any)
+      if (platformFee > 0) {
+        try {
+          // Find platform user (First SuperAdmin)
+          const platformUser = await prisma.user.findFirst({
+            where: { role: 'SUPER_ADMIN' },
+            select: { id: true }
+          });
+
+          if (platformUser) {
+            await walletService.credit(platformUser.id, platformFee, 'FEE', adId);
+          }
+        } catch (platformErr) {
+          logger.error('Failed to credit platform wallet:', platformErr);
         }
       }
 

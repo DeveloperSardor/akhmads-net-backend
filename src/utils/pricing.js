@@ -161,18 +161,18 @@ class PricingCalculator {
       const totalCost = finalCost;
 
       return {
-        baseCPM: parseFloat(baseCPM.toFixed(4)),
-        categoryMultiplier: parseFloat(categoryMultiplier.toFixed(2)),
-        targetingMultiplier: parseFloat(targetingMultiplier.toFixed(2)),
+        baseCPM: parseFloat(baseCPM.toFixed(10)),
+        categoryMultiplier: parseFloat(categoryMultiplier.toFixed(4)),
+        targetingMultiplier: parseFloat(targetingMultiplier.toFixed(4)),
         cpmBid: parseFloat(cpmBid || 0),
-        finalCPM: parseFloat(finalCPM.toFixed(4)),
+        finalCPM: parseFloat(finalCPM.toFixed(10)),
         impressions,
-        baseCost: parseFloat(baseCost.toFixed(2)),
-        discount: parseFloat(discount.toFixed(2)),
-        platformFee: parseFloat(platformFee.toFixed(2)),
+        baseCost: parseFloat(baseCost.toFixed(10)),
+        discount: parseFloat(discount.toFixed(10)),
+        platformFee: parseFloat(platformFee.toFixed(10)),
         platformFeePercentage,
-        botOwnerRevenue: parseFloat(botOwnerRevenue.toFixed(2)),
-        totalCost: parseFloat(totalCost.toFixed(2)),
+        botOwnerRevenue: parseFloat(botOwnerRevenue.toFixed(10)),
+        totalCost: parseFloat(totalCost.toFixed(10)),
       };
     } catch (error) {
       logger.error('Pricing calculation error:', error);
@@ -189,9 +189,9 @@ class PricingCalculator {
     const botOwnerEarns = revenuePerImpression - platformFee;
 
     return {
-      revenuePerImpression: parseFloat(revenuePerImpression.toFixed(6)),
-      platformFee: parseFloat(platformFee.toFixed(6)),
-      botOwnerEarns: parseFloat(botOwnerEarns.toFixed(6)),
+      revenuePerImpression: parseFloat(revenuePerImpression.toFixed(10)),
+      platformFee: parseFloat(platformFee.toFixed(10)),
+      botOwnerEarns: parseFloat(botOwnerEarns.toFixed(10)),
     };
   }
 }

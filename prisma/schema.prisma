@@ -26,6 +26,8 @@ model User {
   createdAt           DateTime          @default(now()) @map("created_at")
   updatedAt           DateTime          @updatedAt @map("updated_at")
   roles               Role[]
+  twoFactorEnabled    Boolean           @default(false) @map("two_factor_enabled")
+  twoFactorSecret     String?           @map("two_factor_secret")
   ads                 Ad[]
   moderatedAds        Ad[]              @relation("ModeratedBy")
   auditLogs           AuditLog[]
@@ -37,8 +39,6 @@ model User {
   savedAds            SavedAd[]
   transactions        Transaction[]
   wallet              Wallet?
-  twoFactorEnabled    Boolean           @default(false) @map("two_factor_enabled")
-  twoFactorSecret     String?           @map("two_factor_secret")
   approvedWithdrawals WithdrawRequest[] @relation("ApprovedBy")
   withdrawRequests    WithdrawRequest[]
 
@@ -69,13 +69,13 @@ model LoginSession {
 model Wallet {
   id             String   @id @default(cuid())
   userId         String   @unique @map("user_id")
-  available      Decimal  @default(0) @db.Decimal(18, 8)
-  reserved       Decimal  @default(0) @db.Decimal(18, 8)
-  pending        Decimal  @default(0) @db.Decimal(18, 8)
-  totalDeposited Decimal  @default(0) @map("total_deposited") @db.Decimal(18, 8)
-  totalWithdrawn Decimal  @default(0) @map("total_withdrawn") @db.Decimal(18, 8)
-  totalEarned    Decimal  @default(0) @map("total_earned") @db.Decimal(18, 8)
-  totalSpent     Decimal  @default(0) @map("total_spent") @db.Decimal(18, 8)
+  available      Decimal  @default(0) @db.Decimal(20, 10)
+  reserved       Decimal  @default(0) @db.Decimal(20, 10)
+  pending        Decimal  @default(0) @db.Decimal(20, 10)
+  totalDeposited Decimal  @default(0) @map("total_deposited") @db.Decimal(20, 10)
+  totalWithdrawn Decimal  @default(0) @map("total_withdrawn") @db.Decimal(20, 10)
+  totalEarned    Decimal  @default(0) @map("total_earned") @db.Decimal(20, 10)
+  totalSpent     Decimal  @default(0) @map("total_spent") @db.Decimal(20, 10)
   createdAt      DateTime @default(now()) @map("created_at")
   updatedAt      DateTime @updatedAt @map("updated_at")
   user           User     @relation(fields: [userId], references: [id], onDelete: Cascade)
@@ -90,9 +90,9 @@ model Transaction {
   provider      PaymentProvider?
   coin          String?
   network       CryptoNetwork?
-  amount        Decimal           @db.Decimal(12, 2)
+  amount        Decimal           @db.Decimal(20, 10)
   amountCrypto  Decimal?          @map("amount_crypto") @db.Decimal(18, 8)
-  fee           Decimal           @default(0) @db.Decimal(12, 2)
+  fee           Decimal           @default(0) @db.Decimal(20, 10)
   status        TransactionStatus @default(PENDING)
   providerTxId  String?           @unique @map("provider_tx_id")
   address       String?
@@ -120,9 +120,9 @@ model WithdrawRequest {
   coin       String?
   network    CryptoNetwork?
   address    String?
-  amount     Decimal         @db.Decimal(12, 2)
-  fee        Decimal         @db.Decimal(12, 2)
-  netAmount  Decimal         @map("net_amount") @db.Decimal(12, 2)
+  amount     Decimal         @db.Decimal(20, 10)
+  fee        Decimal         @default(0) @db.Decimal(20, 10)
+  netAmount  Decimal         @map("net_amount") @db.Decimal(20, 10)
   status     WithdrawStatus  @default(REQUESTED)
   approvedBy String?         @map("approved_by")
   approvedAt DateTime?       @map("approved_at")
@@ -145,8 +145,8 @@ model LedgerEntry {
   id          String     @id @default(cuid())
   userId      String     @map("user_id")
   type        LedgerType
-  amount      Decimal    @db.Decimal(18, 8)
-  balance     Decimal    @db.Decimal(18, 8)
+  amount      Decimal    @db.Decimal(12, 2)
+  balance     Decimal    @db.Decimal(12, 2)
   refId       String?    @map("ref_id")
   refType     String?    @map("ref_type")
   description String?
@@ -205,7 +205,6 @@ model Bot {
   lastStatsSync     DateTime?       @map("last_stats_sync")
   monetized         Boolean         @default(false)
   isPaused          Boolean         @default(false) @map("is_paused")
-  pauseReason       String?         @map("pause_reason")
   status            BotStatus       @default(PENDING)
   postFilter        String          @default("all") @map("post_filter")
   allowedCategories Json?           @map("allowed_categories")
@@ -217,20 +216,17 @@ model Bot {
   apiKeyRevoked     Boolean         @default(false) @map("api_key_revoked")
   apiKeyLastUsed    DateTime?       @map("api_key_last_used")
   verifiedAt        DateTime?       @map("verified_at")
-  integrationMode   IntegrationMode @default(MANUAL) @map("integration_mode")
-  
-  // Broadcast settings
-  pdpEnabled        Boolean         @default(false) @map("pdp_enabled")
-  pokazEnabled      Boolean         @default(false) @map("pokaz_enabled")
-  autoAcceptAds     Boolean         @default(false) @map("auto_accept_ads")
-  pricePerClick     Decimal         @default(0.01) @map("price_per_click") @db.Decimal(10, 4)
-  pricePerPokaz     Decimal         @default(0.001) @map("price_per_pokaz") @db.Decimal(10, 4)
-
   createdAt         DateTime        @default(now()) @map("created_at")
   updatedAt         DateTime        @updatedAt @map("updated_at")
   avatarUrl         String?         @map("avatar_url")
   blockedAdIds      Json?           @map("blocked_ad_ids")
   botstatData       Json?           @map("botstat_data")
+  integrationMode   IntegrationMode @default(MANUAL) @map("integration_mode")
+  pdpEnabled        Boolean         @default(false) @map("pdp_enabled")
+  pokazEnabled      Boolean         @default(false) @map("pokaz_enabled")
+  pricePerClick     Decimal         @default(0.01) @map("price_per_click") @db.Decimal(10, 4)
+  pricePerPokaz     Decimal         @default(0.001) @map("price_per_pokaz") @db.Decimal(10, 4)
+  autoAcceptAds     Boolean         @default(false) @map("auto_accept_ads")
   botStatistics     BotStatistics[]
   botUsers          BotUser[]
   owner             User            @relation(fields: [ownerId], references: [id], onDelete: Cascade)
@@ -364,30 +360,30 @@ model Impression {
 }
 
 model ClickEvent {
-  id             String    @id @default(cuid())
-  adId           String?   @map("ad_id")
-  broadcastId    String?   @map("broadcast_id")
-  botId          String    @map("bot_id")
-  userId         String?   @map("user_id")
-  telegramUserId String?   @map("telegram_user_id")
-  trackingToken  String    @unique @map("tracking_token")
-  ipAddress      String?   @map("ip_address")
-  userAgent      String?   @map("user_agent")
+  id             String     @id @default(cuid())
+  adId           String?    @map("ad_id")
+  botId          String     @map("bot_id")
+  userId         String?    @map("user_id")
+  telegramUserId String?    @map("telegram_user_id")
+  trackingToken  String     @unique @map("tracking_token")
+  ipAddress      String?    @map("ip_address")
+  userAgent      String?    @map("user_agent")
   referer        String?
   country        String?
   city           String?
-  originalUrl    String    @map("original_url")
-  clicked        Boolean   @default(false)
-  clickedAt      DateTime? @map("clicked_at")
-  createdAt      DateTime  @default(now()) @map("created_at")
-  firstName      String?   @map("first_name")
-  languageCode   String?   @map("language_code")
-  lastName       String?   @map("last_name")
+  originalUrl    String     @map("original_url")
+  clicked        Boolean    @default(false)
+  clickedAt      DateTime?  @map("clicked_at")
+  createdAt      DateTime   @default(now()) @map("created_at")
+  firstName      String?    @map("first_name")
+  languageCode   String?    @map("language_code")
+  lastName       String?    @map("last_name")
   username       String?
-  ad             Ad?       @relation(fields: [adId], references: [id], onDelete: Cascade)
+  broadcastId    String?    @map("broadcast_id")
+  ad             Ad?        @relation(fields: [adId], references: [id], onDelete: Cascade)
+  bot            Bot        @relation(fields: [botId], references: [id], onDelete: Cascade)
   broadcast      Broadcast? @relation(fields: [broadcastId], references: [id], onDelete: Cascade)
-  bot            Bot       @relation(fields: [botId], references: [id], onDelete: Cascade)
-  user           User?     @relation(fields: [userId], references: [id])
+  user           User?      @relation(fields: [userId], references: [id])
 
   @@index([adId, botId, clicked])
   @@index([broadcastId, clicked])
@@ -526,43 +522,36 @@ model BotUser {
 }
 
 model Broadcast {
-  id           String               @id @default(cuid())
-  advertiserId String               @map("advertiser_id")
-  botId        String               @map("bot_id")
-  status       AdStatus             @default(DRAFT)
-  type         BroadcastType        @default(POKAZ)
-  contentType  AdContentType        @map("content_type")
-  text         String
-  mediaUrl     String?              @map("media_url")
-  mediaType    String?              @map("media_type")
-  buttons      Json?
-  targetCount  Int                  @default(0) @map("target_count")
-  sentCount    Int                  @default(0) @map("sent_count")
-  successCount Int                  @default(0) @map("success_count")
-  failedCount  Int                  @default(0) @map("failed_count")
-  blockedCount Int                  @default(0) @map("blocked_count")
-  clickCount   Int                  @default(0) @map("click_count")
-  
-  totalCost    Decimal              @map("total_cost") @db.Decimal(12, 2)
-  platformFee  Decimal              @map("platform_fee") @db.Decimal(12, 2)
-  botOwnerEarn Decimal              @map("bot_owner_earn") @db.Decimal(12, 2)
-  
-  scheduledAt  DateTime?            @map("scheduled_at")
-  startedAt    DateTime?            @map("started_at")
-  completedAt  DateTime?            @map("completed_at")
-  
-  // Targeting
-  language     String?
-  
-  // Report data at launch
-  initialAudience Int?              @map("initial_audience")
-  
-  createdAt    DateTime             @default(now()) @map("created_at")
-  updatedAt    DateTime             @updatedAt @map("updated_at")
-  recipients   BroadcastRecipient[]
-  clickEvents  ClickEvent[]
-  advertiser   User                 @relation("AdvertiserBroadcasts", fields: [advertiserId], references: [id], onDelete: Cascade)
-  bot          Bot                  @relation(fields: [botId], references: [id], onDelete: Cascade)
+  id              String               @id @default(cuid())
+  advertiserId    String               @map("advertiser_id")
+  botId           String               @map("bot_id")
+  status          AdStatus             @default(DRAFT)
+  contentType     AdContentType        @map("content_type")
+  text            String
+  mediaUrl        String?              @map("media_url")
+  mediaType       String?              @map("media_type")
+  buttons         Json?
+  targetCount     Int                  @default(0) @map("target_count")
+  sentCount       Int                  @default(0) @map("sent_count")
+  failedCount     Int                  @default(0) @map("failed_count")
+  totalCost       Decimal              @map("total_cost") @db.Decimal(12, 2)
+  platformFee     Decimal              @map("platform_fee") @db.Decimal(12, 2)
+  botOwnerEarn    Decimal              @map("bot_owner_earn") @db.Decimal(12, 2)
+  startedAt       DateTime?            @map("started_at")
+  completedAt     DateTime?            @map("completed_at")
+  createdAt       DateTime             @default(now()) @map("created_at")
+  updatedAt       DateTime             @updatedAt @map("updated_at")
+  blockedCount    Int                  @default(0) @map("blocked_count")
+  clickCount      Int                  @default(0) @map("click_count")
+  initialAudience Int?                 @map("initial_audience")
+  language        String?
+  scheduledAt     DateTime?            @map("scheduled_at")
+  successCount    Int                  @default(0) @map("success_count")
+  type            BroadcastType        @default(POKAZ)
+  recipients      BroadcastRecipient[]
+  advertiser      User                 @relation("AdvertiserBroadcasts", fields: [advertiserId], references: [id], onDelete: Cascade)
+  bot             Bot                  @relation(fields: [botId], references: [id], onDelete: Cascade)
+  clickEvents     ClickEvent[]
 
   @@index([advertiserId, status])
   @@index([botId, status])
