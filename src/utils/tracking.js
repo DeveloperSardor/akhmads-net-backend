@@ -97,7 +97,10 @@ class Tracking {
     const { adId, botId, broadcastId } = ids;
 
     return buttons.map((button) => {
-      if (!button.url) return button;
+      // If URL is missing OR tracking is explicitly disabled for this button
+      if (!button.url || button.trackingEnabled === false) {
+        return button;
+      }
 
       const token = this.generateToken({
         adId,
