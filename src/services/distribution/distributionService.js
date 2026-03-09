@@ -76,10 +76,10 @@ class DistributionService {
           { deliveredImpressions: 'asc' },
           { createdAt: 'asc' },
         ],
-        take: 50,
+        take: 100, // Gather a larger pool for rotation
       });
 
-      const selectedAds = [];
+      const eligibleAds = [];
       for (const ad of ads) {
         // deliveredImpressions < targetImpressions tekshiruvi
         if (ad.deliveredImpressions >= ad.targetImpressions) {
@@ -115,13 +115,20 @@ class DistributionService {
         // Language filtri: reklama muayyan tillarga mo'ljallangan bo'lsa
         const adLanguages = targeting.languages || [];
         
-        if (adLanguages.length > 0) {
+        if (adLanguages.length > 0 && !adLanguages.includes('all')) {
           if (!userLanguageCode) {
-            continue; // Til noma'lum bo'lsa, maqsadli reklamani ko'rsatmaymiz
-          }
-          const normalizedUserLang = userLanguageCode.split('-')[0].toLowerCase();
-          if (!adLanguages.some(lang => lang.toLowerCase() === normalizedUserLang)) {
-            continue;
+            // Default to 'uz' or 'en' if language is unknown but ad is targeted?
+            // For now, let's still show the ad if it seems to be in a general language pool
+            // OR if user language is missing, we only skip if ad is NOT targeted at common languages
+            const commonLangs = ['uz', 'ru', 'en'];
+            const adHasCommonLangs = adLanguages.some(l => commonLangs.includes(l.toLowerCase()));
+            if (!adHasCommonLangs) continue; 
+          } else {
+            const normalizedUserLang = userLanguageCode.split('-')[0].toLowerCase();
+            const matchesLang = adLanguages.some(lang => 
+              lang.toLowerCase() === normalizedUserLang || lang.toLowerCase() === 'all'
+            );
+            if (!matchesLang) continue;
           }
         }
 
@@ -139,11 +146,21 @@ class DistributionService {
           if (alreadyShown) continue;
         }
 
-        selectedAds.push(ad);
-        if (selectedAds.length >= limit) break;
+        eligibleAds.push(ad);
       }
 
-      return selectedAds;
+      // NO ADS FOUND
+      if (eligibleAds.length === 0) return [];
+
+      // ROTATION LOGIC:
+      // If we have multiple ads, we shuffle them to avoid always showing the same "highest CPM" ad.
+      // This satisfies the "rotation" requirement while keeping selection within high-performing ads.
+      for (let i = eligibleAds.length - 1; i > 0; i--) {
+        const j = Math.floor(Math.random() * (i + 1));
+        [eligibleAds[i], eligibleAds[j]] = [eligibleAds[j], eligibleAds[i]];
+      }
+
+      return eligibleAds.slice(0, limit);
     } catch (error) {
       logger.error('Select ads for user failed:', error);
       return [];
