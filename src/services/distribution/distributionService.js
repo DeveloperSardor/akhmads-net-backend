@@ -43,7 +43,7 @@ class DistributionService {
         const effectiveMinutes = Math.max(bot.frequencyMinutes, MINIMUM_FREQUENCY_MINUTES);
         const minInterval = effectiveMinutes * 60 * 1000;
         if (timeSince < minInterval) {
-          return []; // Hali erta
+          return []; // Hali erta (Foydalanuvchi ham, admin ham chastotaga bo'ysunadi)
         }
       }
 
@@ -96,7 +96,14 @@ class DistributionService {
         const targeting = typeof ad.targeting === 'string' ? JSON.parse(ad.targeting) : (ad.targeting || {});
         const adCategories = targeting.categories || [];
 
-        // Bot faqat muayyan kategoriyalarga ruxsat bergan bo'lsa
+        // 1. Agar reklama muayyan bot kategoriyalarini nishonga olgan bo'lsa (Targeting)
+        // Agar adCategories bo'sh bo'lmasa, bot.category ularning ichida bo'lishi kerak
+        if (adCategories.length > 0 && !adCategories.includes('all')) {
+          const matchesBotCategory = adCategories.includes(bot.category);
+          if (!matchesBotCategory) continue;
+        }
+
+        // 2. Bot faqat muayyan reklama kategoriyalariga ruxsat bergan bo'lsa (Bot Settings)
         if (allowedCategories.length > 0) {
           const hasAllowedCategory = adCategories.some(cat =>
             allowedCategories.includes(cat)
@@ -104,7 +111,7 @@ class DistributionService {
           if (!hasAllowedCategory) continue;
         }
 
-        // Bot ba'zi kategoriyalarni bloklagan bo'lsa
+        // 3. Bot ba'zi reklama kategoriyalarini bloklagan bo'lsa (Bot Settings)
         if (blockedCategories.length > 0) {
           const hasBlockedCategory = adCategories.some(cat =>
             blockedCategories.includes(cat)
@@ -118,13 +125,12 @@ class DistributionService {
         if (adLanguages.length > 0 && !adLanguages.includes('all')) {
           if (!userLanguageCode) {
             // Default to 'uz' or 'en' if language is unknown but ad is targeted?
-            // For now, let's still show the ad if it seems to be in a general language pool
-            // OR if user language is missing, we only skip if ad is NOT targeted at common languages
             const commonLangs = ['uz', 'ru', 'en'];
             const adHasCommonLangs = adLanguages.some(l => commonLangs.includes(l.toLowerCase()));
             if (!adHasCommonLangs) continue; 
           } else {
-            const normalizedUserLang = userLanguageCode.split('-')[0].toLowerCase();
+            // Normalize: 'uz_UZ' -> 'uz' or 'uz-UZ' -> 'uz'
+            const normalizedUserLang = userLanguageCode.replace('_', '-').split('-')[0].toLowerCase();
             const matchesLang = adLanguages.some(lang => 
               lang.toLowerCase() === normalizedUserLang || lang.toLowerCase() === 'all'
             );

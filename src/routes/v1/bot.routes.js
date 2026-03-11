@@ -387,7 +387,7 @@ router.put(
 
       const bot = await botService.updateBot(
         req.params.id,
-        req.userId,
+        req.user,
         req.body,
       );
 

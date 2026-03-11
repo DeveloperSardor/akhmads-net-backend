@@ -264,11 +264,12 @@ class BotService {
    * Update bot settings
    * ✅ Enhanced with all settings fields
    */
-  async updateBot(botId, ownerId, data) {
+  async updateBot(botId, requester, data) {
     try {
-      const bot = await prisma.bot.findFirst({
-        where: { id: botId, ownerId },
-      });
+      const isAdmin = requester.role === 'ADMIN' || requester.role === 'SUPER_ADMIN' || requester.roles?.includes('ADMIN') || requester.roles?.includes('SUPER_ADMIN');
+      
+      const where = isAdmin ? { id: botId } : { id: botId, ownerId: requester.id };
+      const bot = await prisma.bot.findFirst({ where });
 
       if (!bot) {
         throw new NotFoundError('Bot not found');
