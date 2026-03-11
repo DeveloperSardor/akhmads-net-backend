@@ -223,35 +223,38 @@ class UserManagementService {
   }
 
   /**
-   * Top up user wallet (Admin manual adjustment)
+   * Adjust user balance (Admin manual adjustment)
    */
-  async topUpUserWallet(userId, amount, reason, adminId) {
+  async adjustUserBalance(userId, amount, reason, adminId) {
     try {
       const wallet = await prisma.wallet.findUnique({ where: { userId } });
       if (!wallet) throw new NotFoundError('Wallet not found');
 
-      const updatedWallet = await prisma.wallet.update({
-        where: { userId },
-        data: {
-          available: { increment: amount },
-        },
-      });
+      // Use walletService to handle the transaction and ledger entries
+      const walletService = (await import('../wallet/walletService.js')).default;
+      
+      let updatedWallet;
+      if (amount > 0) {
+        updatedWallet = await walletService.credit(userId, amount, 'ADJUSTMENT', `admin_${adminId}`);
+      } else {
+        updatedWallet = await walletService.debit(userId, Math.abs(amount), 'ADJUSTMENT', `admin_${adminId}`);
+      }
 
-      // Create audit log (no Transaction.create - 'ADMIN' is not a valid PaymentProvider)
+      // Create audit log
       await prisma.auditLog.create({
         data: {
           userId: adminId,
-          action: 'USER_WALLET_TOPUP',
+          action: 'USER_BALANCE_ADJUSTED',
           entityType: 'wallet',
           entityId: wallet.id,
-          metadata: JSON.stringify({ userId, amount, reason, action: 'MANUAL_TOPUP' }),
+          metadata: JSON.stringify({ userId, amount, reason, action: 'MANUAL_ADJUSTMENT' }),
         },
       });
 
-      logger.info(`Admin ${adminId} topped up user ${userId} wallet by $${amount}. Reason: ${reason}`);
+      logger.info(`Admin ${adminId} adjusted user ${userId} balance by $${amount}. Reason: ${reason}`);
       return updatedWallet;
     } catch (error) {
-      logger.error('Top up user wallet failed:', error);
+      logger.error('Adjust user balance failed:', error);
       throw error;
     }
   }

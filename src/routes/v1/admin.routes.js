@@ -810,23 +810,23 @@ router.post(
 );
 
 router.post(
-  '/users/:id/topup',
+  '/users/:id/adjust-balance',
   requireAdmin,
   validate([
     param('id').isString(),
-    body('amount').isFloat({ min: 0.01 }).withMessage('Amount must be at least 0.01'),
+    body('amount').isFloat().not().equals('0').withMessage('Amount must be a non-zero number'),
     body('reason').isString().notEmpty().withMessage('Reason is required'),
   ]),
   async (req, res, next) => {
     try {
       const { amount, reason } = req.body;
-      const wallet = await userManagementService.topUpUserWallet(
+      const wallet = await userManagementService.adjustUserBalance(
         req.params.id,
         parseFloat(amount),
         reason,
         req.userId
       );
-      response.success(res, { wallet }, 'User wallet topped up successfully');
+      response.success(res, { wallet }, 'User balance adjusted successfully');
     } catch (error) {
       next(error);
     }
