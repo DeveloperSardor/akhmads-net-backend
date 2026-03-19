@@ -1,12 +1,14 @@
-import { Router } from 'express';
-import distributionService from '../services/distribution/distributionService.js';
-import { authenticateBotApiKey } from '../middleware/auth.js';
-import { botApiRateLimiter } from '../middleware/rateLimiter.js';
-import { publicApiCors } from '../middleware/cors.js';
-import { validate } from '../middleware/validate.js';
-import { body } from 'express-validator';
-import logger from '../utils/logger.js';
-import categoryService from '../services/category/categoryService.js';
+import { Router } from "express";
+import distributionService from "../services/distribution/distributionService.js";
+import { authenticateBotApiKey } from "../middleware/auth.js";
+import { botApiRateLimiter } from "../middleware/rateLimiter.js";
+import { publicApiCors } from "../middleware/cors.js";
+import { validate } from "../middleware/validate.js";
+import { body } from "express-validator";
+import logger from "../utils/logger.js";
+import categoryService from "../services/category/categoryService.js";
+import socketService from "../services/socket/socketService.js";
+import prisma from "../config/database.js";
 
 const router = Router();
 
@@ -19,29 +21,68 @@ router.use(publicApiCors);
  * This is the main public endpoint for bots to request ads
  */
 router.post(
-  '/ad/SendPost',
+  "/ad/SendPost",
   authenticateBotApiKey,
   botApiRateLimiter,
-  body('SendToChatId')
+  body("SendToChatId")
     .isInt({ min: 1, max: 8999999999 })
-    .withMessage('SendToChatId must be a valid Telegram user ID (1–8999999999)'),
-  body('LanguageCode')
+    .withMessage(
+      "SendToChatId must be a valid Telegram user ID (1–8999999999)",
+    ),
+  body("LanguageCode")
     .optional()
     .isString()
     .isLength({ max: 20 })
-    .withMessage('LanguageCode must be a valid language code'),
-  body('FirstName').optional().isString().isLength({ max: 100 }),
-  body('LastName').optional().isString().isLength({ max: 100 }),
-  body('Username').optional().isString().isLength({ max: 64 }),
-  body('Country').optional().isString().isLength({ max: 10 }),
-  body('City').optional().isString().isLength({ max: 100 }),
+    .withMessage("LanguageCode must be a valid language code"),
+  body("FirstName").optional().isString().isLength({ max: 100 }),
+  body("LastName").optional().isString().isLength({ max: 100 }),
+  body("Username").optional().isString().isLength({ max: 64 }),
+  body("Country").optional().isString().isLength({ max: 10 }),
+  body("City").optional().isString().isLength({ max: 100 }),
   validate,
   async (req, res) => {
     try {
-      const { SendToChatId, LanguageCode, FirstName, LastName, Username, Country, City } = req.body;
+      const {
+        SendToChatId,
+        LanguageCode,
+        FirstName,
+        LastName,
+        Username,
+        Country,
+        City,
+      } = req.body;
       const botId = req.botId;
 
-      logger.info(`SendPost request: botId=${botId}, chatId=${SendToChatId}, lang=${LanguageCode}, user=${Username}`);
+      logger.info(
+        `SendPost request: botId=${botId}, chatId=${SendToChatId}, lang=${LanguageCode}, user=${Username}`,
+      );
+
+      // --- Live admin log: API mode bot update ---
+      try {
+        const bot = await prisma.bot.findUnique({
+          where: { id: botId },
+          select: { username: true },
+        });
+        const userLabel = Username ? `@${Username}` : FirstName || SendToChatId;
+        const botLabel = bot?.username ? `@${bot.username}` : botId;
+        socketService.terminalLog(
+          `${userLabel} → API reklama so'rovi: ${botLabel}`,
+          "bot",
+          {
+            botId,
+            botUsername: bot?.username,
+            userId: SendToChatId,
+            username: Username,
+            firstName: FirstName,
+            lastName: LastName,
+            action: "api_sendpost",
+            country: Country || null,
+            lang: LanguageCode || null,
+          },
+        );
+      } catch (_) {
+        /* non-critical */
+      }
 
       // Deliver ad to user
       const result = await distributionService.deliverAd(
@@ -55,7 +96,7 @@ router.post(
           username: Username,
           country: Country,
           city: City,
-        }
+        },
       );
 
       // Return result code
@@ -65,36 +106,35 @@ router.post(
 
       logger.info(`SendPost response: code=${result.code}`);
     } catch (error) {
-      logger.error('SendPost error:', error);
+      logger.error("SendPost error:", error);
       res.json({ SendPostResult: 6 }); // Error code
     }
-  }
+  },
 );
 
 /**
  * GET /api/health
  * Public health check
  */
-router.get('/health', (req, res) => {
+router.get("/health", (req, res) => {
   res.json({
     success: true,
-    message: 'API is healthy',
+    message: "API is healthy",
     timestamp: new Date().toISOString(),
   });
 });
-
 
 /**
  * GET /api/categories
  * Public - Get all active categories
  */
-router.get('/categories', async (req, res) => {
+router.get("/categories", async (req, res) => {
   try {
     const categories = await categoryService.getAll();
     res.json({ success: true, data: categories });
   } catch (error) {
-    logger.error('Get categories error:', error);
-    res.status(500).json({ success: false, error: 'Failed to get categories' });
+    logger.error("Get categories error:", error);
+    res.status(500).json({ success: false, error: "Failed to get categories" });
   }
 });
 
@@ -102,22 +142,26 @@ router.get('/categories', async (req, res) => {
  * GET /api/settings
  * Public - Get general platform settings (CPM, etc)
  */
-router.get('/settings', async (req, res) => {
+router.get("/settings", async (req, res) => {
   try {
-    const prisma = (await import('../config/database.js')).default;
+    const prisma = (await import("../config/database.js")).default;
     const settings = await prisma.platformSettings.findMany({
-      where: { key: { in: ['ad_base_cpm', 'platform_fee_percentage'] } },
+      where: { key: { in: ["ad_base_cpm", "platform_fee_percentage"] } },
     });
 
     const data = {
-      baseCpm: settings.find(s => s.key === 'ad_base_cpm')?.value || '1.5',
-      platformFee: settings.find(s => s.key === 'platform_fee_percentage')?.value || '20',
+      baseCpm: settings.find((s) => s.key === "ad_base_cpm")?.value || "1.5",
+      platformFee:
+        settings.find((s) => s.key === "platform_fee_percentage")?.value ||
+        "20",
     };
 
     res.json({ success: true, data });
   } catch (error) {
-    logger.error('Get public settings error:', error);
-    res.status(500).json({ success: true, data: { baseCpm: '1.5', platformFee: '20' } }); // Fallback
+    logger.error("Get public settings error:", error);
+    res
+      .status(500)
+      .json({ success: true, data: { baseCpm: "1.5", platformFee: "20" } }); // Fallback
   }
 });
 

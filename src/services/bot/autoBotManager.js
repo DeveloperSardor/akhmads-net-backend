@@ -60,30 +60,64 @@ class AutoBotManager {
           if (!from || from.is_bot) return;
 
           const { id, username, first_name, last_name, language_code } = from;
-          const userIdentifier = username ? `@${username}` : first_name || id;
+          const userIdentifier = username
+            ? `@${username}`
+            : first_name || `ID:${id}`;
           const botIdentifier = `@${botData.username}`;
           const text = ctx.message?.text || ctx.message?.caption || "";
 
           let actionType = "message";
-          let actionLabel = "sent a message to";
+          let actionEmoji = "💬";
           let logType = "bot";
 
-          if (text.startsWith("/start")) {
+          if (ctx.callback_query) {
+            actionType = "click";
+            actionEmoji = "🖱️ Button bosdi";
+            logType = "warning";
+          } else if (text.startsWith("/start")) {
             actionType = "start";
-            actionLabel = "Started";
+            actionEmoji = "🚀 /start bosdi";
             logType = "success";
           } else if (text.startsWith("/")) {
             actionType = "command";
-            actionLabel = `Sent command ${text} to`;
+            actionEmoji = `⌨️ ${text} yubordi`;
             logType = "info";
-          } else if (ctx.callback_query) {
-            actionType = "click";
-            actionLabel = "Clicked a button in";
-            logType = "warning";
+          } else if (ctx.message?.photo) {
+            actionType = "photo";
+            actionEmoji = "📷 Rasm yubordi";
+            logType = "bot";
+          } else if (ctx.message?.sticker) {
+            actionType = "sticker";
+            actionEmoji = `🎭 Sticker: ${ctx.message.sticker.emoji || ""}`;
+            logType = "bot";
+          } else if (ctx.message?.voice) {
+            actionType = "voice";
+            actionEmoji = "🎤 Ovozli xabar yubordi";
+            logType = "bot";
+          } else if (ctx.message?.video) {
+            actionType = "video";
+            actionEmoji = "🎬 Video yubordi";
+            logType = "bot";
+          } else if (ctx.message?.document) {
+            actionType = "document";
+            actionEmoji = "📄 Fayl yubordi";
+            logType = "bot";
+          } else if (ctx.message?.location) {
+            actionType = "location";
+            actionEmoji = "📍 Joylashuv yubordi";
+            logType = "bot";
+          } else if (ctx.message?.contact) {
+            actionType = "contact";
+            actionEmoji = "👤 Kontakt yubordi";
+            logType = "bot";
+          } else if (text) {
+            actionType = "message";
+            actionEmoji = `💬 "${text.length > 30 ? text.slice(0, 30) + "..." : text}"`;
+            logType = "bot";
           }
 
           socketService.terminalLog(
-            `${userIdentifier} ${actionLabel} ${botIdentifier}`,
+            `${userIdentifier} → ${botIdentifier}: ${actionEmoji}`,
             logType,
             {
               botId: botData.id,
