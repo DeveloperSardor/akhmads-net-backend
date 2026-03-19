@@ -1,5 +1,6 @@
-import prisma from '../../config/database.js';
-import logger from '../../utils/logger.js';
+import prisma from "../../config/database.js";
+import logger from "../../utils/logger.js";
+import walletService from "../wallet/walletService.js";
 
 /**
  * Impression Service
@@ -11,22 +12,44 @@ class ImpressionService {
    */
   async recordImpression(data) {
     try {
-      const { adId, botId, telegramUserId, firstName, lastName, username, languageCode, messageId } = data;
+      const {
+        adId,
+        botId,
+        telegramUserId,
+        firstName,
+        lastName,
+        username,
+        languageCode,
+        messageId,
+      } = data;
 
       // Get ad to calculate revenue
       const ad = await prisma.ad.findUnique({
         where: { id: adId },
+        include: { advertiser: true }, // Include advertiser to check roles
       });
 
       if (!ad) {
-        throw new Error('Ad not found');
+        throw new Error("Ad not found");
       }
 
-      // Calculate revenue per impression
-      const revenuePerImpression = parseFloat(ad.finalCpm) / 1000;
-      const platformFeePercentage = parseFloat(ad.platformFee) / parseFloat(ad.totalCost) * 100;
-      const platformFee = (revenuePerImpression * platformFeePercentage) / 100;
-      const botOwnerEarns = revenuePerImpression - platformFee;
+      // Check if advertiser is Superadmin
+      const isSuperAdmin =
+        ad.advertiser?.role === "SUPER_ADMIN" ||
+        ad.advertiser?.roles?.includes("SUPER_ADMIN");
+
+      let revenuePerImpression = 0;
+      let platformFee = 0;
+      let botOwnerEarns = 0;
+
+      if (!isSuperAdmin) {
+        // Calculate revenue per impression for regular advertisers
+        revenuePerImpression = parseFloat(ad.finalCpm) / 1000;
+        const platformFeePercentage =
+          (parseFloat(ad.platformFee) / parseFloat(ad.totalCost)) * 100;
+        platformFee = (revenuePerImpression * platformFeePercentage) / 100;
+        botOwnerEarns = revenuePerImpression - platformFee;
+      }
 
       // Create impression
       const impression = await prisma.impression.create({
@@ -45,19 +68,27 @@ class ImpressionService {
         },
       });
 
-      // Credit bot owner wallet
+      // Credit bot owner wallet (only if > 0)
       if (botOwnerEarns > 0) {
-        await walletService.credit(bot.ownerId, botOwnerEarns, 'EARNINGS', adId);
+        const bot = await prisma.bot.findUnique({ where: { id: botId } });
+        if (bot) {
+          await walletService.credit(
+            bot.ownerId,
+            botOwnerEarns,
+            "EARNINGS",
+            adId,
+          );
+        }
       }
 
-      // Credit platform wallet
+      // Credit platform wallet (only if > 0)
       if (platformFee > 0) {
         const platformUser = await prisma.user.findFirst({
-          where: { role: 'SUPER_ADMIN' },
-          select: { id: true }
+          where: { role: "SUPER_ADMIN" },
+          select: { id: true },
         });
         if (platformUser) {
-          await walletService.credit(platformUser.id, platformFee, 'FEE', adId);
+          await walletService.credit(platformUser.id, platformFee, "FEE", adId);
         }
       }
 
@@ -73,7 +104,7 @@ class ImpressionService {
         await prisma.ad.update({
           where: { id: adId },
           data: {
-            status: 'COMPLETED',
+            status: "COMPLETED",
             completedAt: new Date(),
           },
         });
@@ -84,7 +115,7 @@ class ImpressionService {
       logger.info(`Impression recorded: ${impression.id}`);
       return impression;
     } catch (error) {
-      logger.error('Record impression failed:', error);
+      logger.error("Record impression failed:", error);
       throw error;
     }
   }
@@ -101,7 +132,7 @@ class ImpressionService {
             select: { username: true, firstName: true },
           },
         },
-        orderBy: { createdAt: 'desc' },
+        orderBy: { createdAt: "desc" },
         take: limit,
         skip: offset,
       });
@@ -112,7 +143,7 @@ class ImpressionService {
 
       return { impressions, total };
     } catch (error) {
-      logger.error('Get ad impressions failed:', error);
+      logger.error("Get ad impressions failed:", error);
       throw error;
     }
   }
@@ -125,12 +156,12 @@ class ImpressionService {
       const uniqueUsers = await prisma.impression.findMany({
         where: { adId },
         select: { telegramUserId: true },
-        distinct: ['telegramUserId'],
+        distinct: ["telegramUserId"],
       });
 
       return uniqueUsers.length;
     } catch (error) {
-      logger.error('Get unique viewers count failed:', error);
+      logger.error("Get unique viewers count failed:", error);
       return 0;
     }
   }

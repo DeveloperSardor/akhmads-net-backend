@@ -433,18 +433,24 @@ class DistributionService {
         ad.advertiser.roles?.includes("SUPER_ADMIN");
 
       // Calculate revenue using ad-defined fees (locked at creation)
-      const cpm = parseFloat(ad.finalCpm) || 0;
-      const totalCampaignCost = parseFloat(ad.totalCost) || 1; // Avoid division by zero
-      const botRevenuePart = parseFloat(ad.botOwnerRevenue) || 0;
-      const platformFeePart = parseFloat(ad.platformFee) || 0;
+      let revenuePerImpression = 0;
+      let platformFee = 0;
+      let botOwnerEarns = 0;
 
-      // Use the ratio from the ad definition
-      const botOwnerRatio = botRevenuePart / totalCampaignCost;
-      const platformRatio = platformFeePart / totalCampaignCost;
+      if (!isAdvertiserSuperAdmin) {
+        const cpm = parseFloat(ad.finalCpm) || 0;
+        const totalCampaignCost = parseFloat(ad.totalCost) || 1; // Avoid division by zero
+        const botRevenuePart = parseFloat(ad.botOwnerRevenue) || 0;
+        const platformFeePart = parseFloat(ad.platformFee) || 0;
 
-      const revenuePerImpression = cpm / 1000;
-      const platformFee = revenuePerImpression * platformRatio;
-      const botOwnerEarns = revenuePerImpression * botOwnerRatio;
+        // Use the ratio from the ad definition
+        const botOwnerRatio = botRevenuePart / totalCampaignCost;
+        const platformRatio = platformFeePart / totalCampaignCost;
+
+        revenuePerImpression = cpm / 1000;
+        platformFee = revenuePerImpression * platformRatio;
+        botOwnerEarns = revenuePerImpression * botOwnerRatio;
+      }
 
       // Look up existing BotUser first to enrich user data (fallback for missing fields)
       let existingBotUser = null;
@@ -607,7 +613,7 @@ class DistributionService {
       // logger.info(`Impression recorded: ad=${adId}, bot=${botId}, user=${telegramUserId}`);
 
       // Credit bot owner's wallet (if any)
-      // Note: Bot owner gets paid even if it's an admin ad (to keep them happy)
+      // Note: Admin ads are free and do not pay bot owners (as requested by client)
       if (botOwnerEarns > 0) {
         try {
           if (bot && bot.ownerId) {
