@@ -18,7 +18,20 @@ class SocketService {
   init(server) {
     this.io = new Server(server, {
       cors: {
-        origin: process.env.ADMIN_URL || "*",
+        origin: (origin, callback) => {
+          // If no origin (same-origin, tools, etc.) or in allowed list
+          const allowedOrigins = (process.env.ALLOWED_ORIGINS || "").split(",");
+          if (
+            !origin ||
+            allowedOrigins.includes(origin) ||
+            origin.includes("akhmads.net")
+          ) {
+            callback(null, true);
+          } else {
+            logger.warn(`Socket.io CORS blocked origin: ${origin}`);
+            callback(null, false); // Block it but don't throw hard
+          }
+        },
         methods: ["GET", "POST"],
         credentials: true,
       },
