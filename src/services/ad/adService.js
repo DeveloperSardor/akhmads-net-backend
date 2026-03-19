@@ -1,13 +1,18 @@
 // src/services/ad/adService.js
-import prisma from '../../config/database.js';
-import walletService from '../wallet/walletService.js';
-import pricingCalculator from '../../utils/pricing.js';
-import logger from '../../utils/logger.js';
-import { NotFoundError, InsufficientFundsError, ValidationError } from '../../utils/errors.js';
-import encryption from '../../utils/encryption.js';
-import telegramAPI from '../../utils/telegram-api.js';
-import telegramPreviewService from '../telegram/telegramPreviewService.js';
-import userNotificationService from '../telegram/userNotificationService.js';
+import prisma from "../../config/database.js";
+import walletService from "../wallet/walletService.js";
+import pricingCalculator from "../../utils/pricing.js";
+import logger from "../../utils/logger.js";
+import {
+  NotFoundError,
+  InsufficientFundsError,
+  ValidationError,
+} from "../../utils/errors.js";
+import encryption from "../../utils/encryption.js";
+import telegramAPI from "../../utils/telegram-api.js";
+import telegramPreviewService from "../telegram/telegramPreviewService.js";
+import userNotificationService from "../telegram/userNotificationService.js";
+import socketService from "../socket/socketService.js";
 
 /**
  * Ad Service
@@ -22,7 +27,7 @@ class AdService {
       // Get pricing tiers
       const tiers = await prisma.pricingTier.findMany({
         where: { isActive: true },
-        orderBy: { impressions: 'asc' },
+        orderBy: { impressions: "asc" },
       });
 
       // Find appropriate tier
@@ -30,13 +35,15 @@ class AdService {
 
       // Get platform settings
       const platformSettings = await prisma.platformSettings.findMany({
-        where: { key: { in: ['platform_fee_percentage', 'ad_base_cpm'] } },
+        where: { key: { in: ["platform_fee_percentage", "ad_base_cpm"] } },
       });
 
-      const feeSetting = platformSettings.find(s => s.key === 'platform_fee_percentage');
-      const cpmSetting = platformSettings.find(s => s.key === 'ad_base_cpm');
+      const feeSetting = platformSettings.find(
+        (s) => s.key === "platform_fee_percentage",
+      );
+      const cpmSetting = platformSettings.find((s) => s.key === "ad_base_cpm");
 
-      const platformFeePercentage = parseFloat(feeSetting?.value || '20');
+      const platformFeePercentage = parseFloat(feeSetting?.value || "20");
       const baseCpm = cpmSetting ? parseFloat(cpmSetting.value) : 1.5;
 
       // Get promo code if provided
@@ -73,7 +80,7 @@ class AdService {
         promoCode,
       };
     } catch (error) {
-      logger.error('Calculate pricing failed:', error);
+      logger.error("Calculate pricing failed:", error);
       throw error;
     }
   }
@@ -115,10 +122,14 @@ class AdService {
           platformFee: pricing.platformFee,
           botOwnerRevenue: pricing.botOwnerRevenue,
           remainingBudget: pricing.totalCost,
-          status: 'DRAFT', // ✅ Start as DRAFT
+          status: "DRAFT", // ✅ Start as DRAFT
           targeting: data.targeting ? JSON.stringify(data.targeting) : null,
-          excludedUserIds: data.excludedUserIds ? JSON.stringify(data.excludedUserIds) : null,
-          specificBotIds: data.specificBotIds ? JSON.stringify(data.specificBotIds) : null,
+          excludedUserIds: data.excludedUserIds
+            ? JSON.stringify(data.excludedUserIds)
+            : null,
+          specificBotIds: data.specificBotIds
+            ? JSON.stringify(data.specificBotIds)
+            : null,
           promoCodeUsed: promoCode?.code,
           discount: pricing.discount,
         },
@@ -127,7 +138,7 @@ class AdService {
       logger.info(`✅ Ad created (DRAFT): ${ad.id}`);
       return ad;
     } catch (error) {
-      logger.error('Create ad failed:', error);
+      logger.error("Create ad failed:", error);
       throw error;
     }
   }
@@ -143,16 +154,19 @@ class AdService {
       });
 
       if (!ad) {
-        throw new NotFoundError('Ad not found');
+        throw new NotFoundError("Ad not found");
       }
 
-      if (ad.status !== 'DRAFT') {
-        throw new ValidationError('Only draft ads can be submitted');
+      if (ad.status !== "DRAFT") {
+        throw new ValidationError("Only draft ads can be submitted");
       }
 
       // Check if advertiser is Superadmin to bypass payment
-      const user = await prisma.user.findUnique({ where: { id: advertiserId } });
-      const isSuperAdmin = user?.role === 'SUPER_ADMIN' || user?.roles?.includes('SUPER_ADMIN');
+      const user = await prisma.user.findUnique({
+        where: { id: advertiserId },
+      });
+      const isSuperAdmin =
+        user?.role === "SUPER_ADMIN" || user?.roles?.includes("SUPER_ADMIN");
 
       if (!isSuperAdmin) {
         // Check wallet balance
@@ -162,7 +176,7 @@ class AdService {
 
         if (available < cost) {
           throw new InsufficientFundsError(
-            `Insufficient balance. Available: $${available.toFixed(2)}, Required: $${cost.toFixed(2)}`
+            `Insufficient balance. Available: $${available.toFixed(2)}, Required: $${cost.toFixed(2)}`,
           );
         }
 
@@ -174,7 +188,7 @@ class AdService {
       const updated = await prisma.ad.update({
         where: { id: adId },
         data: {
-          status: 'PENDING_REVIEW',
+          status: "PENDING_REVIEW",
           rejectionReason: null,
         },
       });
@@ -188,9 +202,15 @@ class AdService {
       }
 
       logger.info(`📤 Ad submitted for review: ${adId}, cost=$${cost}`);
+      socketService.terminalLog(
+        `Ad submitted for review by @${user?.username || user?.firstName} (Budget: $${cost.toFixed(2)})`,
+        "info",
+        { action: "ad_submit", adId, advertiserId },
+      );
+
       return updated;
     } catch (error) {
-      logger.error('Submit ad failed:', error);
+      logger.error("Submit ad failed:", error);
       throw error;
     }
   }
@@ -207,14 +227,16 @@ class AdService {
       });
 
       if (!ad) {
-        throw new NotFoundError('Ad not found');
+        throw new NotFoundError("Ad not found");
       }
 
-      if (ad.status !== 'PENDING_REVIEW') {
-        throw new ValidationError('Only pending ads can be approved');
+      if (ad.status !== "PENDING_REVIEW") {
+        throw new ValidationError("Only pending ads can be approved");
       }
 
-      const isSuperAdmin = ad.advertiser.role === 'SUPER_ADMIN' || ad.advertiser.roles?.includes('SUPER_ADMIN');
+      const isSuperAdmin =
+        ad.advertiser.role === "SUPER_ADMIN" ||
+        ad.advertiser.roles?.includes("SUPER_ADMIN");
 
       if (!isSuperAdmin) {
         const cost = parseFloat(ad.totalCost);
@@ -223,7 +245,7 @@ class AdService {
       }
 
       // Update ad status
-      const newStatus = scheduledStart ? 'SCHEDULED' : 'RUNNING';
+      const newStatus = scheduledStart ? "SCHEDULED" : "RUNNING";
 
       const updated = await prisma.ad.update({
         where: { id: adId },
@@ -231,19 +253,24 @@ class AdService {
           status: newStatus,
           moderatedBy: moderatorId,
           moderatedAt: new Date(),
-          startedAt: newStatus === 'RUNNING' ? new Date() : null,
+          startedAt: newStatus === "RUNNING" ? new Date() : null,
           scheduledAt: scheduledStart || null,
         },
       });
 
       logger.info(`✅ Ad approved: ${adId}, status=${newStatus}`);
+      socketService.terminalLog(
+        `Ad approved for @${ad.advertiser.username || ad.advertiser.firstName}`,
+        "success",
+        { action: "ad_approve", adId, advertiserId: ad.advertiserId },
+      );
 
       // ✅ Send notification to advertiser via Telegram Bot
       await userNotificationService.notifyAdApproved(ad.advertiser, ad);
 
       return updated;
     } catch (error) {
-      logger.error('Approve ad failed:', error);
+      logger.error("Approve ad failed:", error);
       throw error;
     }
   }
@@ -260,14 +287,16 @@ class AdService {
       });
 
       if (!ad) {
-        throw new NotFoundError('Ad not found');
+        throw new NotFoundError("Ad not found");
       }
 
-      if (ad.status !== 'PENDING_REVIEW') {
-        throw new ValidationError('Only pending ads can be rejected');
+      if (ad.status !== "PENDING_REVIEW") {
+        throw new ValidationError("Only pending ads can be rejected");
       }
 
-      const isSuperAdmin = ad.advertiser.role === 'SUPER_ADMIN' || ad.advertiser.roles?.includes('SUPER_ADMIN');
+      const isSuperAdmin =
+        ad.advertiser.role === "SUPER_ADMIN" ||
+        ad.advertiser.roles?.includes("SUPER_ADMIN");
 
       if (!isSuperAdmin) {
         const cost = parseFloat(ad.totalCost);
@@ -279,7 +308,7 @@ class AdService {
       const updated = await prisma.ad.update({
         where: { id: adId },
         data: {
-          status: 'REJECTED',
+          status: "REJECTED",
           moderatedBy: moderatorId,
           moderatedAt: new Date(),
           rejectionReason: reason,
@@ -287,13 +316,18 @@ class AdService {
       });
 
       logger.info(`Ad rejected: ${adId}, reason=${reason}`);
+      socketService.terminalLog(
+        `Ad rejected for @${ad.advertiser.username || ad.advertiser.firstName} (Reason: ${reason})`,
+        "error",
+        { action: "ad_reject", adId, advertiserId: ad.advertiserId },
+      );
 
       // ✅ Send notification to advertiser via Telegram Bot
       await userNotificationService.notifyAdRejected(ad.advertiser, ad, reason);
 
       return updated;
     } catch (error) {
-      logger.error('Reject ad failed:', error);
+      logger.error("Reject ad failed:", error);
       throw error;
     }
   }
@@ -313,7 +347,7 @@ class AdService {
 
       const ads = await prisma.ad.findMany({
         where,
-        orderBy: { createdAt: 'desc' },
+        orderBy: { createdAt: "desc" },
         take: limit,
         skip: offset,
       });
@@ -322,7 +356,7 @@ class AdService {
 
       return { ads, total };
     } catch (error) {
-      logger.error('Get user ads failed:', error);
+      logger.error("Get user ads failed:", error);
       throw error;
     }
   }
@@ -354,12 +388,12 @@ class AdService {
       });
 
       if (!ad) {
-        throw new NotFoundError('Ad not found');
+        throw new NotFoundError("Ad not found");
       }
 
       return ad;
     } catch (error) {
-      logger.error('Get ad failed:', error);
+      logger.error("Get ad failed:", error);
       throw error;
     }
   }
@@ -374,11 +408,11 @@ class AdService {
       });
 
       if (!ad) {
-        throw new NotFoundError('Ad not found');
+        throw new NotFoundError("Ad not found");
       }
 
-      if (!['DRAFT', 'REJECTED'].includes(ad.status)) {
-        throw new ValidationError('Only draft or rejected ads can be edited');
+      if (!["DRAFT", "REJECTED"].includes(ad.status)) {
+        throw new ValidationError("Only draft or rejected ads can be edited");
       }
 
       // Recalculate pricing if impressions/targeting changed
@@ -387,7 +421,7 @@ class AdService {
         const result = await this.calculatePricing({
           impressions: data.targetImpressions || ad.targetImpressions,
           category: ad.category,
-          targeting: data.targeting || JSON.parse(ad.targeting || '{}'),
+          targeting: data.targeting || JSON.parse(ad.targeting || "{}"),
           cpmBid: data.cpmBid !== undefined ? data.cpmBid : ad.cpmBid,
         });
         pricing = result.pricing;
@@ -411,11 +445,19 @@ class AdService {
           platformFee: pricing?.platformFee,
           botOwnerRevenue: pricing?.botOwnerRevenue,
           remainingBudget: pricing?.totalCost,
-          targeting: data.targeting ? JSON.stringify(data.targeting) : undefined,
-          excludedUserIds: data.excludedUserIds ? JSON.stringify(data.excludedUserIds) : undefined,
-          specificBotIds: data.specificBotIds ? JSON.stringify(data.specificBotIds) : undefined,
-          excludedBotIds: data.excludedBotIds ? JSON.stringify(data.excludedBotIds) : undefined,
-          status: ad.status === 'REJECTED' ? 'DRAFT' : undefined, // Reset to DRAFT if was rejected
+          targeting: data.targeting
+            ? JSON.stringify(data.targeting)
+            : undefined,
+          excludedUserIds: data.excludedUserIds
+            ? JSON.stringify(data.excludedUserIds)
+            : undefined,
+          specificBotIds: data.specificBotIds
+            ? JSON.stringify(data.specificBotIds)
+            : undefined,
+          excludedBotIds: data.excludedBotIds
+            ? JSON.stringify(data.excludedBotIds)
+            : undefined,
+          status: ad.status === "REJECTED" ? "DRAFT" : undefined, // Reset to DRAFT if was rejected
           rejectionReason: null, // Always clear rejection reason when user edits
         },
       });
@@ -423,7 +465,7 @@ class AdService {
       logger.info(`📝 Ad updated: ${adId}`);
       return updated;
     } catch (error) {
-      logger.error('Update ad failed:', error);
+      logger.error("Update ad failed:", error);
       throw error;
     }
   }
@@ -438,22 +480,22 @@ class AdService {
       });
 
       if (!ad) {
-        throw new NotFoundError('Ad not found');
+        throw new NotFoundError("Ad not found");
       }
 
-      if (ad.status !== 'RUNNING') {
-        throw new ValidationError('Only running ads can be paused');
+      if (ad.status !== "RUNNING") {
+        throw new ValidationError("Only running ads can be paused");
       }
 
       const updated = await prisma.ad.update({
         where: { id: adId },
-        data: { status: 'PAUSED' },
+        data: { status: "PAUSED" },
       });
 
       logger.info(`⏸️ Ad paused: ${adId}`);
       return updated;
     } catch (error) {
-      logger.error('Pause ad failed:', error);
+      logger.error("Pause ad failed:", error);
       throw error;
     }
   }
@@ -468,22 +510,22 @@ class AdService {
       });
 
       if (!ad) {
-        throw new NotFoundError('Ad not found');
+        throw new NotFoundError("Ad not found");
       }
 
-      if (ad.status !== 'PAUSED') {
-        throw new ValidationError('Only paused ads can be resumed');
+      if (ad.status !== "PAUSED") {
+        throw new ValidationError("Only paused ads can be resumed");
       }
 
       const updated = await prisma.ad.update({
         where: { id: adId },
-        data: { status: 'RUNNING' },
+        data: { status: "RUNNING" },
       });
 
       logger.info(`▶️ Ad resumed: ${adId}`);
       return updated;
     } catch (error) {
-      logger.error('Resume ad failed:', error);
+      logger.error("Resume ad failed:", error);
       throw error;
     }
   }
@@ -497,22 +539,28 @@ class AdService {
       const ad = await prisma.ad.findFirst({ where });
 
       if (!ad) {
-        throw new NotFoundError('Ad not found');
+        throw new NotFoundError("Ad not found");
       }
 
       // If not admin, can only delete: DRAFT, REJECTED, COMPLETED, PAUSED
       if (!isAdmin) {
-        const deletableStatuses = ['DRAFT', 'REJECTED', 'COMPLETED', 'PAUSED'];
+        const deletableStatuses = ["DRAFT", "REJECTED", "COMPLETED", "PAUSED"];
         if (!deletableStatuses.includes(ad.status)) {
-          throw new ValidationError(`Cannot delete ad with status: ${ad.status}`);
+          throw new ValidationError(
+            `Cannot delete ad with status: ${ad.status}`,
+          );
         }
       }
 
       // Refund if in PENDING_REVIEW (funds still reserved)
-      if (ad.status === 'PENDING_REVIEW') {
-        const advertiser = await prisma.user.findUnique({ where: { id: ad.advertiserId } });
-        const isSuperAdmin = advertiser?.role === 'SUPER_ADMIN' || advertiser?.roles?.includes('SUPER_ADMIN');
-        
+      if (ad.status === "PENDING_REVIEW") {
+        const advertiser = await prisma.user.findUnique({
+          where: { id: ad.advertiserId },
+        });
+        const isSuperAdmin =
+          advertiser?.role === "SUPER_ADMIN" ||
+          advertiser?.roles?.includes("SUPER_ADMIN");
+
         if (!isSuperAdmin) {
           const cost = parseFloat(ad.totalCost);
           await walletService.refundAdReserve(ad.advertiserId, adId, cost);
@@ -524,10 +572,10 @@ class AdService {
         where: { id: adId },
       });
 
-      logger.info(`🗑️ Ad deleted by ${isAdmin ? 'ADMIN' : 'USER'}: ${adId}`);
+      logger.info(`🗑️ Ad deleted by ${isAdmin ? "ADMIN" : "USER"}: ${adId}`);
       return true;
     } catch (error) {
-      logger.error('Delete ad failed:', error);
+      logger.error("Delete ad failed:", error);
       throw error;
     }
   }
@@ -538,15 +586,19 @@ class AdService {
   async adminPauseAd(adId, adminId) {
     try {
       const ad = await prisma.ad.findUnique({ where: { id: adId } });
-      if (!ad) throw new NotFoundError('Ad not found');
-      
+      if (!ad) throw new NotFoundError("Ad not found");
+
       const updated = await prisma.ad.update({
         where: { id: adId },
-        data: { status: 'PAUSED', moderatedBy: adminId, moderatedAt: new Date() },
+        data: {
+          status: "PAUSED",
+          moderatedBy: adminId,
+          moderatedAt: new Date(),
+        },
       });
       return updated;
     } catch (error) {
-      logger.error('Admin pause ad failed:', error);
+      logger.error("Admin pause ad failed:", error);
       throw error;
     }
   }
@@ -557,15 +609,19 @@ class AdService {
   async adminResumeAd(adId, adminId) {
     try {
       const ad = await prisma.ad.findUnique({ where: { id: adId } });
-      if (!ad) throw new NotFoundError('Ad not found');
-      
+      if (!ad) throw new NotFoundError("Ad not found");
+
       const updated = await prisma.ad.update({
         where: { id: adId },
-        data: { status: 'RUNNING', moderatedBy: adminId, moderatedAt: new Date() },
+        data: {
+          status: "RUNNING",
+          moderatedBy: adminId,
+          moderatedAt: new Date(),
+        },
       });
       return updated;
     } catch (error) {
-      logger.error('Admin resume ad failed:', error);
+      logger.error("Admin resume ad failed:", error);
       throw error;
     }
   }
@@ -580,7 +636,7 @@ class AdService {
       });
 
       if (!original) {
-        throw new NotFoundError('Ad not found');
+        throw new NotFoundError("Ad not found");
       }
 
       const duplicate = await prisma.ad.create({
@@ -605,7 +661,7 @@ class AdService {
           platformFee: original.platformFee,
           botOwnerRevenue: original.botOwnerRevenue,
           remainingBudget: original.totalCost,
-          status: 'DRAFT',
+          status: "DRAFT",
           targeting: original.targeting,
           excludedUserIds: original.excludedUserIds,
           specificBotIds: original.specificBotIds,
@@ -615,7 +671,7 @@ class AdService {
       logger.info(`📋 Ad duplicated: ${adId} → ${duplicate.id}`);
       return duplicate;
     } catch (error) {
-      logger.error('Duplicate ad failed:', error);
+      logger.error("Duplicate ad failed:", error);
       throw error;
     }
   }
@@ -630,11 +686,13 @@ class AdService {
       });
 
       if (!ad) {
-        throw new NotFoundError('Ad not found');
+        throw new NotFoundError("Ad not found");
       }
 
-      if (!['COMPLETED', 'REJECTED', 'PAUSED'].includes(ad.status)) {
-        throw new ValidationError('Can only archive completed, rejected, or paused ads');
+      if (!["COMPLETED", "REJECTED", "PAUSED"].includes(ad.status)) {
+        throw new ValidationError(
+          "Can only archive completed, rejected, or paused ads",
+        );
       }
 
       const updated = await prisma.ad.update({
@@ -645,7 +703,7 @@ class AdService {
       logger.info(`📦 Ad archived: ${adId}`);
       return updated;
     } catch (error) {
-      logger.error('Archive ad failed:', error);
+      logger.error("Archive ad failed:", error);
       throw error;
     }
   }
@@ -660,7 +718,7 @@ class AdService {
       });
 
       if (!ad) {
-        throw new NotFoundError('Ad not found');
+        throw new NotFoundError("Ad not found");
       }
 
       const updated = await prisma.ad.update({
@@ -671,7 +729,7 @@ class AdService {
       logger.info(`📂 Ad unarchived: ${adId}`);
       return updated;
     } catch (error) {
-      logger.error('Unarchive ad failed:', error);
+      logger.error("Unarchive ad failed:", error);
       throw error;
     }
   }
@@ -687,22 +745,22 @@ class AdService {
 
       // Get impressions breakdown by bot
       const impressionsByBot = await prisma.impression.groupBy({
-        by: ['botId'],
+        by: ["botId"],
         where: { adId },
         _count: { id: true },
         _sum: { revenue: true },
       });
 
       // Get bot details
-      const botIds = impressionsByBot.map(i => i.botId);
+      const botIds = impressionsByBot.map((i) => i.botId);
       const bots = await prisma.bot.findMany({
         where: { id: { in: botIds } },
         select: { id: true, username: true, firstName: true },
       });
 
-      const botsMap = Object.fromEntries(bots.map(b => [b.id, b]));
+      const botsMap = Object.fromEntries(bots.map((b) => [b.id, b]));
 
-      const breakdown = impressionsByBot.map(item => ({
+      const breakdown = impressionsByBot.map((item) => ({
         bot: botsMap[item.botId],
         impressions: item._count.id,
         revenue: item._sum.revenue,
@@ -729,7 +787,7 @@ class AdService {
         totalClicks: clicks,
       };
     } catch (error) {
-      logger.error('Get ad performance failed:', error);
+      logger.error("Get ad performance failed:", error);
       throw error;
     }
   }
@@ -744,32 +802,40 @@ class AdService {
       });
 
       if (!ad) {
-        throw new NotFoundError('Ad not found');
+        throw new NotFoundError("Ad not found");
       }
 
       // Try to find the user's own active bot first
       const userBot = await prisma.bot.findFirst({
         where: {
           ownerId: advertiserId,
-          status: 'ACTIVE',
+          status: "ACTIVE",
           isPaused: false,
         },
-        orderBy: { createdAt: 'asc' },
+        orderBy: { createdAt: "asc" },
       });
 
       if (userBot) {
         // Send via the user's own registered bot
         logger.info(`Sending test ad via user's own bot ${userBot.id}`);
         const adData = {
-          text: ad.text || '',
+          text: ad.text || "",
           mediaUrl: ad.mediaUrl || null,
-          buttons: ad.buttons ? (typeof ad.buttons === 'string' ? JSON.parse(ad.buttons) : ad.buttons) : [],
+          buttons: ad.buttons
+            ? typeof ad.buttons === "string"
+              ? JSON.parse(ad.buttons)
+              : ad.buttons
+            : [],
           contentType: ad.contentType,
         };
-        await telegramPreviewService.sendTestAdViaBot(userBot.id, advertiserId, adData);
+        await telegramPreviewService.sendTestAdViaBot(
+          userBot.id,
+          advertiserId,
+          adData,
+        );
         return {
           success: true,
-          message: 'Test ad sent to your Telegram via your bot!',
+          message: "Test ad sent to your Telegram via your bot!",
           botUsername: userBot.username,
         };
       }
@@ -777,19 +843,19 @@ class AdService {
       // Fallback: use platform bot token
       const user = await prisma.user.findUnique({
         where: { id: advertiserId },
-        select: { telegramId: true, username: true, firstName: true }
+        select: { telegramId: true, username: true, firstName: true },
       });
 
       const targetUserId = user?.telegramId || telegramUserId;
 
       if (!targetUserId) {
-        throw new ValidationError('Telegram ID not found');
+        throw new ValidationError("Telegram ID not found");
       }
 
       const botToken = process.env.TELEGRAM_BOT_TOKEN;
 
       if (!botToken) {
-        throw new Error('TELEGRAM_BOT_TOKEN not configured');
+        throw new Error("TELEGRAM_BOT_TOKEN not configured");
       }
 
       logger.info(`Sending test ad to user ${targetUserId} via platform bot`);
@@ -797,7 +863,7 @@ class AdService {
       const message = await this.prepareTestMessage(ad);
 
       try {
-        if (ad.contentType === 'MEDIA' && ad.mediaUrl) {
+        if (ad.contentType === "MEDIA" && ad.mediaUrl) {
           await telegramAPI.sendPhoto(botToken, {
             chat_id: targetUserId,
             photo: ad.mediaUrl,
@@ -818,25 +884,27 @@ class AdService {
 
         return {
           success: true,
-          message: 'Test ad sent to your Telegram!',
+          message: "Test ad sent to your Telegram!",
         };
       } catch (error) {
-        logger.error('Telegram API error:', error);
+        logger.error("Telegram API error:", error);
 
-        const errorMsg = error.message || '';
+        const errorMsg = error.message || "";
 
-        if (errorMsg === 'USER_BLOCKED_BOT') {
-          throw new ValidationError('You blocked the bot. Please unblock and try again.');
+        if (errorMsg === "USER_BLOCKED_BOT") {
+          throw new ValidationError(
+            "You blocked the bot. Please unblock and try again.",
+          );
         }
 
-        if (errorMsg === 'CHAT_NOT_FOUND') {
-          throw new ValidationError('Invalid Telegram ID');
+        if (errorMsg === "CHAT_NOT_FOUND") {
+          throw new ValidationError("Invalid Telegram ID");
         }
 
         throw new ValidationError(`Failed to send: ${errorMsg}`);
       }
     } catch (error) {
-      logger.error('Send test ad failed:', error);
+      logger.error("Send test ad failed:", error);
       throw error;
     }
   }
@@ -846,27 +914,26 @@ class AdService {
    */
   async prepareTestMessage(ad) {
     try {
-      let text = ad.text || '';
-      let parseMode = 'HTML';
+      let text = ad.text || "";
+      let parseMode = "HTML";
 
-      if (ad.contentType === 'MARKDOWN') {
-        parseMode = 'Markdown';
+      if (ad.contentType === "MARKDOWN") {
+        parseMode = "Markdown";
         text = ad.markdownContent || text;
-      } else if (ad.contentType === 'HTML') {
+      } else if (ad.contentType === "HTML") {
         text = ad.htmlContent || text;
       }
 
       // Prepare buttons
       let replyMarkup = null;
       if (ad.buttons) {
-        const buttons = typeof ad.buttons === 'string'
-          ? JSON.parse(ad.buttons)
-          : ad.buttons;
+        const buttons =
+          typeof ad.buttons === "string" ? JSON.parse(ad.buttons) : ad.buttons;
 
         if (buttons && buttons.length > 0) {
           replyMarkup = {
             inline_keyboard: [
-              buttons.map(btn => ({
+              buttons.map((btn) => ({
                 text: btn.text,
                 url: btn.url,
               })),
@@ -881,8 +948,8 @@ class AdService {
         replyMarkup,
       };
     } catch (error) {
-      logger.error('Prepare test message failed:', error);
-      throw new ValidationError('Failed to prepare test message');
+      logger.error("Prepare test message failed:", error);
+      throw new ValidationError("Failed to prepare test message");
     }
   }
 
@@ -894,7 +961,7 @@ class AdService {
       const ad = await prisma.ad.findUnique({ where: { id: adId } });
 
       if (!ad) {
-        throw new NotFoundError('Ad not found');
+        throw new NotFoundError("Ad not found");
       }
 
       // Check if already saved
@@ -918,7 +985,7 @@ class AdService {
         return { saved: true };
       }
     } catch (error) {
-      logger.error('Toggle save ad failed:', error);
+      logger.error("Toggle save ad failed:", error);
       throw error;
     }
   }
@@ -931,7 +998,7 @@ class AdService {
       const savedAds = await prisma.savedAd.findMany({
         where: { userId },
         include: { ad: true },
-        orderBy: { createdAt: 'desc' },
+        orderBy: { createdAt: "desc" },
         take: limit,
         skip: offset,
       });
@@ -939,17 +1006,17 @@ class AdService {
       const total = await prisma.savedAd.count({ where: { userId } });
 
       return {
-        ads: savedAds.map(s => {
+        ads: savedAds.map((s) => {
           const adObj = s.ad.toJSON ? s.ad.toJSON() : s.ad;
           return {
             ...adObj,
-            isSaved: true
+            isSaved: true,
           };
         }),
         total,
       };
     } catch (error) {
-      logger.error('Get saved ads failed:', error);
+      logger.error("Get saved ads failed:", error);
       throw error;
     }
   }
@@ -961,25 +1028,25 @@ class AdService {
     try {
       const ads = await prisma.ad.findMany({
         where: {
-          status: 'RUNNING',
+          status: "RUNNING",
           isArchived: false,
           OR: [
-            { title: { contains: query, mode: 'insensitive' } },
-            { text: { contains: query, mode: 'insensitive' } }
-          ]
+            { title: { contains: query, mode: "insensitive" } },
+            { text: { contains: query, mode: "insensitive" } },
+          ],
         },
         select: {
           id: true,
           title: true,
           text: true,
           mediaUrl: true,
-          status: true
+          status: true,
         },
-        take: 20
+        take: 20,
       });
       return ads;
     } catch (error) {
-      logger.error('Search active ads failed:', error);
+      logger.error("Search active ads failed:", error);
       throw error;
     }
   }

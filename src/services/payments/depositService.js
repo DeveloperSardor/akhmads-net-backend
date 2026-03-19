@@ -1,10 +1,11 @@
 // src/services/payments/depositService.js
-import prisma from '../../config/database.js';
-import walletService from '../wallet/walletService.js';
-import paymeService from './providers/paymeService.js';
-import cryptoPayService from './providers/cryptoPayService.js';
-import logger from '../../utils/logger.js';
-import { PaymentError, ValidationError } from '../../utils/errors.js';
+import prisma from "../../config/database.js";
+import walletService from "../wallet/walletService.js";
+import paymeService from "./providers/paymeService.js";
+import cryptoPayService from "./providers/cryptoPayService.js";
+import logger from "../../utils/logger.js";
+import { PaymentError, ValidationError } from "../../utils/errors.js";
+import socketService from "../socket/socketService.js";
 
 /**
  * Deposit Service
@@ -20,8 +21,8 @@ class DepositService {
       const { provider, amount, coin, network } = data;
 
       // Validate provider
-      if (!['PAYME', 'CRYPTO'].includes(provider)) {
-        throw new ValidationError('Invalid provider. Use PAYME or CRYPTO');
+      if (!["PAYME", "CRYPTO"].includes(provider)) {
+        throw new ValidationError("Invalid provider. Use PAYME or CRYPTO");
       }
 
       // Validate minimum deposit
@@ -34,32 +35,50 @@ class DepositService {
       const transaction = await prisma.transaction.create({
         data: {
           userId,
-          type: 'DEPOSIT',
+          type: "DEPOSIT",
           provider,
           coin: coin || null,
           network: network || null,
           amount,
-          status: 'PENDING',
+          status: "PENDING",
         },
       });
 
-      logger.info(`Deposit transaction created: ${transaction.id}, provider: ${provider}, amount: $${amount}`);
+      logger.info(
+        `Deposit transaction created: ${transaction.id}, provider: ${provider}, amount: $${amount}`,
+      );
+
+      const user = await prisma.user.findUnique({
+        where: { id: userId },
+        select: { username: true, firstName: true },
+      });
+      socketService.terminalLog(
+        `User @${user?.username || user?.firstName} initiated $${amount} deposit via ${provider}`,
+        "info",
+        { action: "deposit_init", amount, provider, userId },
+      );
 
       // Generate payment URL based on provider
       let paymentData = {};
 
-      if (provider === 'PAYME') {
+      if (provider === "PAYME") {
         // Payme checkout URL
-        const paymentUrl = paymeService.createPaymentUrl(transaction.id, amount);
+        const paymentUrl = paymeService.createPaymentUrl(
+          transaction.id,
+          amount,
+        );
         paymentData = {
           paymentUrl,
-          provider: 'PAYME',
-          description: 'To\'lov Payme orqali amalga oshiriladi',
+          provider: "PAYME",
+          description: "To'lov Payme orqali amalga oshiriladi",
         };
-      } else if (provider === 'CRYPTO') {
+      } else if (provider === "CRYPTO") {
         // CryptoPay invoice
-        const invoice = await cryptoPayService.createInvoice(transaction.id, amount);
-        
+        const invoice = await cryptoPayService.createInvoice(
+          transaction.id,
+          amount,
+        );
+
         // Update transaction with invoice ID
         await prisma.transaction.update({
           where: { id: transaction.id },
@@ -76,11 +95,11 @@ class DepositService {
           paymentUrl: invoice.paymentUrl,
           miniAppUrl: invoice.miniAppUrl,
           webAppUrl: invoice.webAppUrl,
-          provider: 'CRYPTO',
+          provider: "CRYPTO",
           invoiceId: invoice.invoiceId,
           expiresAt: invoice.expiresAt,
-          acceptedAssets: ['USDT', 'TON', 'BTC', 'ETH'],
-          description: 'Pay with cryptocurrency via @CryptoBot',
+          acceptedAssets: ["USDT", "TON", "BTC", "ETH"],
+          description: "Pay with cryptocurrency via @CryptoBot",
         };
       }
 
@@ -95,7 +114,7 @@ class DepositService {
         payment: paymentData,
       };
     } catch (error) {
-      logger.error('Initiate deposit failed:', error);
+      logger.error("Initiate deposit failed:", error);
       throw error;
     }
   }
@@ -107,7 +126,10 @@ class DepositService {
   async processCryptoPayWebhook(signature, body) {
     try {
       // Verify and extract data
-      const webhookData = await cryptoPayService.processWebhook(signature, body);
+      const webhookData = await cryptoPayService.processWebhook(
+        signature,
+        body,
+      );
 
       if (!webhookData) {
         return null; // Not a payment webhook
@@ -121,12 +143,16 @@ class DepositService {
       });
 
       if (!transaction) {
-        logger.error(`CryptoPay webhook: Transaction not found: ${transactionId}`);
-        throw new PaymentError('Transaction not found');
+        logger.error(
+          `CryptoPay webhook: Transaction not found: ${transactionId}`,
+        );
+        throw new PaymentError("Transaction not found");
       }
 
-      if (transaction.status !== 'PENDING') {
-        logger.warn(`CryptoPay webhook: Duplicate for transaction: ${transactionId}`);
+      if (transaction.status !== "PENDING") {
+        logger.warn(
+          `CryptoPay webhook: Duplicate for transaction: ${transactionId}`,
+        );
         return transaction;
       }
 
@@ -134,7 +160,7 @@ class DepositService {
       const updated = await prisma.transaction.update({
         where: { id: transactionId },
         data: {
-          status: 'SUCCESS',
+          status: "SUCCESS",
           metadata: metadata,
         },
       });
@@ -143,15 +169,32 @@ class DepositService {
       await walletService.credit(
         transaction.userId,
         parseFloat(transaction.amount),
-        'DEPOSIT',
-        transaction.id
+        "DEPOSIT",
+        transaction.id,
       );
 
-      logger.info(`✅ CryptoPay deposit completed: ${transactionId}, amount: $${amount}`);
+      logger.info(
+        `✅ CryptoPay deposit completed: ${transactionId}, amount: $${amount}`,
+      );
+
+      const user = await prisma.user.findUnique({
+        where: { id: transaction.userId },
+        select: { username: true, firstName: true },
+      });
+      socketService.terminalLog(
+        `User @${user?.username || user?.firstName} successfully deposited $${amount} via ${transaction.provider}`,
+        "success",
+        {
+          action: "deposit_complete",
+          amount,
+          provider: transaction.provider,
+          userId: transaction.userId,
+        },
+      );
 
       return updated;
     } catch (error) {
-      logger.error('Process CryptoPay webhook failed:', error);
+      logger.error("Process CryptoPay webhook failed:", error);
       throw error;
     }
   }
@@ -160,13 +203,14 @@ class DepositService {
    * Get minimum deposit amount
    */
   async getMinDeposit(provider) {
-    const key = provider === 'CRYPTO' ? 'min_deposit_crypto_usd' : 'min_deposit_usd';
-    
+    const key =
+      provider === "CRYPTO" ? "min_deposit_crypto_usd" : "min_deposit_usd";
+
     const settings = await prisma.platformSettings.findUnique({
       where: { key },
     });
 
-    return parseFloat(settings?.value || '5');
+    return parseFloat(settings?.value || "5");
   }
 
   /**
@@ -177,20 +221,20 @@ class DepositService {
       const transactions = await prisma.transaction.findMany({
         where: {
           userId,
-          type: 'DEPOSIT',
+          type: "DEPOSIT",
         },
-        orderBy: { createdAt: 'desc' },
+        orderBy: { createdAt: "desc" },
         take: limit,
         skip: offset,
       });
 
       const total = await prisma.transaction.count({
-        where: { userId, type: 'DEPOSIT' },
+        where: { userId, type: "DEPOSIT" },
       });
 
       return { transactions, total };
     } catch (error) {
-      logger.error('Get deposit history failed:', error);
+      logger.error("Get deposit history failed:", error);
       throw error;
     }
   }
@@ -204,43 +248,49 @@ class DepositService {
         where: {
           id: transactionId,
           userId,
-          type: 'DEPOSIT',
+          type: "DEPOSIT",
         },
       });
 
       if (!transaction) {
-        throw new PaymentError('Transaction not found');
+        throw new PaymentError("Transaction not found");
       }
 
       // If CryptoPay and still pending, check invoice status
-      if (transaction.provider === 'CRYPTO' && transaction.status === 'PENDING' && transaction.providerTxId) {
+      if (
+        transaction.provider === "CRYPTO" &&
+        transaction.status === "PENDING" &&
+        transaction.providerTxId
+      ) {
         try {
-          const invoice = await cryptoPayService.getInvoice(transaction.providerTxId);
-          
-          if (invoice.status === 'paid') {
+          const invoice = await cryptoPayService.getInvoice(
+            transaction.providerTxId,
+          );
+
+          if (invoice.status === "paid") {
             // Update and credit wallet
             await prisma.transaction.update({
               where: { id: transactionId },
-              data: { status: 'SUCCESS' },
+              data: { status: "SUCCESS" },
             });
 
             await walletService.credit(
               userId,
               parseFloat(transaction.amount),
-              'DEPOSIT',
-              transactionId
+              "DEPOSIT",
+              transactionId,
             );
 
-            return { ...transaction, status: 'SUCCESS' };
+            return { ...transaction, status: "SUCCESS" };
           }
         } catch (error) {
-          logger.error('Check CryptoPay invoice failed:', error);
+          logger.error("Check CryptoPay invoice failed:", error);
         }
       }
 
       return transaction;
     } catch (error) {
-      logger.error('Check deposit status failed:', error);
+      logger.error("Check deposit status failed:", error);
       throw error;
     }
   }

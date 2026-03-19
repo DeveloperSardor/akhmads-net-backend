@@ -1,10 +1,11 @@
-import { nanoid } from 'nanoid';
-import prisma from '../../config/database.js';
-import redis from '../../config/redis.js';
-import hash from '../../utils/hash.js';
-import jwtUtil from '../../utils/jwt.js';
-import logger from '../../utils/logger.js';
-import { AuthenticationError, NotFoundError } from '../../utils/errors.js';
+import { nanoid } from "nanoid";
+import prisma from "../../config/database.js";
+import redis from "../../config/redis.js";
+import hash from "../../utils/hash.js";
+import jwtUtil from "../../utils/jwt.js";
+import logger from "../../utils/logger.js";
+import { AuthenticationError, NotFoundError } from "../../utils/errors.js";
+import socketService from "../socket/socketService.js";
 
 /**
  * Telegram Authentication Service
@@ -21,7 +22,7 @@ class TelegramAuthService {
       const { codes, correctCode } = hash.generateLoginCodes();
       const expiresAt = new Date(Date.now() + 5 * 60 * 1000);
 
-      console.log('🔍 Creating session:', { loginToken, correctCode, codes });
+      console.log("🔍 Creating session:", { loginToken, correctCode, codes });
 
       // ✅ Store codes in database
       const session = await prisma.loginSession.create({
@@ -39,13 +40,13 @@ class TelegramAuthService {
       await redis.set(
         `login_codes:${loginToken}`,
         JSON.stringify(codes),
-        300 // 5 minutes
+        300, // 5 minutes
       );
 
-      console.log('✅ Session created:', session);
-      console.log('✅ Codes stored in Redis:', `login_codes:${loginToken}`);
+      console.log("✅ Session created:", session);
+      console.log("✅ Codes stored in Redis:", `login_codes:${loginToken}`);
 
-      const botUsername = process.env.TELEGRAM_BOT_USERNAME || 'akhmadsnetbot';
+      const botUsername = process.env.TELEGRAM_BOT_USERNAME || "akhmadsnetbot";
       const deepLink = `https://t.me/${botUsername}?start=login_${loginToken}`;
 
       logger.info(`Login session initiated: ${loginToken}`);
@@ -59,7 +60,7 @@ class TelegramAuthService {
         expiresIn: 300,
       };
     } catch (error) {
-      logger.error('Failed to initiate login:', error);
+      logger.error("Failed to initiate login:", error);
       throw error;
     }
   }
@@ -76,23 +77,23 @@ class TelegramAuthService {
       });
 
       if (!session) {
-        throw new NotFoundError('Login session not found');
+        throw new NotFoundError("Login session not found");
       }
 
       // Check if expired
       if (new Date() > session.expiresAt) {
-        throw new AuthenticationError('Login session expired');
+        throw new AuthenticationError("Login session expired");
       }
 
       // Check if already authorized
       if (session.authorized) {
-        throw new AuthenticationError('Login session already used');
+        throw new AuthenticationError("Login session already used");
       }
 
       // ✅ Verify code
       if (code !== session.correctCode) {
         logger.warn(`Wrong code entered for session ${loginToken}`);
-        throw new AuthenticationError('Incorrect code');
+        throw new AuthenticationError("Incorrect code");
       }
 
       // Update session
@@ -117,10 +118,10 @@ class TelegramAuthService {
             firstName: telegramUser.first_name || null,
             lastName: telegramUser.last_name || null,
             username: telegramUser.username || null,
-            avatarUrl: telegramUser.photo_url || null,  // ✅ AVATAR
-            locale: telegramUser.language_code || 'en',
-            role: 'ADVERTISER',
-            roles: ['ADVERTISER', 'BOT_OWNER'],  // ✅ Fixed typo: ADVERTISER
+            avatarUrl: telegramUser.photo_url || null, // ✅ AVATAR
+            locale: telegramUser.language_code || "en",
+            role: "ADVERTISER",
+            roles: ["ADVERTISER", "BOT_OWNER"], // ✅ Fixed typo: ADVERTISER
             isActive: true,
           },
         });
@@ -129,10 +130,18 @@ class TelegramAuthService {
           data: { userId: user.id },
         });
 
-        logger.info(`New user created: ${user.id} (${user.firstName} ${user.lastName})`);
+        logger.info(
+          `New user created: ${user.id} (${user.firstName} ${user.lastName})`,
+        );
+        socketService.terminalLog(
+          `New advertiser registered: ${user.firstName} (@${user.username || user.telegramId})`,
+          "success",
+          { action: "register", userId: user.id },
+        );
       } else {
         // ✅ UPDATE EXISTING USER if Telegram data changed or missing roles
-        const needsRoleUpgrade = !user.roles || !user.roles.includes('BOT_OWNER');
+        const needsRoleUpgrade =
+          !user.roles || !user.roles.includes("BOT_OWNER");
         const needsDataUpdate =
           telegramUser.first_name !== user.firstName ||
           telegramUser.last_name !== user.lastName ||
@@ -141,8 +150,8 @@ class TelegramAuthService {
 
         if (needsDataUpdate || needsRoleUpgrade) {
           const newRoles = [...(user.roles || [])];
-          if (!newRoles.includes('ADVERTISER')) newRoles.push('ADVERTISER');
-          if (!newRoles.includes('BOT_OWNER')) newRoles.push('BOT_OWNER');
+          if (!newRoles.includes("ADVERTISER")) newRoles.push("ADVERTISER");
+          if (!newRoles.includes("BOT_OWNER")) newRoles.push("BOT_OWNER");
 
           user = await prisma.user.update({
             where: { id: user.id },
@@ -154,16 +163,18 @@ class TelegramAuthService {
               roles: newRoles,
             },
           });
-          logger.info(`User data updated: ${user.id} (Upgraded: ${needsRoleUpgrade})`);
+          logger.info(
+            `User data updated: ${user.id} (Upgraded: ${needsRoleUpgrade})`,
+          );
         }
       }
 
       if (user.isBanned) {
-        throw new AuthenticationError('Your account has been banned');
+        throw new AuthenticationError("Your account has been banned");
       }
 
       if (!user.isActive) {
-        throw new AuthenticationError('Your account is inactive');
+        throw new AuthenticationError("Your account is inactive");
       }
 
       // Update last login
@@ -182,7 +193,7 @@ class TelegramAuthService {
         await redis.set(
           `pre_auth_2fa:${twoFaToken}`,
           JSON.stringify({ userId: user.id, telegramId }),
-          300 // 5 minutes
+          300, // 5 minutes
         );
 
         logger.info(`2FA required for user: ${user.id}`);
@@ -195,8 +206,8 @@ class TelegramAuthService {
             firstName: user.firstName,
             role: user.role,
             roles: user.roles,
-            avatarUrl: user.avatarUrl
-          }
+            avatarUrl: user.avatarUrl,
+          },
         };
       }
 
@@ -204,17 +215,23 @@ class TelegramAuthService {
       const tokens = jwtUtil.generateTokenPair(user);
 
       // Store refresh token in Redis
-      const isAdminLogin = user.role === 'ADMIN' || (user.roles && user.roles.includes('ADMIN'));
+      const isAdminLogin =
+        user.role === "ADMIN" || (user.roles && user.roles.includes("ADMIN"));
       await redis.set(
         `refresh_token:${user.id}`,
         tokens.refreshToken,
-        isAdminLogin ? 1 * 24 * 60 * 60 : 2 * 24 * 60 * 60
+        isAdminLogin ? 1 * 24 * 60 * 60 : 2 * 24 * 60 * 60,
       );
 
       // ✅ Clean up login codes from Redis
       await redis.del(`login_codes:${loginToken}`);
 
       logger.info(`User logged in: ${user.id}`);
+      socketService.terminalLog(
+        `User logged in: ${user.firstName} (@${user.username || user.telegramId})`,
+        "info",
+        { action: "login", userId: user.id },
+      );
 
       return {
         user: {
@@ -225,14 +242,14 @@ class TelegramAuthService {
           firstName: user.firstName,
           lastName: user.lastName,
           role: user.role,
-          roles: user.roles,  // ✅ Include roles array
-          avatarUrl: user.avatarUrl,  // ✅ Include avatar
+          roles: user.roles, // ✅ Include roles array
+          avatarUrl: user.avatarUrl, // ✅ Include avatar
           locale: user.locale,
         },
         tokens,
       };
     } catch (error) {
-      logger.error('Login verification failed:', error);
+      logger.error("Login verification failed:", error);
       throw error;
     }
   }
@@ -256,27 +273,34 @@ class TelegramAuthService {
             lastName: telegramUser.last_name || null,
             username: telegramUser.username || null,
             avatarUrl: telegramUser.photo_url || null,
-            locale: telegramUser.language_code || 'en',
-            role: 'ADVERTISER',
-            roles: ['ADVERTISER', 'BOT_OWNER'],
+            locale: telegramUser.language_code || "en",
+            role: "ADVERTISER",
+            roles: ["ADVERTISER", "BOT_OWNER"],
             isActive: true,
           },
         });
         await prisma.wallet.create({ data: { userId: user.id } });
         logger.info(`New user via widget login: ${user.id}`);
+        socketService.terminalLog(
+          `New advertiser registered via Widget: ${user.firstName} (@${user.username || user.telegramId})`,
+          "success",
+          { action: "register", userId: user.id },
+        );
       } else {
-        const needsRoleUpgrade = !user.roles || !user.roles.includes('BOT_OWNER');
+        const needsRoleUpgrade =
+          !user.roles || !user.roles.includes("BOT_OWNER");
         const needsUpdate =
           telegramUser.first_name !== user.firstName ||
           telegramUser.last_name !== user.lastName ||
           telegramUser.username !== user.username ||
-          (telegramUser.photo_url && telegramUser.photo_url !== user.avatarUrl) ||
+          (telegramUser.photo_url &&
+            telegramUser.photo_url !== user.avatarUrl) ||
           needsRoleUpgrade;
 
         if (needsUpdate) {
           const newRoles = [...(user.roles || [])];
-          if (!newRoles.includes('ADVERTISER')) newRoles.push('ADVERTISER');
-          if (!newRoles.includes('BOT_OWNER')) newRoles.push('BOT_OWNER');
+          if (!newRoles.includes("ADVERTISER")) newRoles.push("ADVERTISER");
+          if (!newRoles.includes("BOT_OWNER")) newRoles.push("BOT_OWNER");
 
           user = await prisma.user.update({
             where: { id: user.id },
@@ -288,12 +312,14 @@ class TelegramAuthService {
               roles: newRoles,
             },
           });
-          logger.info(`User updated: ${user.id} (Upgraded roles: ${needsRoleUpgrade})`);
+          logger.info(
+            `User updated: ${user.id} (Upgraded roles: ${needsRoleUpgrade})`,
+          );
         }
       }
 
-      if (user.isBanned) throw new AuthenticationError('Account is banned');
-      if (!user.isActive) throw new AuthenticationError('Account is inactive');
+      if (user.isBanned) throw new AuthenticationError("Account is banned");
+      if (!user.isActive) throw new AuthenticationError("Account is inactive");
 
       await prisma.user.update({
         where: { id: user.id },
@@ -306,7 +332,7 @@ class TelegramAuthService {
         await redis.set(
           `pre_auth_2fa:${twoFaToken}`,
           JSON.stringify({ userId: user.id, telegramId }),
-          300
+          300,
         );
 
         logger.info(`2FA required (widget) for user: ${user.id}`);
@@ -319,16 +345,26 @@ class TelegramAuthService {
             firstName: user.firstName,
             role: user.role,
             roles: user.roles,
-            avatarUrl: user.avatarUrl
-          }
+            avatarUrl: user.avatarUrl,
+          },
         };
       }
 
       const tokens = jwtUtil.generateTokenPair(user);
-      const isAdminWidget = user.role === 'ADMIN' || (user.roles && user.roles.includes('ADMIN'));
-      await redis.set(`refresh_token:${user.id}`, tokens.refreshToken, isAdminWidget ? 1 * 24 * 60 * 60 : 2 * 24 * 60 * 60);
+      const isAdminWidget =
+        user.role === "ADMIN" || (user.roles && user.roles.includes("ADMIN"));
+      await redis.set(
+        `refresh_token:${user.id}`,
+        tokens.refreshToken,
+        isAdminWidget ? 1 * 24 * 60 * 60 : 2 * 24 * 60 * 60,
+      );
 
       logger.info(`Widget login success: ${user.id}`);
+      socketService.terminalLog(
+        `User logged in via Widget: ${user.firstName} (@${user.username || user.telegramId})`,
+        "info",
+        { action: "login", userId: user.id },
+      );
 
       return {
         user: {
@@ -346,7 +382,7 @@ class TelegramAuthService {
         tokens,
       };
     } catch (error) {
-      logger.error('Widget login failed:', error);
+      logger.error("Widget login failed:", error);
       throw error;
     }
   }
@@ -361,7 +397,7 @@ class TelegramAuthService {
       });
 
       if (!session) {
-        throw new NotFoundError('Login session not found');
+        throw new NotFoundError("Login session not found");
       }
 
       // Check if expired
@@ -380,7 +416,7 @@ class TelegramAuthService {
       });
 
       if (!user) {
-        throw new NotFoundError('User not found');
+        throw new NotFoundError("User not found");
       }
 
       // 2FA check (polling login)
@@ -389,7 +425,7 @@ class TelegramAuthService {
         await redis.set(
           `pre_auth_2fa:${twoFaToken}`,
           JSON.stringify({ userId: user.id, telegramId: session.telegramId }),
-          300
+          300,
         );
 
         logger.info(`2FA required (polling) for user: ${user.id}`);
@@ -402,8 +438,8 @@ class TelegramAuthService {
             firstName: user.firstName,
             role: user.role,
             roles: user.roles,
-            avatarUrl: user.avatarUrl
-          }
+            avatarUrl: user.avatarUrl,
+          },
         };
       }
 
@@ -411,11 +447,12 @@ class TelegramAuthService {
       const tokens = jwtUtil.generateTokenPair(user);
 
       // Store refresh token
-      const isAdminPolling = user.role === 'ADMIN' || (user.roles && user.roles.includes('ADMIN'));
+      const isAdminPolling =
+        user.role === "ADMIN" || (user.roles && user.roles.includes("ADMIN"));
       await redis.set(
         `refresh_token:${user.id}`,
         tokens.refreshToken,
-        isAdminPolling ? 1 * 24 * 60 * 60 : 2 * 24 * 60 * 60
+        isAdminPolling ? 1 * 24 * 60 * 60 : 2 * 24 * 60 * 60,
       );
 
       return {
@@ -428,14 +465,14 @@ class TelegramAuthService {
           firstName: user.firstName,
           lastName: user.lastName,
           role: user.role,
-          roles: user.roles,  // ✅ Include roles array
-          avatarUrl: user.avatarUrl,  // ✅ Include avatar
+          roles: user.roles, // ✅ Include roles array
+          avatarUrl: user.avatarUrl, // ✅ Include avatar
           locale: user.locale,
         },
         tokens,
       };
     } catch (error) {
-      logger.error('Check login status failed:', error);
+      logger.error("Check login status failed:", error);
       throw error;
     }
   }
@@ -452,7 +489,7 @@ class TelegramAuthService {
       const storedToken = await redis.get(`refresh_token:${decoded.userId}`);
 
       if (!storedToken || storedToken !== refreshToken) {
-        throw new AuthenticationError('Invalid refresh token');
+        throw new AuthenticationError("Invalid refresh token");
       }
 
       // Get user
@@ -461,25 +498,26 @@ class TelegramAuthService {
       });
 
       if (!user || user.isBanned || !user.isActive) {
-        throw new AuthenticationError('User not found or inactive');
+        throw new AuthenticationError("User not found or inactive");
       }
 
       // Generate new tokens
       const tokens = jwtUtil.generateTokenPair(user);
 
       // Update refresh token in Redis
-      const isAdminRefresh = user.role === 'ADMIN' || (user.roles && user.roles.includes('ADMIN'));
+      const isAdminRefresh =
+        user.role === "ADMIN" || (user.roles && user.roles.includes("ADMIN"));
       await redis.set(
         `refresh_token:${user.id}`,
         tokens.refreshToken,
-        isAdminRefresh ? 1 * 24 * 60 * 60 : 2 * 24 * 60 * 60
+        isAdminRefresh ? 1 * 24 * 60 * 60 : 2 * 24 * 60 * 60,
       );
 
       logger.info(`Token refreshed for user: ${user.id}`);
 
       return tokens;
     } catch (error) {
-      logger.error('Token refresh failed:', error);
+      logger.error("Token refresh failed:", error);
       throw error;
     }
   }
@@ -496,7 +534,7 @@ class TelegramAuthService {
 
       return true;
     } catch (error) {
-      logger.error('Logout failed:', error);
+      logger.error("Logout failed:", error);
       throw error;
     }
   }

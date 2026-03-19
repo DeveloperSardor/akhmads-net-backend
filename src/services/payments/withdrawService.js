@@ -1,13 +1,14 @@
 // src/services/payments/withdrawService.js
-import prisma from '../../config/database.js';
-import walletService from '../wallet/walletService.js';
-import telegramBot from '../../config/telegram.js';
-import logger from '../../utils/logger.js';
-import redis from '../../config/redis.js';
-import { InlineKeyboard } from 'grammy';
-import { InsufficientFundsError, ValidationError } from '../../utils/errors.js';
-import adminNotificationService from '../telegram/adminNotificationService.js';
-import userNotificationService from '../telegram/userNotificationService.js';
+import prisma from "../../config/database.js";
+import walletService from "../wallet/walletService.js";
+import telegramBot from "../../config/telegram.js";
+import logger from "../../utils/logger.js";
+import redis from "../../config/redis.js";
+import { InlineKeyboard } from "grammy";
+import { InsufficientFundsError, ValidationError } from "../../utils/errors.js";
+import adminNotificationService from "../telegram/adminNotificationService.js";
+import userNotificationService from "../telegram/userNotificationService.js";
+import socketService from "../socket/socketService.js";
 
 // BEP-20 manzil formati: 0x + 40 hex belgi
 const BEP20_REGEX = /^0x[a-fA-F0-9]{40}$/;
@@ -24,7 +25,6 @@ const BEP20_REGEX = /^0x[a-fA-F0-9]{40}$/;
  *  - Approve/Reject → User ga Telegram xabar
  */
 class WithdrawService {
-
   // ─────────────────────────────────────────────
   // USER: Withdraw so'rovi
   // ─────────────────────────────────────────────
@@ -35,7 +35,7 @@ class WithdrawService {
     // 1. BEP-20 manzil validatsiya
     if (!bep20Address || !BEP20_REGEX.test(bep20Address)) {
       throw new ValidationError(
-        'To\'g\'ri BEP-20 manzil kiriting (0x bilan boshlanuvchi 42 belgili)'
+        "To'g'ri BEP-20 manzil kiriting (0x bilan boshlanuvchi 42 belgili)",
       );
     }
 
@@ -44,25 +44,31 @@ class WithdrawService {
 
     // 3. Miqdor tekshirish
     if (amount < settings.minWithdraw) {
-      throw new ValidationError(`Minimal yechish miqdori: $${settings.minWithdraw}`);
+      throw new ValidationError(
+        `Minimal yechish miqdori: $${settings.minWithdraw}`,
+      );
     }
     if (amount > settings.maxDailyWithdraw) {
-      throw new ValidationError(`Kunlik maksimal: $${settings.maxDailyWithdraw}`);
+      throw new ValidationError(
+        `Kunlik maksimal: $${settings.maxDailyWithdraw}`,
+      );
     }
 
     // 4. Kunlik limit tekshirish
     const todayTotal = await this.getTodayWithdrawals(userId);
     if (todayTotal + amount > settings.maxDailyWithdraw) {
-      throw new ValidationError('Kunlik yechish limiti to\'ldi');
+      throw new ValidationError("Kunlik yechish limiti to'ldi");
     }
 
     // 5. Fee hisoblash — FIXED $3
-    const fee = settings.withdrawalFeeFixed;   // 3
-    const totalRequired = amount + fee;         // hisobdan yechiladi
-    const netAmount = amount - fee;             // user oladi
+    const fee = settings.withdrawalFeeFixed; // 3
+    const totalRequired = amount + fee; // hisobdan yechiladi
+    const netAmount = amount - fee; // user oladi
 
     if (netAmount <= 0) {
-      throw new ValidationError(`Yechish miqdori fee dan katta bo'lishi kerak ($${fee})`);
+      throw new ValidationError(
+        `Yechish miqdori fee dan katta bo'lishi kerak ($${fee})`,
+      );
     }
 
     // 6. Pulni rezerv qilish (available → reserved)
@@ -73,22 +79,35 @@ class WithdrawService {
     const withdrawal = await prisma.withdrawRequest.create({
       data: {
         userId,
-        method: 'CRYPTO',
-        provider: 'CRYPTO',
-        coin: 'USDT',
-        network: 'BEP20',
+        method: "CRYPTO",
+        provider: "CRYPTO",
+        coin: "USDT",
+        network: "BEP20",
         address: bep20Address,
-        amount,           // user so'ragan
-        fee,              // $3
-        netAmount,        // user oladi
-        status: 'REQUESTED',
+        amount, // user so'ragan
+        fee, // $3
+        netAmount, // user oladi
+        status: "REQUESTED",
       },
     });
 
     // 9. Admin larga Telegram xabar
     await this.notifyAdminsNewWithdrawal(withdrawal, userId);
 
-    logger.info(`Withdraw so'rovi: ${withdrawal.id}, user: ${userId}, amount: $${amount}, fee: $${fee}`);
+    logger.info(
+      `Withdraw so'rovi: ${withdrawal.id}, user: ${userId}, amount: $${amount}, fee: $${fee}`,
+    );
+
+    const user = await prisma.user.findUnique({
+      where: { id: userId },
+      select: { username: true, firstName: true },
+    });
+    socketService.terminalLog(
+      `Withdraw request submitted: $${amount} by @${user?.username || user?.firstName}`,
+      "warning",
+      { action: "withdraw_request", amount, userId },
+    );
+
     return withdrawal;
   }
 
@@ -102,19 +121,23 @@ class WithdrawService {
       include: {
         user: {
           select: {
-            id: true, firstName: true, lastName: true,
-            username: true, telegramId: true,
+            id: true,
+            firstName: true,
+            lastName: true,
+            username: true,
+            telegramId: true,
           },
         },
       },
     });
 
-    if (!withdrawal) throw new ValidationError('Withdraw topilmadi');
-    if (!['REQUESTED', 'PENDING_REVIEW'].includes(withdrawal.status)) {
-      throw new ValidationError('Bu withdraw allaqachon qayta ishlangan');
+    if (!withdrawal) throw new ValidationError("Withdraw topilmadi");
+    if (!["REQUESTED", "PENDING_REVIEW"].includes(withdrawal.status)) {
+      throw new ValidationError("Bu withdraw allaqachon qayta ishlangan");
     }
 
-    const totalAmount = parseFloat(withdrawal.amount) + parseFloat(withdrawal.fee);
+    const totalAmount =
+      parseFloat(withdrawal.amount) + parseFloat(withdrawal.fee);
 
     // Reserved pulni tizimdan chiqarish (reserved → exit)
     await walletService.confirmReserved(withdrawal.userId, totalAmount);
@@ -123,13 +146,13 @@ class WithdrawService {
     await prisma.transaction.create({
       data: {
         userId: withdrawal.userId,
-        type: 'WITHDRAW',
-        provider: 'CRYPTO',
-        coin: 'USDT',
-        network: 'BEP20',
+        type: "WITHDRAW",
+        provider: "CRYPTO",
+        coin: "USDT",
+        network: "BEP20",
         amount: withdrawal.amount,
         fee: withdrawal.fee,
-        status: 'SUCCESS',
+        status: "SUCCESS",
         address: withdrawal.address,
         metadata: JSON.stringify({ withdrawalId, approvedBy: adminId }),
       },
@@ -139,7 +162,7 @@ class WithdrawService {
     const updated = await prisma.withdrawRequest.update({
       where: { id: withdrawalId },
       data: {
-        status: 'COMPLETED',
+        status: "COMPLETED",
         approvedBy: adminId,
         approvedAt: new Date(),
       },
@@ -149,8 +172,8 @@ class WithdrawService {
     await prisma.auditLog.create({
       data: {
         userId: adminId,
-        action: 'WITHDRAWAL_APPROVED',
-        entityType: 'withdrawal',
+        action: "WITHDRAWAL_APPROVED",
+        entityType: "withdrawal",
         entityId: withdrawalId,
         metadata: JSON.stringify({
           amount: withdrawal.amount,
@@ -164,15 +187,34 @@ class WithdrawService {
     // ✅ Telegram dagi xabarni yangilash
     const admin = await prisma.user.findUnique({
       where: { id: adminId },
-      select: { firstName: true, username: true }
+      select: { firstName: true, username: true },
     });
-    const resolverName = admin?.username || admin?.firstName || 'Admin';
-    adminNotificationService.markAsResolved('withdraw', withdrawalId, resolverName, '✅ TASDIQLANDI (SAYT)').catch(() => {});
+    const resolverName = admin?.username || admin?.firstName || "Admin";
+    adminNotificationService
+      .markAsResolved(
+        "withdraw",
+        withdrawalId,
+        resolverName,
+        "✅ TASDIQLANDI (SAYT)",
+      )
+      .catch(() => {});
 
     logger.info(`Withdraw tasdiqlandi: ${withdrawalId} by admin ${adminId}`);
 
     // Notify user
-    userNotificationService.notifyWithdrawalApproved(withdrawal.user, withdrawal).catch(() => {});
+    userNotificationService
+      .notifyWithdrawalApproved(withdrawal.user, withdrawal)
+      .catch(() => {});
+
+    socketService.terminalLog(
+      `Admin approved withdraw of $${withdrawal.amount} for @${withdrawal.user.username || withdrawal.user.firstName}`,
+      "success",
+      {
+        action: "withdraw_approve",
+        amount: withdrawal.amount,
+        userId: withdrawal.userId,
+      },
+    );
 
     return updated;
   }
@@ -187,19 +229,23 @@ class WithdrawService {
       include: {
         user: {
           select: {
-            id: true, firstName: true, lastName: true,
-            username: true, telegramId: true,
+            id: true,
+            firstName: true,
+            lastName: true,
+            username: true,
+            telegramId: true,
           },
         },
       },
     });
 
-    if (!withdrawal) throw new ValidationError('Withdraw topilmadi');
-    if (!['REQUESTED', 'PENDING_REVIEW'].includes(withdrawal.status)) {
-      throw new ValidationError('Bu withdraw allaqachon qayta ishlangan');
+    if (!withdrawal) throw new ValidationError("Withdraw topilmadi");
+    if (!["REQUESTED", "PENDING_REVIEW"].includes(withdrawal.status)) {
+      throw new ValidationError("Bu withdraw allaqachon qayta ishlangan");
     }
 
-    const totalAmount = parseFloat(withdrawal.amount) + parseFloat(withdrawal.fee);
+    const totalAmount =
+      parseFloat(withdrawal.amount) + parseFloat(withdrawal.fee);
 
     // Reserved pulni qaytarish (reserved → available)
     await walletService.releaseReserved(withdrawal.userId, totalAmount);
@@ -208,7 +254,7 @@ class WithdrawService {
     const updated = await prisma.withdrawRequest.update({
       where: { id: withdrawalId },
       data: {
-        status: 'REJECTED',
+        status: "REJECTED",
         reason,
         approvedBy: adminId,
         approvedAt: new Date(),
@@ -219,8 +265,8 @@ class WithdrawService {
     await prisma.auditLog.create({
       data: {
         userId: adminId,
-        action: 'WITHDRAWAL_REJECTED',
-        entityType: 'withdrawal',
+        action: "WITHDRAWAL_REJECTED",
+        entityType: "withdrawal",
         entityId: withdrawalId,
         metadata: JSON.stringify({
           amount: withdrawal.amount,
@@ -233,15 +279,34 @@ class WithdrawService {
     // ✅ Telegram dagi xabarni yangilash
     const admin = await prisma.user.findUnique({
       where: { id: adminId },
-      select: { firstName: true, username: true }
+      select: { firstName: true, username: true },
     });
-    const resolverName = admin?.username || admin?.firstName || 'Admin';
-    adminNotificationService.markAsResolved('withdraw', withdrawalId, resolverName, '❌ RAD ETILDI (SAYT)').catch(() => {});
+    const resolverName = admin?.username || admin?.firstName || "Admin";
+    adminNotificationService
+      .markAsResolved(
+        "withdraw",
+        withdrawalId,
+        resolverName,
+        "❌ RAD ETILDI (SAYT)",
+      )
+      .catch(() => {});
 
     logger.info(`Withdraw rad etildi: ${withdrawalId}, sabab: ${reason}`);
 
     // Notify user
-    userNotificationService.notifyWithdrawalRejected(withdrawal.user, withdrawal, reason).catch(() => {});
+    userNotificationService
+      .notifyWithdrawalRejected(withdrawal.user, withdrawal, reason)
+      .catch(() => {});
+
+    socketService.terminalLog(
+      `Admin rejected withdraw of $${withdrawal.amount} for @${withdrawal.user.username || withdrawal.user.firstName} (Reason: ${reason})`,
+      "error",
+      {
+        action: "withdraw_reject",
+        amount: withdrawal.amount,
+        userId: withdrawal.userId,
+      },
+    );
 
     return updated;
   }
@@ -252,22 +317,25 @@ class WithdrawService {
 
   async getPendingWithdrawals(limit = 20, offset = 0) {
     const withdrawals = await prisma.withdrawRequest.findMany({
-      where: { status: { in: ['REQUESTED', 'PENDING_REVIEW'] } },
+      where: { status: { in: ["REQUESTED", "PENDING_REVIEW"] } },
       include: {
         user: {
           select: {
-            id: true, firstName: true, lastName: true,
-            username: true, telegramId: true,
+            id: true,
+            firstName: true,
+            lastName: true,
+            username: true,
+            telegramId: true,
           },
         },
       },
-      orderBy: { createdAt: 'asc' },
+      orderBy: { createdAt: "asc" },
       take: limit,
       skip: offset,
     });
 
     const total = await prisma.withdrawRequest.count({
-      where: { status: { in: ['REQUESTED', 'PENDING_REVIEW'] } },
+      where: { status: { in: ["REQUESTED", "PENDING_REVIEW"] } },
     });
 
     return { withdrawals, total };
@@ -280,7 +348,7 @@ class WithdrawService {
   async getUserWithdrawals(userId, limit = 20, offset = 0) {
     const withdrawals = await prisma.withdrawRequest.findMany({
       where: { userId },
-      orderBy: { createdAt: 'desc' },
+      orderBy: { createdAt: "desc" },
       take: limit,
       skip: offset,
     });
@@ -296,15 +364,15 @@ class WithdrawService {
   async getWithdrawInfo() {
     const settings = await this.getWithdrawalSettings();
     return {
-      method: 'CRYPTO',
-      network: 'BEP-20 (BSC)',
-      coin: 'USDT',
-      feeType: 'fixed',
+      method: "CRYPTO",
+      network: "BEP-20 (BSC)",
+      coin: "USDT",
+      feeType: "fixed",
       feeAmount: settings.withdrawalFeeFixed,
       feeDescription: `$${settings.withdrawalFeeFixed} fixed fee`,
       minWithdraw: settings.minWithdraw,
       maxDailyWithdraw: settings.maxDailyWithdraw,
-      processingTime: '1-24 soat (qo\'lda tasdiqlash)',
+      processingTime: "1-24 soat (qo'lda tasdiqlash)",
       example: {
         request: 50,
         fee: settings.withdrawalFeeFixed,
@@ -325,7 +393,7 @@ class WithdrawService {
       where: {
         userId,
         createdAt: { gte: today },
-        status: { in: ['REQUESTED', 'PENDING_REVIEW', 'COMPLETED'] },
+        status: { in: ["REQUESTED", "PENDING_REVIEW", "COMPLETED"] },
       },
       _sum: { amount: true },
     });
@@ -341,16 +409,24 @@ class WithdrawService {
     try {
       const settings = await prisma.platformSettings.findMany({
         where: {
-          key: { in: ['min_withdraw_usd', 'max_daily_withdraw_usd', 'withdrawal_fee_fixed_usd'] },
+          key: {
+            in: [
+              "min_withdraw_usd",
+              "max_daily_withdraw_usd",
+              "withdrawal_fee_fixed_usd",
+            ],
+          },
         },
       });
 
-      const map = Object.fromEntries(settings.map(s => [s.key, parseFloat(s.value)]));
+      const map = Object.fromEntries(
+        settings.map((s) => [s.key, parseFloat(s.value)]),
+      );
 
       return {
         minWithdraw: map.min_withdraw_usd || 10,
         maxDailyWithdraw: map.max_daily_withdraw_usd || 5000,
-        withdrawalFeeFixed: map.withdrawal_fee_fixed_usd || 3,  // $3 FIXED
+        withdrawalFeeFixed: map.withdrawal_fee_fixed_usd || 3, // $3 FIXED
       };
     } catch {
       return { minWithdraw: 10, maxDailyWithdraw: 5000, withdrawalFeeFixed: 3 };
@@ -365,17 +441,24 @@ class WithdrawService {
     try {
       const user = await prisma.user.findUnique({
         where: { id: userId },
-        select: { firstName: true, lastName: true, username: true, telegramId: true },
+        select: {
+          firstName: true,
+          lastName: true,
+          username: true,
+          telegramId: true,
+        },
       });
 
       // ✅ Faqat SUPER_ADMIN ga yuboriladi
       const superAdmins = await prisma.user.findMany({
-        where: { role: 'SUPER_ADMIN', isActive: true },
+        where: { role: "SUPER_ADMIN", isActive: true },
         select: { telegramId: true },
       });
 
-      const userName = `${user.firstName}${user.lastName ? ' ' + user.lastName : ''}`;
-      const userHandle = user.username ? `@${user.username}` : `ID: ${user.telegramId}`;
+      const userName = `${user.firstName}${user.lastName ? " " + user.lastName : ""}`;
+      const userHandle = user.username
+        ? `@${user.username}`
+        : `ID: ${user.telegramId}`;
 
       const message =
         `💸 <b>Yangi Withdraw So'rovi</b>\n\n` +
@@ -390,29 +473,43 @@ class WithdrawService {
 
       // ✅ Inline buttons: Tasdiqlash / Rad etish
       const keyboard = new InlineKeyboard()
-        .text('✅ Tasdiqlash', `wd_approve_${withdrawal.id}`)
-        .text('❌ Rad etish', `wd_reject_${withdrawal.id}`);
+        .text("✅ Tasdiqlash", `wd_approve_${withdrawal.id}`)
+        .text("❌ Rad etish", `wd_reject_${withdrawal.id}`);
 
       const messageIds = [];
       for (const admin of superAdmins) {
         if (admin.telegramId) {
           try {
-            const msg = await telegramBot.bot.api.sendMessage(admin.telegramId, message, {
-              parse_mode: 'HTML',
-              reply_markup: keyboard,
+            const msg = await telegramBot.bot.api.sendMessage(
+              admin.telegramId,
+              message,
+              {
+                parse_mode: "HTML",
+                reply_markup: keyboard,
+              },
+            );
+            messageIds.push({
+              chatId: admin.telegramId,
+              messageId: msg.message_id,
             });
-            messageIds.push({ chatId: admin.telegramId, messageId: msg.message_id });
           } catch (e) {
-            logger.warn(`SuperAdmin ${admin.telegramId} ga xabar yuborilmadi: ${e.message}`);
+            logger.warn(
+              `SuperAdmin ${admin.telegramId} ga xabar yuborilmadi: ${e.message}`,
+            );
           }
         }
       }
 
       if (messageIds.length > 0) {
-        await redis.set(`admin_notify:withdraw:${withdrawal.id}`, JSON.stringify(messageIds), 'EX', 86400 * 7);
+        await redis.set(
+          `admin_notify:withdraw:${withdrawal.id}`,
+          JSON.stringify(messageIds),
+          "EX",
+          86400 * 7,
+        );
       }
     } catch (e) {
-      logger.error('Admin notification xatosi:', e);
+      logger.error("Admin notification xatosi:", e);
     }
   }
 
@@ -427,9 +524,11 @@ class WithdrawService {
         `<tg-emoji emoji-id="5451732530049692482">🌐</tg-emoji> Tarmoq: BEP-20 (BSC)\n\n` +
         `<blockquote>USDT hisobingizga tushdi. BSCScan orqali tekshirishingiz mumkin.</blockquote>`;
 
-      await telegramBot.sendMessage(withdrawal.user.telegramId, message, { parse_mode: 'HTML' });
+      await telegramBot.sendMessage(withdrawal.user.telegramId, message, {
+        parse_mode: "HTML",
+      });
     } catch (e) {
-      logger.error('User approve notification xatosi:', e);
+      logger.error("User approve notification xatosi:", e);
     }
   }
 
@@ -437,7 +536,8 @@ class WithdrawService {
     try {
       if (!withdrawal.user?.telegramId) return;
 
-      const totalAmount = parseFloat(withdrawal.amount) + parseFloat(withdrawal.fee);
+      const totalAmount =
+        parseFloat(withdrawal.amount) + parseFloat(withdrawal.fee);
 
       const message =
         `<tg-emoji emoji-id="5427145328824716768">❌</tg-emoji> <b>Withdraw Rad Etildi</b>\n\n` +
@@ -445,9 +545,11 @@ class WithdrawService {
         `📋 Sabab: ${reason}\n\n` +
         `<blockquote><tg-emoji emoji-id="5465665476971471368">💚</tg-emoji> <b>$${totalAmount} hisobingizga qaytarildi.</b></blockquote>`;
 
-      await telegramBot.sendMessage(withdrawal.user.telegramId, message, { parse_mode: 'HTML' });
+      await telegramBot.sendMessage(withdrawal.user.telegramId, message, {
+        parse_mode: "HTML",
+      });
     } catch (e) {
-      logger.error('User reject notification xatosi:', e);
+      logger.error("User reject notification xatosi:", e);
     }
   }
 }

@@ -1,11 +1,11 @@
-import { Bot } from 'grammy';
-import prisma from '../../config/database.js';
-import logger from '../../utils/logger.js';
-import encryption from '../../utils/encryption.js';
-import telegram from '../../config/telegram.js';
-import socketService from '../socket/socketService.js';
+import { Bot } from "grammy";
+import prisma from "../../config/database.js";
+import logger from "../../utils/logger.js";
+import encryption from "../../utils/encryption.js";
+import telegram from "../../config/telegram.js";
+import socketService from "../socket/socketService.js";
 
-import distributionService from '../distribution/distributionService.js';
+import distributionService from "../distribution/distributionService.js";
 
 class AutoBotManager {
   constructor() {
@@ -17,22 +17,22 @@ class AutoBotManager {
    */
   async init() {
     try {
-      logger.info('🤖 Initializing AutoBotManager...');
+      logger.info("🤖 Initializing AutoBotManager...");
       const autoBots = await prisma.bot.findMany({
         where: {
-          integrationMode: 'AUTO',
-          status: 'ACTIVE',
-          isPaused: false
-        }
+          integrationMode: "AUTO",
+          status: "ACTIVE",
+          isPaused: false,
+        },
       });
 
       logger.info(`Found ${autoBots.length} AUTO bots to start.`);
-      
+
       for (const botData of autoBots) {
         await this.startBot(botData);
       }
     } catch (error) {
-      logger.error('❌ AutoBotManager init failed:', error);
+      logger.error("❌ AutoBotManager init failed:", error);
     }
   }
 
@@ -58,25 +58,58 @@ class AutoBotManager {
         try {
           const from = ctx.from;
           if (!from || from.is_bot) return;
-          
-          socketService.terminalLog(`Update received for @${botData.username} from ${from.id}`, 'bot');
 
           const { id, username, first_name, last_name, language_code } = from;
-          
+          const userIdentifier = username ? `@${username}` : first_name || id;
+          const botIdentifier = `@${botData.username}`;
+          const text = ctx.message?.text || ctx.message?.caption || "";
+
+          let actionType = "message";
+          let actionLabel = "sent a message to";
+          let logType = "bot";
+
+          if (text.startsWith("/start")) {
+            actionType = "start";
+            actionLabel = "Started";
+            logType = "success";
+          } else if (text.startsWith("/")) {
+            actionType = "command";
+            actionLabel = `Sent command ${text} to`;
+            logType = "info";
+          } else if (ctx.callback_query) {
+            actionType = "click";
+            actionLabel = "Clicked a button in";
+            logType = "warning";
+          }
+
+          socketService.terminalLog(
+            `${userIdentifier} ${actionLabel} ${botIdentifier}`,
+            logType,
+            {
+              botId: botData.id,
+              botUsername: botData.username,
+              userId: id,
+              username: username,
+              firstName: first_name,
+              action: actionType,
+              text,
+            },
+          );
+
           // Upsert BotUser
           await prisma.botUser.upsert({
             where: {
               botId_telegramUserId: {
                 botId: botData.id,
-                telegramUserId: id.toString()
-              }
+                telegramUserId: id.toString(),
+              },
             },
             update: {
               username: username || null,
               firstName: first_name || null,
               lastName: last_name || null,
               languageCode: language_code || null,
-              lastSeenAt: new Date()
+              lastSeenAt: new Date(),
             },
             create: {
               botId: botData.id,
@@ -84,15 +117,11 @@ class AutoBotManager {
               username: username || null,
               firstName: first_name || null,
               lastName: last_name || null,
-              languageCode: language_code || null
-            }
+              languageCode: language_code || null,
+            },
           });
-          
-          socketService.terminalLog(`Captured user ${id} for bot @${botData.username}`, 'bot');
 
-          // Skip ad delivery for commands (e.g., /start, /help)
-          const text = ctx.message?.text || ctx.message?.caption || '';
-          if (text.startsWith('/')) {
+          if (text.startsWith("/")) {
             return;
           }
 
@@ -105,30 +134,37 @@ class AutoBotManager {
             {
               firstName: first_name,
               lastName: last_name,
-              username: username
-            }
+              username: username,
+            },
           );
-
         } catch (err) {
-          logger.error(`Error processing update for @${botData.username}:`, err.message);
+          logger.error(
+            `Error processing update for @${botData.username}:`,
+            err.message,
+          );
         }
       };
 
-      bot.on('message', handleUpdate);
-      bot.on('callback_query', handleUpdate);
+      bot.on("message", handleUpdate);
+      bot.on("callback_query", handleUpdate);
 
       // Catch bot level errors
       bot.catch((err) => {
         logger.error(`Error in bot @${botData.username}:`, err);
-        
-        const errorMessage = err.message || '';
-        
-        if (errorMessage.includes('401: Unauthorized')) {
+
+        const errorMessage = err.message || "";
+
+        if (errorMessage.includes("401: Unauthorized")) {
           logger.warn(`Stopping unauthorized bot @${botData.username}`);
           this.stopBot(botData.id).catch(() => {});
-        } else if (errorMessage.includes('409: Conflict')) {
-          logger.warn(`🛑 Conflict detected for bot @${botData.username}. Another instance might be running. Stopping auto-poll to prevent interference.`);
-          socketService.terminalLog(`Auto-poll stopped for @${botData.username} due to conflict with another instance.`, 'warning');
+        } else if (errorMessage.includes("409: Conflict")) {
+          logger.warn(
+            `🛑 Conflict detected for bot @${botData.username}. Another instance might be running. Stopping auto-poll to prevent interference.`,
+          );
+          socketService.terminalLog(
+            `Auto-poll stopped for @${botData.username} due to conflict with another instance.`,
+            "warning",
+          );
           this.stopBot(botData.id).catch(() => {});
         }
       });
@@ -137,14 +173,20 @@ class AutoBotManager {
       bot.start({
         onStart: (botInfo) => {
           logger.info(`✅ Auto-bot @${botInfo.username} is now running!`);
-        }
+        },
       });
 
-      socketService.terminalLog(`Auto Bot @${botData.username} STARTED`, 'system');
+      socketService.terminalLog(
+        `Auto Bot @${botData.username} STARTED`,
+        "system",
+      );
 
       this.bots.set(botData.id, { bot, username: botData.username });
     } catch (error) {
-      logger.error(`❌ Failed to start auto-bot @${botData.username}:`, error.message);
+      logger.error(
+        `❌ Failed to start auto-bot @${botData.username}:`,
+        error.message,
+      );
     }
   }
 
@@ -157,7 +199,10 @@ class AutoBotManager {
       if (botInfo) {
         await botInfo.bot.stop();
         this.bots.delete(botId);
-        socketService.terminalLog(`Auto Bot @${botInfo.username} STOPPED`, 'system');
+        socketService.terminalLog(
+          `Auto Bot @${botInfo.username} STOPPED`,
+          "system",
+        );
         logger.info(`🛑 Auto-bot stopped: @${botInfo.username}`);
       }
     } catch (error) {
@@ -171,7 +216,12 @@ class AutoBotManager {
   async restartBot(botId) {
     await this.stopBot(botId);
     const botData = await prisma.bot.findUnique({ where: { id: botId } });
-    if (botData && botData.integrationMode === 'AUTO' && botData.status === 'ACTIVE' && !botData.isPaused) {
+    if (
+      botData &&
+      botData.integrationMode === "AUTO" &&
+      botData.status === "ACTIVE" &&
+      !botData.isPaused
+    ) {
       await this.startBot(botData);
     }
   }
@@ -180,7 +230,7 @@ class AutoBotManager {
    * Stop all bots (for graceful shutdown)
    */
   async stopAll() {
-    logger.info('🛑 Stopping all auto-bots...');
+    logger.info("🛑 Stopping all auto-bots...");
     for (const botId of this.bots.keys()) {
       await this.stopBot(botId);
     }

@@ -1,14 +1,19 @@
-import prisma from '../../config/database.js';
-import telegramAPI from '../../utils/telegram-api.js';
-import botStatsService from './botStatsService.js';
-import encryption from '../../utils/encryption.js';
-import jwtUtil from '../../utils/jwt.js';
-import logger from '../../utils/logger.js';
-import { NotFoundError, ConflictError, ExternalServiceError } from '../../utils/errors.js';
-import axios from 'axios';
-import storageService from '../storage/storageService.js';
-import { nanoid } from 'nanoid';
-import autoBotManager from './autoBotManager.js';
+import prisma from "../../config/database.js";
+import telegramAPI from "../../utils/telegram-api.js";
+import botStatsService from "./botStatsService.js";
+import encryption from "../../utils/encryption.js";
+import jwtUtil from "../../utils/jwt.js";
+import logger from "../../utils/logger.js";
+import {
+  NotFoundError,
+  ConflictError,
+  ExternalServiceError,
+} from "../../utils/errors.js";
+import axios from "axios";
+import storageService from "../storage/storageService.js";
+import { nanoid } from "nanoid";
+import autoBotManager from "./autoBotManager.js";
+import socketService from "../socket/socketService.js";
 
 /**
  * Bot Service
@@ -28,8 +33,8 @@ class BotService {
         canJoinGroups: botInfo.can_join_groups,
       };
     } catch (error) {
-      logger.error('Bot token verification failed:', error);
-      throw new ExternalServiceError('Invalid bot token', 'telegram');
+      logger.error("Bot token verification failed:", error);
+      throw new ExternalServiceError("Invalid bot token", "telegram");
     }
   }
 
@@ -50,8 +55,8 @@ class BotService {
         avatarUrl,
       };
     } catch (error) {
-      logger.error('Token verification with avatar failed:', error);
-      throw new ExternalServiceError('Invalid bot token', 'telegram');
+      logger.error("Token verification with avatar failed:", error);
+      throw new ExternalServiceError("Invalid bot token", "telegram");
     }
   }
 
@@ -70,7 +75,7 @@ class BotService {
       });
 
       if (existing) {
-        throw new ConflictError('Bot already registered');
+        throw new ConflictError("Bot already registered");
       }
 
       // Encrypt token
@@ -85,20 +90,25 @@ class BotService {
       try {
         const photoUrl = await telegramAPI.getBotProfilePhotoUrl(data.token);
         if (photoUrl) {
-          const response = await axios.get(photoUrl, { responseType: 'arraybuffer' });
-          const buffer = Buffer.from(response.data, 'binary');
-          const ext = photoUrl.split('.').pop() || 'jpg';
-          const filename = storageService.generateFilename(`avatar.${ext}`, ownerId);
-          
+          const response = await axios.get(photoUrl, {
+            responseType: "arraybuffer",
+          });
+          const buffer = Buffer.from(response.data, "binary");
+          const ext = photoUrl.split(".").pop() || "jpg";
+          const filename = storageService.generateFilename(
+            `avatar.${ext}`,
+            ownerId,
+          );
+
           const uploadResult = await storageService.uploadFile({
             buffer,
             filename,
-            mimetype: response.headers['content-type'] || 'image/jpeg',
+            mimetype: response.headers["content-type"] || "image/jpeg",
           });
           avatarUrl = uploadResult.url;
         }
       } catch (err) {
-        logger.error('Failed to fetch/upload bot avatar:', err.message);
+        logger.error("Failed to fetch/upload bot avatar:", err.message);
       }
 
       // 1. Create bot with temporary apiKey details first to get the persistent ID
@@ -109,14 +119,14 @@ class BotService {
           username: botInfo.username,
           firstName: botInfo.firstName,
           tokenEncrypted,
-          apiKey: 'temp_' + nanoid(), // Placeholder
-          apiKeyHash: 'temp_' + nanoid(), // Placeholder
+          apiKey: "temp_" + nanoid(), // Placeholder
+          apiKeyHash: "temp_" + nanoid(), // Placeholder
           shortDescription: data.shortDescription || null,
           category: data.category,
-          language: data.language || 'uz',
+          language: data.language || "uz",
           monetized: data.monetized !== undefined ? data.monetized : true,
-          integrationMode: data.integrationMode || 'MANUAL',
-          status: 'PENDING',
+          integrationMode: data.integrationMode || "MANUAL",
+          status: "PENDING",
           avatarUrl,
           botstatData,
           activeMembers,
@@ -142,20 +152,29 @@ class BotService {
       });
 
       logger.info(`Bot registered and token generated: ${bot.id}`);
-      
+      socketService.terminalLog(
+        `User registered a new bot: @${bot.username} (Category: ${bot.category})`,
+        "success",
+        { action: "bot_register", botId: bot.id, botUsername: bot.username },
+      );
+
       // If AUTO mode, start it
-      if (updatedBot.integrationMode === 'AUTO' && updatedBot.status === 'ACTIVE' && !updatedBot.isPaused) {
+      if (
+        updatedBot.integrationMode === "AUTO" &&
+        updatedBot.status === "ACTIVE" &&
+        !updatedBot.isPaused
+      ) {
         autoBotManager.startBot({ ...updatedBot, tokenEncrypted });
       }
 
       // Sync member count immediately
-      botStatsService.syncMemberCount(bot.id).catch(err => {
+      botStatsService.syncMemberCount(bot.id).catch((err) => {
         logger.error(`Initial member sync failed for bot ${bot.id}:`, err);
       });
-      
+
       return { ...updatedBot, apiKey };
     } catch (error) {
-      logger.error('Register bot failed:', error);
+      logger.error("Register bot failed:", error);
       throw error;
     }
   }
@@ -168,7 +187,7 @@ class BotService {
     try {
       const bots = await prisma.bot.findMany({
         where: { ownerId },
-        orderBy: { createdAt: 'desc' },
+        orderBy: { createdAt: "desc" },
       });
 
       // Enrich with stats
@@ -185,9 +204,10 @@ class BotService {
           });
 
           // Calculate CTR
-          const ctr = impressionsCount > 0
-            ? ((clicksCount / impressionsCount) * 100).toFixed(2)
-            : '0.00';
+          const ctr =
+            impressionsCount > 0
+              ? ((clicksCount / impressionsCount) * 100).toFixed(2)
+              : "0.00";
 
           // Get total revenue
           const totalRevenue = await prisma.impression.aggregate({
@@ -202,12 +222,12 @@ class BotService {
             ctr: parseFloat(ctr),
             spent: parseFloat(totalRevenue._sum.revenue || 0),
           };
-        })
+        }),
       );
 
       return botsWithStats;
     } catch (error) {
-      logger.error('Get user bots failed:', error);
+      logger.error("Get user bots failed:", error);
       throw error;
     }
   }
@@ -223,7 +243,7 @@ class BotService {
       });
 
       if (!bot) {
-        throw new NotFoundError('Bot not found');
+        throw new NotFoundError("Bot not found");
       }
 
       // Get impressions count
@@ -237,9 +257,10 @@ class BotService {
       });
 
       // Calculate CTR
-      const ctr = impressionsCount > 0
-        ? ((clicksCount / impressionsCount) * 100).toFixed(2)
-        : '0.00';
+      const ctr =
+        impressionsCount > 0
+          ? ((clicksCount / impressionsCount) * 100).toFixed(2)
+          : "0.00";
 
       // Get total revenue
       const totalRevenue = await prisma.impression.aggregate({
@@ -255,7 +276,7 @@ class BotService {
         spent: parseFloat(totalRevenue._sum.revenue || 0),
       };
     } catch (error) {
-      logger.error('Get bot failed:', error);
+      logger.error("Get bot failed:", error);
       throw error;
     }
   }
@@ -266,13 +287,19 @@ class BotService {
    */
   async updateBot(botId, requester, data) {
     try {
-      const isAdmin = requester.role === 'ADMIN' || requester.role === 'SUPER_ADMIN' || requester.roles?.includes('ADMIN') || requester.roles?.includes('SUPER_ADMIN');
-      
-      const where = isAdmin ? { id: botId } : { id: botId, ownerId: requester.id };
+      const isAdmin =
+        requester.role === "ADMIN" ||
+        requester.role === "SUPER_ADMIN" ||
+        requester.roles?.includes("ADMIN") ||
+        requester.roles?.includes("SUPER_ADMIN");
+
+      const where = isAdmin
+        ? { id: botId }
+        : { id: botId, ownerId: requester.id };
       const bot = await prisma.bot.findFirst({ where });
 
       if (!bot) {
-        throw new NotFoundError('Bot not found');
+        throw new NotFoundError("Bot not found");
       }
 
       const updated = await prisma.bot.update({
@@ -297,9 +324,18 @@ class BotService {
       });
 
       logger.info(`Bot updated: ${botId}`);
-      
+      socketService.terminalLog(
+        `Bot settings updated: @${bot.username}`,
+        "info",
+        { action: "bot_update", botId: bot.id, botUsername: bot.username },
+      );
+
       // Handle Auto Bot Manager sync
-      if (updated.integrationMode === 'AUTO' && updated.status === 'ACTIVE' && !updated.isPaused) {
+      if (
+        updated.integrationMode === "AUTO" &&
+        updated.status === "ACTIVE" &&
+        !updated.isPaused
+      ) {
         autoBotManager.startBot(updated);
       } else {
         autoBotManager.stopBot(updated.id);
@@ -307,7 +343,7 @@ class BotService {
 
       return updated;
     } catch (error) {
-      logger.error('Update bot failed:', error);
+      logger.error("Update bot failed:", error);
       throw error;
     }
   }
@@ -322,10 +358,24 @@ class BotService {
         data: { isPaused },
       });
 
-      logger.info(`Bot ${isPaused ? 'paused' : 'resumed'}: ${botId}`);
-      
+      logger.info(`Bot ${isPaused ? "paused" : "resumed"}: ${botId}`);
+      socketService.terminalLog(
+        `Bot @${bot.username} was ${isPaused ? "paused" : "resumed"}`,
+        isPaused ? "warning" : "success",
+        {
+          action: "bot_toggle_pause",
+          botId: bot.id,
+          botUsername: bot.username,
+          isPaused,
+        },
+      );
+
       // Sync with Auto Bot Manager
-      if (!bot.isPaused && bot.integrationMode === 'AUTO' && bot.status === 'ACTIVE') {
+      if (
+        !bot.isPaused &&
+        bot.integrationMode === "AUTO" &&
+        bot.status === "ACTIVE"
+      ) {
         autoBotManager.startBot(bot);
       } else {
         autoBotManager.stopBot(bot.id);
@@ -333,7 +383,7 @@ class BotService {
 
       return bot;
     } catch (error) {
-      logger.error('Toggle bot pause failed:', error);
+      logger.error("Toggle bot pause failed:", error);
       throw error;
     }
   }
@@ -346,7 +396,7 @@ class BotService {
       const bot = await this.getBotById(botId);
 
       if (bot.ownerId !== ownerId) {
-        throw new NotFoundError('Bot not found');
+        throw new NotFoundError("Bot not found");
       }
 
       // Generate new API key
@@ -369,7 +419,7 @@ class BotService {
       logger.info(`API key regenerated: ${botId}`);
       return { bot: updated, newApiKey };
     } catch (error) {
-      logger.error('Regenerate API key failed:', error);
+      logger.error("Regenerate API key failed:", error);
       throw error;
     }
   }
@@ -385,11 +435,11 @@ class BotService {
       const bot = await this.getBotById(botId);
 
       if (bot.ownerId !== ownerId) {
-        throw new NotFoundError('Bot not found');
+        throw new NotFoundError("Bot not found");
       }
 
       if (bot.telegramBotId !== botInfo.telegramBotId) {
-        throw new ConflictError('Token belongs to different bot');
+        throw new ConflictError("Token belongs to different bot");
       }
 
       // Encrypt new token
@@ -403,13 +453,17 @@ class BotService {
       logger.info(`Bot token updated: ${botId}`);
 
       // Sync with Auto Bot Manager
-      if (updated.integrationMode === 'AUTO' && updated.status === 'ACTIVE' && !updated.isPaused) {
+      if (
+        updated.integrationMode === "AUTO" &&
+        updated.status === "ACTIVE" &&
+        !updated.isPaused
+      ) {
         await autoBotManager.restartBot(updated.id);
       }
 
       return updated;
     } catch (error) {
-      logger.error('Update bot token failed:', error);
+      logger.error("Update bot token failed:", error);
       throw error;
     }
   }
@@ -424,13 +478,17 @@ class BotService {
       });
 
       logger.info(`Bot deleted: ${botId}`);
-      
+      socketService.terminalLog(`Bot deleted: ID ${botId}`, "error", {
+        action: "bot_delete",
+        botId,
+      });
+
       // Stop in Auto Bot Manager
       autoBotManager.stopBot(botId).catch(() => {});
 
       return true;
     } catch (error) {
-      logger.error('Delete bot failed:', error);
+      logger.error("Delete bot failed:", error);
       throw error;
     }
   }
@@ -438,11 +496,11 @@ class BotService {
   /**
    * Get bot statistics
    */
-  async getBotStats(botId, period = '7d') {
+  async getBotStats(botId, period = "7d") {
     try {
       const bot = await this.getBotById(botId);
 
-      const days = period === '7d' ? 7 : period === '30d' ? 30 : 90;
+      const days = period === "7d" ? 7 : period === "30d" ? 30 : 90;
       const startDate = new Date();
       startDate.setDate(startDate.getDate() - days);
 
@@ -451,11 +509,14 @@ class BotService {
           botId,
           date: { gte: startDate },
         },
-        orderBy: { date: 'asc' },
+        orderBy: { date: "asc" },
       });
 
       const totalImpressions = stats.reduce((sum, s) => sum + s.impressions, 0);
-      const totalRevenue = stats.reduce((sum, s) => sum + parseFloat(s.revenue), 0);
+      const totalRevenue = stats.reduce(
+        (sum, s) => sum + parseFloat(s.revenue),
+        0,
+      );
 
       return {
         bot,
@@ -465,7 +526,7 @@ class BotService {
         dailyStats: stats,
       };
     } catch (error) {
-      logger.error('Get bot stats failed:', error);
+      logger.error("Get bot stats failed:", error);
       throw error;
     }
   }
@@ -478,7 +539,7 @@ class BotService {
       const impressions = await prisma.impression.findMany({
         where: { botId },
         take: 20,
-        orderBy: { createdAt: 'desc' },
+        orderBy: { createdAt: "desc" },
         include: {
           ad: {
             select: {
@@ -492,7 +553,7 @@ class BotService {
 
       return impressions;
     } catch (error) {
-      logger.error('Get bot ad history failed:', error);
+      logger.error("Get bot ad history failed:", error);
       throw error;
     }
   }
@@ -504,13 +565,13 @@ class BotService {
     try {
       const bots = await prisma.bot.findMany({
         where: {
-          status: 'ACTIVE',
+          status: "ACTIVE",
           isPaused: false,
           monetized: true,
           OR: [
-            { username: { contains: query, mode: 'insensitive' } },
-            { firstName: { contains: query, mode: 'insensitive' } },
-            { category: { contains: query, mode: 'insensitive' } },
+            { username: { contains: query, mode: "insensitive" } },
+            { firstName: { contains: query, mode: "insensitive" } },
+            { category: { contains: query, mode: "insensitive" } },
           ],
         },
         select: {
@@ -530,20 +591,22 @@ class BotService {
       const threshold = new Date();
       threshold.setDate(threshold.getDate() - 30);
 
-      const enrichedBots = await Promise.all(bots.map(async (bot) => {
-        const activeUsersCount = await prisma.botUser.count({
-          where: { botId: bot.id, lastSeenAt: { gte: threshold } }
-        });
-        return { 
-          ...bot, 
-          activeUsers30d: activeUsersCount,
-          broadcastPrice: activeUsersCount * 0.05 + 0.10 // Example dynamic price
-        };
-      }));
+      const enrichedBots = await Promise.all(
+        bots.map(async (bot) => {
+          const activeUsersCount = await prisma.botUser.count({
+            where: { botId: bot.id, lastSeenAt: { gte: threshold } },
+          });
+          return {
+            ...bot,
+            activeUsers30d: activeUsersCount,
+            broadcastPrice: activeUsersCount * 0.05 + 0.1, // Example dynamic price
+          };
+        }),
+      );
 
       return enrichedBots;
     } catch (error) {
-      logger.error('Search bots failed:', error);
+      logger.error("Search bots failed:", error);
       throw error;
     }
   }
@@ -554,12 +617,15 @@ class BotService {
   async getPublicBots() {
     try {
       const now = new Date();
-      const threshold3d  = new Date(now); threshold3d.setDate(now.getDate() - 3);
-      const threshold7d  = new Date(now); threshold7d.setDate(now.getDate() - 7);
-      const threshold30d = new Date(now); threshold30d.setDate(now.getDate() - 30);
+      const threshold3d = new Date(now);
+      threshold3d.setDate(now.getDate() - 3);
+      const threshold7d = new Date(now);
+      threshold7d.setDate(now.getDate() - 7);
+      const threshold30d = new Date(now);
+      threshold30d.setDate(now.getDate() - 30);
 
       const bots = await prisma.bot.findMany({
-        where: { status: 'ACTIVE', isPaused: false, monetized: true },
+        where: { status: "ACTIVE", isPaused: false, monetized: true },
         select: {
           id: true,
           username: true,
@@ -568,30 +634,38 @@ class BotService {
           category: true,
           language: true,
           totalMembers: true,
-        }
+        },
       });
 
-      const enrichedBots = await Promise.all(bots.map(async (bot) => {
-        const [c3d, c7d, c30d] = await Promise.all([
-          prisma.botUser.count({ where: { botId: bot.id, lastSeenAt: { gte: threshold3d } } }),
-          prisma.botUser.count({ where: { botId: bot.id, lastSeenAt: { gte: threshold7d } } }),
-          prisma.botUser.count({ where: { botId: bot.id, lastSeenAt: { gte: threshold30d } } }),
-        ]);
-        return {
-          ...bot,
-          activeUsers3d: c3d,
-          activeUsers7d: c7d,
-          activeUsers30d: c30d,
-          pricePerClick: parseFloat(bot.pricePerClick || 0.05),
-          pricePerPokaz: parseFloat(bot.pricePerPokaz || 0.005),
-          pdpEnabled: bot.pdpEnabled,
-          pokazEnabled: bot.pokazEnabled
-        };
-      }));
+      const enrichedBots = await Promise.all(
+        bots.map(async (bot) => {
+          const [c3d, c7d, c30d] = await Promise.all([
+            prisma.botUser.count({
+              where: { botId: bot.id, lastSeenAt: { gte: threshold3d } },
+            }),
+            prisma.botUser.count({
+              where: { botId: bot.id, lastSeenAt: { gte: threshold7d } },
+            }),
+            prisma.botUser.count({
+              where: { botId: bot.id, lastSeenAt: { gte: threshold30d } },
+            }),
+          ]);
+          return {
+            ...bot,
+            activeUsers3d: c3d,
+            activeUsers7d: c7d,
+            activeUsers30d: c30d,
+            pricePerClick: parseFloat(bot.pricePerClick || 0.05),
+            pricePerPokaz: parseFloat(bot.pricePerPokaz || 0.005),
+            pdpEnabled: bot.pdpEnabled,
+            pokazEnabled: bot.pokazEnabled,
+          };
+        }),
+      );
 
       return enrichedBots;
     } catch (error) {
-      logger.error('Get public bots failed:', error);
+      logger.error("Get public bots failed:", error);
       throw error;
     }
   }
@@ -604,31 +678,31 @@ class BotService {
     try {
       const bot = await this.getBotById(botId);
       if (bot.ownerId !== ownerId) {
-        throw new NotFoundError('Bot not found');
+        throw new NotFoundError("Bot not found");
       }
 
       logger.info(`Processing ${userIds.length} user IDs for bot ${botId}`);
 
       // Filter and unique
-      const uniqueIds = [...new Set(userIds.filter(id => id && !isNaN(id)))];
-      
-      const operations = uniqueIds.map(userId => 
+      const uniqueIds = [...new Set(userIds.filter((id) => id && !isNaN(id)))];
+
+      const operations = uniqueIds.map((userId) =>
         prisma.botUser.upsert({
           where: {
             botId_telegramUserId: {
               botId,
-              telegramUserId: userId.toString()
-            }
+              telegramUserId: userId.toString(),
+            },
           },
           update: {
-            source: 'UPLOADED' // Mark as uploaded if it already existed as system
+            source: "UPLOADED", // Mark as uploaded if it already existed as system
           },
           create: {
             botId,
             telegramUserId: userId.toString(),
-            source: 'UPLOADED'
-          }
-        })
+            source: "UPLOADED",
+          },
+        }),
       );
 
       // Batch processing to prevent memory issues or DB locks
@@ -637,18 +711,19 @@ class BotService {
         await Promise.all(operations.slice(i, i + batchSize));
       }
 
-      logger.info(`Successfully processed ${uniqueIds.length} users for bot ${botId}`);
-      return { 
+      logger.info(
+        `Successfully processed ${uniqueIds.length} users for bot ${botId}`,
+      );
+      return {
         totalInFile: userIds.length,
-        processed: uniqueIds.length 
+        processed: uniqueIds.length,
       };
     } catch (error) {
-      logger.error('Bulk user upload failed:', error);
+      logger.error("Bulk user upload failed:", error);
       throw error;
     }
   }
 }
-
 
 const botService = new BotService();
 export default botService;
