@@ -10,6 +10,8 @@ class SocketService {
   constructor() {
     this.io = null;
     this.adminNamespace = null;
+    this.history = []; // Buffer to store last N logs
+    this.HISTORY_LIMIT = 100;
   }
 
   /**
@@ -119,6 +121,13 @@ class SocketService {
         type: "system",
       });
 
+      // Send recent history buffer (immediate feedback)
+      if (this.history.length > 0) {
+        this.history.forEach((log) => {
+          socket.emit("terminal:log", log);
+        });
+      }
+
       socket.on("disconnect", (reason) => {
         logger.info(`Admin ${socket.user.id} disconnected: ${reason}`);
       });
@@ -136,12 +145,20 @@ class SocketService {
   terminalLog(message, type = "info", data = null) {
     if (!this.adminNamespace) return;
 
-    this.adminNamespace.emit("terminal:log", {
+    const log = {
       timestamp: new Date().toISOString(),
       message,
       type,
       data,
-    });
+    };
+
+    // Keep history consistent
+    this.history.push(log);
+    if (this.history.length > this.HISTORY_LIMIT) {
+      this.history = this.history.slice(-this.HISTORY_LIMIT);
+    }
+
+    this.adminNamespace.emit("terminal:log", log);
   }
 
   /**

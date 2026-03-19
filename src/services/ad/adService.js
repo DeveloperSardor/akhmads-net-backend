@@ -201,9 +201,15 @@ class AdService {
         });
       }
 
-      logger.info(`📤 Ad submitted for review: ${adId}, cost=$${cost}`);
       socketService.terminalLog(
-        `Ad submitted for review by @${user?.username || user?.firstName} (Budget: $${cost.toFixed(2)})`,
+        `New Ad Submitted: "${ad.title || ad.id}" for moderation.`,
+        "ad",
+        { adId, advertiserId, title: ad.title },
+      );
+
+      logger.info(`📤 Ad submitted for review: ${adId}, cost=$${ad.totalCost}`);
+      socketService.terminalLog(
+        `Ad submitted for review by @${user?.username || user?.firstName} (Budget: $${ad.totalCost.toFixed(2)})`,
         "info",
         { action: "ad_submit", adId, advertiserId },
       );

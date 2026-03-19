@@ -1,7 +1,8 @@
 // src/services/wallet/walletService.js
-import prisma from '../../config/database.js';
-import logger from '../../utils/logger.js';
-import { InsufficientFundsError, NotFoundError } from '../../utils/errors.js';
+import prisma from "../../config/database.js";
+import logger from "../../utils/logger.js";
+import { InsufficientFundsError, NotFoundError } from "../../utils/errors.js";
+import socketService from "../socket/socketService.js";
 
 /**
  * Wallet Service
@@ -24,7 +25,6 @@ import { InsufficientFundsError, NotFoundError } from '../../utils/errors.js';
  *   rejectWithdrawal   → releaseReserved() reserved -= X, available += X
  */
 class WalletService {
-
   // ─────────────────────────────────────────────
   // Wallet olish / yaratish
   // ─────────────────────────────────────────────
@@ -54,12 +54,12 @@ class WalletService {
   // Deposit — pul kirim (Payme webhook'dan)
   // ─────────────────────────────────────────────
 
-  async credit(userId, amount, type = 'DEPOSIT', referenceId = null) {
-    if (amount <= 0) throw new Error('Miqdor 0 dan katta bo\'lishi kerak');
+  async credit(userId, amount, type = "DEPOSIT", referenceId = null) {
+    if (amount <= 0) throw new Error("Miqdor 0 dan katta bo'lishi kerak");
 
     const wallet = await this.getWallet(userId);
 
-    const isEarnings = type === 'EARNINGS';
+    const isEarnings = type === "EARNINGS";
 
     const updated = await prisma.wallet.update({
       where: { userId },
@@ -71,11 +71,27 @@ class WalletService {
     });
 
     // Ledger yozuvi
-    await this.addLedgerEntry(userId, type, amount, referenceId,
-      `available: ${parseFloat(wallet.available)} → ${parseFloat(wallet.available) + amount}`
+    await this.addLedgerEntry(
+      userId,
+      type,
+      amount,
+      referenceId,
+      `available: ${parseFloat(wallet.available)} → ${parseFloat(wallet.available) + amount}`,
     );
 
-    logger.info(`✅ Wallet credit: user=${userId}, amount=${amount}, type=${type}`);
+    const user = await prisma.user.findUnique({
+      where: { id: userId },
+      select: { username: true },
+    });
+    socketService.terminalLog(
+      `Wallet credit: @${user?.username || userId} +$${amount} (${type})`,
+      type === "EARNINGS" ? "bot" : "success",
+      { userId, amount, type },
+    );
+
+    logger.info(
+      `✅ Wallet credit: user=${userId}, amount=${amount}, type=${type}`,
+    );
     return updated;
   }
 
@@ -83,13 +99,13 @@ class WalletService {
   // Debit — to'g'ridan-to'g'ri yechish (faqat earnings uchun)
   // ─────────────────────────────────────────────
 
-  async debit(userId, amount, type = 'SPEND', referenceId = null) {
-    if (amount <= 0) throw new Error('Miqdor 0 dan katta bo\'lishi kerak');
+  async debit(userId, amount, type = "SPEND", referenceId = null) {
+    if (amount <= 0) throw new Error("Miqdor 0 dan katta bo'lishi kerak");
 
     const wallet = await this.getWallet(userId);
 
     if (parseFloat(wallet.available) < amount) {
-      throw new InsufficientFundsError('Yetarli mablag\' yo\'q');
+      throw new InsufficientFundsError("Yetarli mablag' yo'q");
     }
 
     const updated = await prisma.wallet.update({
@@ -100,11 +116,17 @@ class WalletService {
       },
     });
 
-    await this.addLedgerEntry(userId, type === 'SPEND' ? 'SPEND' : type, -amount, referenceId,
-      `available: ${parseFloat(wallet.available)} → ${parseFloat(wallet.available) - amount}`
+    await this.addLedgerEntry(
+      userId,
+      type === "SPEND" ? "SPEND" : type,
+      -amount,
+      referenceId,
+      `available: ${parseFloat(wallet.available)} → ${parseFloat(wallet.available) - amount}`,
     );
 
-    logger.info(`💸 Wallet debit: user=${userId}, amount=${amount}, type=${type}`);
+    logger.info(
+      `💸 Wallet debit: user=${userId}, amount=${amount}, type=${type}`,
+    );
     return updated;
   }
 
@@ -113,13 +135,13 @@ class WalletService {
   // ─────────────────────────────────────────────
 
   async reserveForAd(userId, adId, amount) {
-    if (amount <= 0) throw new Error('Miqdor 0 dan katta bo\'lishi kerak');
+    if (amount <= 0) throw new Error("Miqdor 0 dan katta bo'lishi kerak");
 
     const wallet = await this.getWallet(userId);
 
     if (parseFloat(wallet.available) < amount) {
       throw new InsufficientFundsError(
-        `Yetarli mablag' yo'q. Mavjud: $${parseFloat(wallet.available).toFixed(2)}, kerak: $${amount.toFixed(2)}`
+        `Yetarli mablag' yo'q. Mavjud: $${parseFloat(wallet.available).toFixed(2)}, kerak: $${amount.toFixed(2)}`,
       );
     }
 
@@ -131,8 +153,22 @@ class WalletService {
       },
     });
 
-    await this.addLedgerEntry(userId, 'AD_RESERVE', -amount, adId,
-      `Ad reserve: available -$${amount}, reserved +$${amount} (adId: ${adId})`
+    await this.addLedgerEntry(
+      userId,
+      "AD_RESERVE",
+      -amount,
+      adId,
+      `Ad reserve: available -$${amount}, reserved +$${amount} (adId: ${adId})`,
+    );
+
+    const user = await prisma.user.findUnique({
+      where: { id: userId },
+      select: { username: true },
+    });
+    socketService.terminalLog(
+      `Funds Reserved for Ad: @${user?.username || userId} -$${amount}`,
+      "warning",
+      { userId, adId, amount },
     );
 
     logger.info(`🔒 Ad reserve: user=${userId}, ad=${adId}, amount=$${amount}`);
@@ -144,14 +180,16 @@ class WalletService {
   // ─────────────────────────────────────────────
 
   async confirmAdReserve(userId, adId, amount) {
-    if (amount <= 0) throw new Error('Miqdor 0 dan katta bo\'lishi kerak');
+    if (amount <= 0) throw new Error("Miqdor 0 dan katta bo'lishi kerak");
 
     const wallet = await this.getWallet(userId);
     let reservedToDeduct = amount;
     let availableToDeduct = 0;
 
     if (parseFloat(wallet.reserved) < amount) {
-      logger.warn(`⚠️ Reserved (${wallet.reserved}) < amount (${amount}) for user ${userId}, ad ${adId}`);
+      logger.warn(
+        `⚠️ Reserved (${wallet.reserved}) < amount (${amount}) for user ${userId}, ad ${adId}`,
+      );
       reservedToDeduct = Math.max(0, parseFloat(wallet.reserved));
       availableToDeduct = amount - reservedToDeduct;
     }
@@ -159,17 +197,25 @@ class WalletService {
     const updated = await prisma.wallet.update({
       where: { userId },
       data: {
-        reserved: reservedToDeduct > 0 ? { decrement: reservedToDeduct } : undefined,
-        available: availableToDeduct > 0 ? { decrement: availableToDeduct } : undefined,
+        reserved:
+          reservedToDeduct > 0 ? { decrement: reservedToDeduct } : undefined,
+        available:
+          availableToDeduct > 0 ? { decrement: availableToDeduct } : undefined,
         totalSpent: { increment: amount },
       },
     });
 
-    await this.addLedgerEntry(userId, 'AD_SPEND', -amount, adId,
-      `Ad approved: reserved -$${reservedToDeduct}, available -$${availableToDeduct}, totalSpent +$${amount} (adId: ${adId})`
+    await this.addLedgerEntry(
+      userId,
+      "AD_SPEND",
+      -amount,
+      adId,
+      `Ad approved: reserved -$${reservedToDeduct}, available -$${availableToDeduct}, totalSpent +$${amount} (adId: ${adId})`,
     );
 
-    logger.info(`✅ Ad confirmed: user=${userId}, ad=${adId}, amount=$${amount}`);
+    logger.info(
+      `✅ Ad confirmed: user=${userId}, ad=${adId}, amount=$${amount}`,
+    );
     return updated;
   }
 
@@ -178,18 +224,22 @@ class WalletService {
   // ─────────────────────────────────────────────
 
   async refundAdReserve(userId, adId, amount) {
-    if (amount <= 0) throw new Error('Miqdor 0 dan katta bo\'lishi kerak');
+    if (amount <= 0) throw new Error("Miqdor 0 dan katta bo'lishi kerak");
 
     const wallet = await this.getWallet(userId);
     let actualRefund = amount;
 
     if (parseFloat(wallet.reserved) < amount) {
-      logger.warn(`⚠️ Reserved (${wallet.reserved}) < amount (${amount}) for user ${userId}, ad ${adId}`);
+      logger.warn(
+        `⚠️ Reserved (${wallet.reserved}) < amount (${amount}) for user ${userId}, ad ${adId}`,
+      );
       actualRefund = Math.max(0, parseFloat(wallet.reserved));
     }
 
     if (actualRefund <= 0) {
-      logger.info(`🔄 Ad refunded skipped (reserved=0): user=${userId}, ad=${adId}`);
+      logger.info(
+        `🔄 Ad refunded skipped (reserved=0): user=${userId}, ad=${adId}`,
+      );
       return wallet;
     }
 
@@ -201,11 +251,17 @@ class WalletService {
       },
     });
 
-    await this.addLedgerEntry(userId, 'AD_REFUND', actualRefund, adId,
-      `Ad rejected: reserved -$${actualRefund}, available +$${actualRefund} (adId: ${adId})`
+    await this.addLedgerEntry(
+      userId,
+      "AD_REFUND",
+      actualRefund,
+      adId,
+      `Ad rejected: reserved -$${actualRefund}, available +$${actualRefund} (adId: ${adId})`,
     );
 
-    logger.info(`🔄 Ad refunded: user=${userId}, ad=${adId}, amount=$${actualRefund} (requested=$${amount})`);
+    logger.info(
+      `🔄 Ad refunded: user=${userId}, ad=${adId}, amount=$${actualRefund} (requested=$${amount})`,
+    );
     return updated;
   }
 
@@ -214,13 +270,13 @@ class WalletService {
   // ─────────────────────────────────────────────
 
   async reserve(userId, amount) {
-    if (amount <= 0) throw new Error('Miqdor 0 dan katta bo\'lishi kerak');
+    if (amount <= 0) throw new Error("Miqdor 0 dan katta bo'lishi kerak");
 
     const wallet = await this.getWallet(userId);
 
     if (parseFloat(wallet.available) < amount) {
       throw new InsufficientFundsError(
-        `Yetarli mablag' yo'q. Mavjud: $${parseFloat(wallet.available).toFixed(2)}, kerak: $${amount.toFixed(2)}`
+        `Yetarli mablag' yo'q. Mavjud: $${parseFloat(wallet.available).toFixed(2)}, kerak: $${amount.toFixed(2)}`,
       );
     }
 
@@ -232,8 +288,22 @@ class WalletService {
       },
     });
 
-    await this.addLedgerEntry(userId, 'WITHDRAW_RESERVE', -amount, null,
-      `Withdraw reserve: available -$${amount}, reserved +$${amount}`
+    await this.addLedgerEntry(
+      userId,
+      "WITHDRAW_RESERVE",
+      -amount,
+      null,
+      `Withdraw reserve: available -$${amount}, reserved +$${amount}`,
+    );
+
+    const user = await prisma.user.findUnique({
+      where: { id: userId },
+      select: { username: true },
+    });
+    socketService.terminalLog(
+      `Withdrawal Requested: @${user?.username || userId} $${amount}`,
+      "broadcast",
+      { userId, amount },
     );
 
     logger.info(`🔒 Withdraw reserve: user=${userId}, amount=$${amount}`);
@@ -245,12 +315,14 @@ class WalletService {
   // ─────────────────────────────────────────────
 
   async releaseReserved(userId, amount) {
-    if (amount <= 0) throw new Error('Miqdor 0 dan katta bo\'lishi kerak');
+    if (amount <= 0) throw new Error("Miqdor 0 dan katta bo'lishi kerak");
 
     const wallet = await this.getWallet(userId);
 
     if (parseFloat(wallet.reserved) < amount) {
-      logger.warn(`⚠️ releaseReserved: reserved (${wallet.reserved}) < amount (${amount}) for user ${userId}`);
+      logger.warn(
+        `⚠️ releaseReserved: reserved (${wallet.reserved}) < amount (${amount}) for user ${userId}`,
+      );
     }
 
     const updated = await prisma.wallet.update({
@@ -261,8 +333,12 @@ class WalletService {
       },
     });
 
-    await this.addLedgerEntry(userId, 'WITHDRAW_RELEASE', amount, null,
-      `Withdraw release: reserved -$${amount}, available +$${amount}`
+    await this.addLedgerEntry(
+      userId,
+      "WITHDRAW_RELEASE",
+      amount,
+      null,
+      `Withdraw release: reserved -$${amount}, available +$${amount}`,
     );
 
     logger.info(`🔄 Withdraw released: user=${userId}, amount=$${amount}`);
@@ -274,7 +350,7 @@ class WalletService {
   // ─────────────────────────────────────────────
 
   async confirmReserved(userId, amount) {
-    if (amount <= 0) throw new Error('Miqdor 0 dan katta bo\'lishi kerak');
+    if (amount <= 0) throw new Error("Miqdor 0 dan katta bo'lishi kerak");
 
     const wallet = await this.getWallet(userId);
 
@@ -286,8 +362,12 @@ class WalletService {
       },
     });
 
-    await this.addLedgerEntry(userId, 'WITHDRAW', -amount, null,
-      `Withdraw confirm: reserved -$${amount}, totalWithdrawn +$${amount}`
+    await this.addLedgerEntry(
+      userId,
+      "WITHDRAW",
+      -amount,
+      null,
+      `Withdraw confirm: reserved -$${amount}, totalWithdrawn +$${amount}`,
     );
 
     logger.info(`✅ Withdraw confirmed: user=${userId}, amount=$${amount}`);
@@ -299,7 +379,7 @@ class WalletService {
   // ─────────────────────────────────────────────
 
   async addPending(userId, amount, transactionId) {
-    if (amount <= 0) throw new Error('Miqdor 0 dan katta bo\'lishi kerak');
+    if (amount <= 0) throw new Error("Miqdor 0 dan katta bo'lishi kerak");
 
     const updated = await prisma.wallet.update({
       where: { userId },
@@ -308,11 +388,17 @@ class WalletService {
       },
     });
 
-    await this.addLedgerEntry(userId, 'DEPOSIT_PENDING', amount, transactionId,
-      `Pending deposit: +$${amount} (waiting confirmation)`
+    await this.addLedgerEntry(
+      userId,
+      "DEPOSIT_PENDING",
+      amount,
+      transactionId,
+      `Pending deposit: +$${amount} (waiting confirmation)`,
     );
 
-    logger.info(`⏳ Pending deposit: user=${userId}, amount=$${amount}, tx=${transactionId}`);
+    logger.info(
+      `⏳ Pending deposit: user=${userId}, amount=$${amount}, tx=${transactionId}`,
+    );
     return updated;
   }
 
@@ -321,7 +407,7 @@ class WalletService {
   // ─────────────────────────────────────────────
 
   async confirmPending(userId, amount, transactionId) {
-    if (amount <= 0) throw new Error('Miqdor 0 dan katta bo\'lishi kerak');
+    if (amount <= 0) throw new Error("Miqdor 0 dan katta bo'lishi kerak");
 
     const wallet = await this.getWallet(userId);
 
@@ -334,11 +420,17 @@ class WalletService {
       },
     });
 
-    await this.addLedgerEntry(userId, 'DEPOSIT', amount, transactionId,
-      `Deposit confirmed: pending -$${amount}, available +$${amount}`
+    await this.addLedgerEntry(
+      userId,
+      "DEPOSIT",
+      amount,
+      transactionId,
+      `Deposit confirmed: pending -$${amount}, available +$${amount}`,
     );
 
-    logger.info(`✅ Deposit confirmed: user=${userId}, amount=$${amount}, tx=${transactionId}`);
+    logger.info(
+      `✅ Deposit confirmed: user=${userId}, amount=$${amount}, tx=${transactionId}`,
+    );
     return updated;
   }
 
@@ -347,7 +439,7 @@ class WalletService {
   // ─────────────────────────────────────────────
 
   async cancelPending(userId, amount, transactionId) {
-    if (amount <= 0) throw new Error('Miqdor 0 dan katta bo\'lishi kerak');
+    if (amount <= 0) throw new Error("Miqdor 0 dan katta bo'lishi kerak");
 
     const wallet = await this.getWallet(userId);
 
@@ -358,11 +450,17 @@ class WalletService {
       },
     });
 
-    await this.addLedgerEntry(userId, 'DEPOSIT_CANCELLED', -amount, transactionId,
-      `Deposit cancelled: pending -$${amount}`
+    await this.addLedgerEntry(
+      userId,
+      "DEPOSIT_CANCELLED",
+      -amount,
+      transactionId,
+      `Deposit cancelled: pending -$${amount}`,
     );
 
-    logger.info(`❌ Deposit cancelled: user=${userId}, amount=$${amount}, tx=${transactionId}`);
+    logger.info(
+      `❌ Deposit cancelled: user=${userId}, amount=$${amount}, tx=${transactionId}`,
+    );
     return updated;
   }
 
@@ -373,7 +471,7 @@ class WalletService {
   async getTransactionHistory(userId, limit = 50, offset = 0) {
     const entries = await prisma.ledgerEntry.findMany({
       where: { userId },
-      orderBy: { createdAt: 'desc' },
+      orderBy: { createdAt: "desc" },
       take: limit,
       skip: offset,
     });
@@ -395,7 +493,10 @@ class WalletService {
     });
 
     const expectedBalance = parseFloat(ledgerSum._sum.amount || 0);
-    const actualBalance = parseFloat(wallet.available) + parseFloat(wallet.reserved) + parseFloat(wallet.pending);
+    const actualBalance =
+      parseFloat(wallet.available) +
+      parseFloat(wallet.reserved) +
+      parseFloat(wallet.pending);
 
     return {
       available: parseFloat(wallet.available),
@@ -411,10 +512,13 @@ class WalletService {
   // Ledger yozuvi (ichki)
   // ─────────────────────────────────────────────
 
-  async addLedgerEntry(userId, type, amount, referenceId = null, note = '') {
+  async addLedgerEntry(userId, type, amount, referenceId = null, note = "") {
     try {
       const wallet = await this.getWallet(userId);
-      const balance = parseFloat(wallet.available) + parseFloat(wallet.reserved) + parseFloat(wallet.pending);
+      const balance =
+        parseFloat(wallet.available) +
+        parseFloat(wallet.reserved) +
+        parseFloat(wallet.pending);
 
       await prisma.ledgerEntry.create({
         data: {
@@ -423,7 +527,7 @@ class WalletService {
           amount,
           balance,
           refId: referenceId,
-          refType: referenceId ? 'AD' : null,
+          refType: referenceId ? "AD" : null,
           description: note,
         },
       });
