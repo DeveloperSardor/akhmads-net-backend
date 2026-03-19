@@ -64,7 +64,33 @@ class SocketService {
       }
 
       try {
-        const decoded = jwtUtil.verify(token);
+        let decoded;
+        try {
+          decoded = jwtUtil.verify(token);
+        } catch (err) {
+          // If the provided token is expired, but we have cookies, try the cookie!
+          if (
+            err.message === "Token expired" &&
+            socket.handshake.headers.cookie
+          ) {
+            const cookies = socket.handshake.headers.cookie
+              .split(";")
+              .reduce((acc, cookie) => {
+                const [name, value] = cookie.trim().split("=");
+                acc[name] = value;
+                return acc;
+              }, {});
+
+            if (cookies.accessToken && cookies.accessToken !== token) {
+              decoded = jwtUtil.verify(cookies.accessToken);
+              token = cookies.accessToken; // Success fallback
+            } else {
+              throw err; // No better token in cookies
+            }
+          } else {
+            throw err;
+          }
+        }
 
         // Only allow admins
         if (!["ADMIN", "SUPER_ADMIN", "MODERATOR"].includes(decoded.role)) {
