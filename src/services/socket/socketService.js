@@ -1,6 +1,6 @@
 import { Server } from "socket.io";
 import logger from "../../utils/logger.js";
-import jwt from "jsonwebtoken";
+import jwtUtil from "../../utils/jwt.js";
 
 /**
  * Socket Service
@@ -45,6 +45,7 @@ class SocketService {
     // Authentication middleware for Admin namespace
     this.adminNamespace.use((socket, next) => {
       let token = socket.handshake.auth.token || socket.handshake.query.token;
+      if (token === "null" || token === "undefined") token = null;
 
       // --- NEW: Also check cookies for HttpOnly environments ---
       if (!token && socket.handshake.headers.cookie) {
@@ -63,7 +64,7 @@ class SocketService {
       }
 
       try {
-        const decoded = jwt.verify(token, process.env.JWT_SECRET);
+        const decoded = jwtUtil.verify(token);
 
         // Only allow admins
         if (!["ADMIN", "SUPER_ADMIN", "MODERATOR"].includes(decoded.role)) {
@@ -76,7 +77,7 @@ class SocketService {
         next();
       } catch (err) {
         logger.warn(`Invalid socket connection attempt: ${err.message}`);
-        return next(new Error("Authentication error: Invalid token"));
+        return next(new Error(`Authentication error: ${err.message}`));
       }
     });
 
